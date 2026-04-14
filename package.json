@@ -1,0 +1,15 @@
+{
+  "name": "@heroku/sdk",
+  "version": "0.1.0",
+  "description": "Heroku SDK",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "vitest"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.2"
+  }
+}
