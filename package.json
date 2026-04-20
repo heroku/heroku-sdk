@@ -5,11 +5,18 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "build": "tsc",
     "test": "vitest"
   },
   "license": "MIT",
+  "files": ["dist"],
   "devDependencies": {
     "@types/node": "^25.6.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  },
+  "dependencies": {
+    "@heroku/api-client": "file:../heroku-fetch",
+    "@heroku/types": "file:../heroku-types"
   }
 }
