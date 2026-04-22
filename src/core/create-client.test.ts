@@ -20,17 +20,15 @@ vi.mock('@heroku/api-client', () => {
   }
 })
 
-vi.mock('@heroku/types/routes', () => ({
-  routes: {
-    app: {
-      list: { method: 'GET', path: '/apps' },
-      create: { method: 'POST', path: '/apps', hasRequestBody: true },
-      info: { method: 'GET', path: '/apps/{appIdentity}' },
-      delete: { method: 'DELETE', path: '/apps/{appIdentity}' },
-    },
-    accountFeature: {
-      update: { method: 'PATCH', path: '/account/features/{accountFeatureIdentity}', hasRequestBody: true },
-    },
+vi.mock('@heroku/types/3.sdk/routes', () => ({
+  app: {
+    list: { method: 'GET', path: '/apps' },
+    create: { method: 'POST', path: '/apps', hasRequestBody: true },
+    info: { method: 'GET', path: '/apps/{appIdentity}' },
+    delete: { method: 'DELETE', path: '/apps/{appIdentity}' },
+  },
+  accountFeature: {
+    update: { method: 'PATCH', path: '/account/features/{accountFeatureIdentity}', hasRequestBody: true },
   },
 }))
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { dispatch } from './dispatcher.js'
-import type { RouteDefinition } from '@heroku/types/routes'
+import type { RouteDefinition } from '@heroku/types/3.sdk/routes'
 
 function mockResponse(body: unknown, status = 200): Response {
   return {

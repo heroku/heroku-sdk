@@ -1,7 +1,7 @@
-import type { HerokuClient } from '@heroku/types'
+import type { HerokuClient } from '@heroku/types/3.sdk'
 import type { HerokuApiClientOptions } from '@heroku/api-client'
 import { HerokuApiClient } from '@heroku/api-client'
-import { routes } from '@heroku/types/routes'
+import * as routes from '@heroku/types/3.sdk/routes'
 import { dispatch } from './dispatcher.js'
 
 export function createHerokuClient(options: HerokuApiClientOptions = {}): HerokuClient {
@@ -9,8 +9,8 @@ export function createHerokuClient(options: HerokuApiClientOptions = {}): Heroku
 
   return new Proxy({} as HerokuClient, {
     get(_target, resourceKey: string) {
-      const resourceRoutes = routes[resourceKey]
-      if (!resourceRoutes) return undefined
+      if (!Object.hasOwn(routes, resourceKey)) return undefined
+      const resourceRoutes = (routes as Record<string, Record<string, routes.RouteDefinition>>)[resourceKey]
 
       return new Proxy({}, {
         get(_t, methodKey: string) {

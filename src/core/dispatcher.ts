@@ -1,5 +1,5 @@
 import type { HerokuApiClient, RequestOptions } from '@heroku/api-client'
-import type { RouteDefinition } from '@heroku/types/routes'
+import type { RouteDefinition } from '@heroku/types/3.sdk/routes'
 import { interpolatePath } from './interpolate-path.js'
 
 const PLACEHOLDER = /\{[^}]+\}/g
