@@ -6,7 +6,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        node-version: [22.x]
+        node-version: [22.x, 24.x]
         os:
           [sfdc-hk-ubuntu-latest, sfdc-hk-macos-latest, sfdc-hk-windows-latest]
     steps:
