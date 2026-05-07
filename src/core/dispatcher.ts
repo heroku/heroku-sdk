@@ -1,6 +1,7 @@
-import type { HerokuApiClient, RequestOptions } from '@heroku/api-client'
-import type { RouteDefinition } from '@heroku/types/3.sdk/routes'
-import { interpolatePath } from './interpolate-path.js'
+import type {HerokuApiClient} from '@heroku/api-client'
+import type {RouteDefinition} from '@heroku/types/3.sdk/routes'
+
+import {interpolatePath} from './interpolate-path.js'
 
 const PLACEHOLDER = /\{[^}]+\}/g
 
@@ -37,11 +38,28 @@ function callMethod(
   body: unknown,
 ): Promise<Response> {
   switch (method) {
-    case 'GET': return client.get(path)
-    case 'POST': return client.post(path, body)
-    case 'PUT': return client.put(path, body)
-    case 'PATCH': return client.patch(path, body)
-    case 'DELETE': return client.delete(path)
-    default: throw new Error(`Unsupported HTTP method: ${method}`)
+    case 'DELETE': {
+      return client.delete(path)
+    }
+
+    case 'GET': {
+      return client.get(path)
+    }
+
+    case 'PATCH': {
+      return client.patch(path, body)
+    }
+
+    case 'POST': {
+      return client.post(path, body)
+    }
+
+    case 'PUT': {
+      return client.put(path, body)
+    }
+
+    default: {
+      throw new Error(`Unsupported HTTP method: ${method}`)
+    }
   }
 }

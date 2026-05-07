@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { interpolatePath } from './interpolate-path.js'
+import {describe, expect, it} from 'vitest'
+
+import {interpolatePath} from './interpolate-path.js'
 
 describe('interpolatePath', () => {
   it('replaces a single placeholder', () => {
@@ -7,9 +8,7 @@ describe('interpolatePath', () => {
   })
 
   it('replaces multiple placeholders in order', () => {
-    expect(
-      interpolatePath('/apps/{appIdentity}/dynos/{dynoIdentity}', ['my-app', 'web.1']),
-    ).toBe('/apps/my-app/dynos/web.1')
+    expect(interpolatePath('/apps/{appIdentity}/dynos/{dynoIdentity}', ['my-app', 'web.1'])).toBe('/apps/my-app/dynos/web.1')
   })
 
   it('encodes special characters', () => {
@@ -17,9 +16,7 @@ describe('interpolatePath', () => {
   })
 
   it('throws when fewer params than placeholders', () => {
-    expect(() => interpolatePath('/apps/{id}/dynos/{did}', ['my-app'])).toThrow(
-      'Missing path parameter at index 1',
-    )
+    expect(() => interpolatePath('/apps/{id}/dynos/{did}', ['my-app'])).toThrow('Missing path parameter at index 1')
   })
 
   it('returns path unchanged when no placeholders', () => {
