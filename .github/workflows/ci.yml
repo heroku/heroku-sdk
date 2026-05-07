@@ -1,0 +1,22 @@
+name: Test
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        node-version: [22.x, 24.x]
+        os:
+          [sfdc-hk-ubuntu-latest, sfdc-hk-macos-latest, sfdc-hk-windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - name: unit tests
+        run: npm run test
+      - name: linting
+        run: npm run lint

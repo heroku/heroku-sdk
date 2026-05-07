@@ -1,0 +1,7 @@
+# Release channels configuration - generates release-please config files
+
+channels:
+  main:
+    branch: main
+    prerelease: false
+    npm-tag: latest

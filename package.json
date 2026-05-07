@@ -2,19 +2,34 @@
   "name": "@heroku/sdk",
   "version": "0.1.0",
   "description": "Heroku SDK",
+  "author": "Heroku",
   "type": "module",
   "main": "dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heroku/heroku-sdk"
+  },
   "scripts": {
     "build": "tsc",
+    "coverage": "vitest --run --coverage",
     "example": "tsx",
+    "lint": "eslint",
+    "lint:fix": "eslint --fix",
     "test": "vitest --run"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
   "files": [
     "dist"
   ],
   "devDependencies": {
+    "@heroku-cli/test-utils": "^0.2.0",
     "@types/node": "^25.6.0",
+    "@vitest/coverage-v8": "^4.1.5",
+    "eslint": "^9.39.4",
+    "eslint-config-oclif": "^6.0.162",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"

@@ -1,4 +1,4 @@
-import { createHerokuClient } from '../src/index.js'
+import {createHerokuClient} from '../src/index.js'
 
 // Create a client — automatically reads token from HEROKU_API_KEY or ~/.netrc
 const heroku = createHerokuClient()
