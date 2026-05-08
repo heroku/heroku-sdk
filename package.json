@@ -5,6 +5,10 @@
   "author": "Heroku",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./compositions/*": "./dist/compositions/*.js"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/heroku/heroku-sdk"
