@@ -46,7 +46,7 @@ export async function promotePipeline(
 
     // eslint-disable-next-line no-await-in-loop
     const targets = await client.pipelinePromotionTarget.list(promotion.id)
-    if (targets.every(target => isComplete(target))) {
+    if (targets.every(isComplete)) {
       return {promotion, targets}
     }
 
