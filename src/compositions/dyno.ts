@@ -1,6 +1,5 @@
 import type {HerokuApiClientOptions} from '@heroku/api-client'
 import type {
-  Dyno,
   Formation,
   FormationBatchUpdateOpts,
   FormationUpdateOpts,
@@ -20,15 +19,6 @@ export type ScaleDynosUpdate = FormationUpdateOpts & {
 export type RestartDynosTarget
   = | {dyno: string}
   | {type: string}
-
-export async function listDynos(
-  appIdentity: string,
-  options: DynoOptions = {},
-): Promise<Dyno[]> {
-  options.signal?.throwIfAborted()
-  const client = createHerokuClient(options.clientOptions)
-  return client.dyno.list(appIdentity)
-}
 
 export function scaleDynos(
   appIdentity: string,

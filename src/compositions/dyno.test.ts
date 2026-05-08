@@ -1,11 +1,11 @@
-import type {Dyno, Formation} from '@heroku/types/3.sdk'
+import type {Formation} from '@heroku/types/3.sdk'
 
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
 
 import {createHerokuClient} from '../core/create-client.js'
-import {listDynos, restartDynos, scaleDynos} from './dyno.js'
+import {restartDynos, scaleDynos} from './dyno.js'
 
 vi.mock('../core/create-client.js', () => ({
   createHerokuClient: vi.fn(),
@@ -14,36 +14,6 @@ vi.mock('../core/create-client.js', () => ({
 describe('dyno compositions', () => {
   afterEach(() => {
     vi.clearAllMocks()
-  })
-
-  describe('listDynos', () => {
-    it('returns the dyno list for the app', async () => {
-      const dynos: Dyno[] = [{id: 'd1', name: 'web.1'} as Dyno]
-      const list = vi.fn().mockResolvedValue(dynos)
-      vi.mocked(createHerokuClient).mockReturnValue({dyno: {list}} as never)
-
-      const result = await listDynos('app-1')
-
-      expect(list).toHaveBeenCalledWith('app-1')
-      expect(result).toBe(dynos)
-    })
-
-    it('throws if the signal is already aborted', async () => {
-      const controller = new AbortController()
-      controller.abort()
-
-      await expect(listDynos('app-1', {signal: controller.signal})).rejects.toThrow()
-      expect(createHerokuClient).not.toHaveBeenCalled()
-    })
-
-    it('forwards clientOptions to createHerokuClient', async () => {
-      const list = vi.fn().mockResolvedValue([])
-      vi.mocked(createHerokuClient).mockReturnValue({dyno: {list}} as never)
-
-      await listDynos('app-1', {clientOptions: {token: 'abc'}})
-
-      expect(createHerokuClient).toHaveBeenCalledWith({token: 'abc'})
-    })
   })
 
   describe('scaleDynos', () => {
