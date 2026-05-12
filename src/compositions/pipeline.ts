@@ -5,7 +5,7 @@ import type {
   PipelinePromotionTarget,
 } from '@heroku/types/3.sdk'
 
-import {createHerokuClient} from '../core/create-client.js'
+import {createPlatformClient} from '../services/platform.js'
 
 export type PromotePipelineOptions = {
   clientOptions?: HerokuApiClientOptions
@@ -32,7 +32,7 @@ export async function promotePipeline(
     timeoutMs,
   } = options
 
-  const client = createHerokuClient(clientOptions)
+  const client = createPlatformClient(clientOptions)
   const promotion = await client.pipelinePromotion.create(body)
 
   if (!promotion.id) {
