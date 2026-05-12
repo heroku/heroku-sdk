@@ -1,7 +1,9 @@
 import {createDataClient} from '../src/services/data.js'
 
 // Create a client — automatically reads token from HEROKU_API_KEY or ~/.netrc
-// const data = createDataClient()
+const data = createDataClient()
 
-// const addons = await data.addon.list()
-// console.log(`Found ${addons.length} data add-ons`)
+// Look up info for a Heroku Postgres database by attachment name
+const dbName = process.argv[2] ?? 'DATABASE'
+const info = await data.database.info(dbName)
+console.log(`Database ${dbName}:`, info)
