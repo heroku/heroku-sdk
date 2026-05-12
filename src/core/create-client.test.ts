@@ -2,7 +2,19 @@ import {
   describe, expect, it, vi,
 } from 'vitest'
 
-import {createHerokuClient} from './create-client.js'
+import {createClient, createHerokuClient} from './create-client.js'
+
+const fakeRoutes = {
+  accountFeature: {
+    update: {hasRequestBody: true, method: 'PATCH', path: '/account/features/{accountFeatureIdentity}'},
+  },
+  app: {
+    create: {hasRequestBody: true, method: 'POST', path: '/apps'},
+    delete: {method: 'DELETE', path: '/apps/{appIdentity}'},
+    info: {method: 'GET', path: '/apps/{appIdentity}'},
+    list: {method: 'GET', path: '/apps'},
+  },
+}
 
 function mockResponse(body: unknown, status = 200): Response {
   return {
@@ -72,5 +84,36 @@ describe('createHerokuClient', () => {
     const client = createHerokuClient({token: 'test-token'})
     const result = await client.accountFeature.update('my-feature', {enabled: true})
     expect(result).toEqual({id: '1', name: 'updated'})
+  })
+})
+
+// eslint-disable-next-line mocha/max-top-level-suites
+describe('createClient', () => {
+  it('returns an object with resource namespaces matching the supplied routes', () => {
+    const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+    expect(client.app).toBeDefined()
+    expect(client.accountFeature).toBeDefined()
+  })
+
+  it('returns undefined for unknown resource keys', () => {
+    const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+    expect(client.nonExistent).toBeUndefined()
+  })
+
+  it('returns undefined for unknown method keys', () => {
+    const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+    expect(client.app.nonExistent).toBeUndefined()
+  })
+
+  it('dispatches list call as GET to correct path', async () => {
+    const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+    const result = await client.app.list()
+    expect(result).toEqual([{id: '1', name: 'my-app'}])
+  })
+
+  it('dispatches create call as POST with body', async () => {
+    const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+    const result = await client.app.create({name: 'new-app'})
+    expect(result).toEqual({id: '2', name: 'new-app'})
   })
 })
