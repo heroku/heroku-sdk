@@ -5,7 +5,7 @@ import {
 } from 'vitest'
 
 import {createHerokuClient} from '../core/create-client.js'
-import {promotePipeline} from './promote-pipeline.js'
+import {promotePipeline} from './pipeline.js'
 
 vi.mock('../core/create-client.js', () => ({
   createHerokuClient: vi.fn(),

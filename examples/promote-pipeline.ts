@@ -1,4 +1,4 @@
-import {promotePipeline} from '../src/compositions/promote-pipeline.js'
+import {promotePipeline} from '../src/compositions/pipeline.js'
 
 const result = await promotePipeline(
   {

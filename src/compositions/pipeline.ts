@@ -46,7 +46,7 @@ export async function promotePipeline(
 
     // eslint-disable-next-line no-await-in-loop
     const targets = await client.pipelinePromotionTarget.list(promotion.id)
-    if (targets.every(isComplete)) {
+    if (targets.every(target => target.status !== 'pending')) {
       return {promotion, targets}
     }
 
@@ -57,10 +57,6 @@ export async function promotePipeline(
     // eslint-disable-next-line no-await-in-loop
     await wait(intervalMs, signal)
   }
-}
-
-function isComplete(target: PipelinePromotionTarget): boolean {
-  return target.status !== 'pending'
 }
 
 function wait(ms: number, signal?: AbortSignal): Promise<void> {
