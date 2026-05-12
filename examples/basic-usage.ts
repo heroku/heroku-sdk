@@ -1,6 +1,8 @@
-import {createPlatformClient} from '../src/services/platform.js'
+import { createPlatformClient } from '../src/services/platform.js'
 
 // Create a client — automatically reads token from HEROKU_API_KEY or ~/.netrc
+//
+// NOTE: If you're getting an "Unauthorized" response, run `heroku login` in your terminal
 const heroku = createPlatformClient()
 
 // List all apps
