@@ -1,14 +1,14 @@
-import type {Formation} from '@heroku/types/3.sdk'
+import type { Formation } from '@heroku/types/3.sdk'
 
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
 
-import {createHerokuClient} from '../core/create-client.js'
-import {restartDynos, scaleDynos} from './dyno.js'
+import { createPlatformClient } from '../services/platform.js'
+import { restartDynos, scaleDynos } from './dyno.js'
 
-vi.mock('../core/create-client.js', () => ({
-  createHerokuClient: vi.fn(),
+vi.mock('../services/platform.js', () => ({
+  createPlatformClient: vi.fn(),
 }))
 
 describe('dyno compositions', () => {
@@ -18,45 +18,45 @@ describe('dyno compositions', () => {
 
   describe('scaleDynos', () => {
     it('routes a single update object to formation.update', async () => {
-      const formation = {quantity: 3, type: 'web'} as Formation
+      const formation = { quantity: 3, type: 'web' } as Formation
       const update = vi.fn().mockResolvedValue(formation)
       const batchUpdate = vi.fn()
-      vi.mocked(createHerokuClient).mockReturnValue({formation: {batchUpdate, update}} as never)
+      vi.mocked(createPlatformClient).mockReturnValue({ formation: { batchUpdate, update } } as never)
 
-      const result = await scaleDynos('app-1', {quantity: 3, type: 'web'})
+      const result = await scaleDynos('app-1', { quantity: 3, type: 'web' })
 
-      expect(update).toHaveBeenCalledWith('app-1', 'web', {quantity: 3})
+      expect(update).toHaveBeenCalledWith('app-1', 'web', { quantity: 3 })
       expect(batchUpdate).not.toHaveBeenCalled()
       expect(result).toBe(formation)
     })
 
     it('routes an updates array to formation.batchUpdate', async () => {
       const formations = [
-        {quantity: 2, type: 'web'} as Formation,
-        {quantity: 1, type: 'worker'} as Formation,
+        { quantity: 2, type: 'web' } as Formation,
+        { quantity: 1, type: 'worker' } as Formation,
       ]
       const update = vi.fn()
       const batchUpdate = vi.fn().mockResolvedValue(formations)
-      vi.mocked(createHerokuClient).mockReturnValue({formation: {batchUpdate, update}} as never)
+      vi.mocked(createPlatformClient).mockReturnValue({ formation: { batchUpdate, update } } as never)
 
       const updates = [
-        {quantity: 2, type: 'web'},
-        {quantity: 1, type: 'worker'},
+        { quantity: 2, type: 'web' },
+        { quantity: 1, type: 'worker' },
       ]
       const result = await scaleDynos('app-1', updates)
 
-      expect(batchUpdate).toHaveBeenCalledWith('app-1', {updates})
+      expect(batchUpdate).toHaveBeenCalledWith('app-1', { updates })
       expect(update).not.toHaveBeenCalled()
       expect(result).toBe(formations)
     })
 
     it('routes a single-element array to batchUpdate, not update', async () => {
-      const formations = [{quantity: 2, type: 'web'} as Formation]
+      const formations = [{ quantity: 2, type: 'web' } as Formation]
       const update = vi.fn()
       const batchUpdate = vi.fn().mockResolvedValue(formations)
-      vi.mocked(createHerokuClient).mockReturnValue({formation: {batchUpdate, update}} as never)
+      vi.mocked(createPlatformClient).mockReturnValue({ formation: { batchUpdate, update } } as never)
 
-      await scaleDynos('app-1', [{quantity: 2, type: 'web'}])
+      await scaleDynos('app-1', [{ quantity: 2, type: 'web' }])
 
       expect(batchUpdate).toHaveBeenCalledTimes(1)
       expect(update).not.toHaveBeenCalled()
@@ -66,9 +66,9 @@ describe('dyno compositions', () => {
       const controller = new AbortController()
       controller.abort()
 
-      await expect(scaleDynos('app-1', {quantity: 1, type: 'web'}, {signal: controller.signal}))
+      await expect(scaleDynos('app-1', { quantity: 1, type: 'web' }, { signal: controller.signal }))
         .rejects.toThrow()
-      expect(createHerokuClient).not.toHaveBeenCalled()
+      expect(createPlatformClient).not.toHaveBeenCalled()
     })
   })
 
@@ -77,8 +77,8 @@ describe('dyno compositions', () => {
       const restartAll = vi.fn().mockResolvedValue()
       const restart = vi.fn()
       const restartFormation = vi.fn()
-      vi.mocked(createHerokuClient).mockReturnValue({
-        dyno: {restart, restartAll, restartFormation},
+      vi.mocked(createPlatformClient).mockReturnValue({
+        dyno: { restart, restartAll, restartFormation },
       } as never)
 
       await restartDynos('app-1')
@@ -92,11 +92,11 @@ describe('dyno compositions', () => {
       const restartAll = vi.fn()
       const restart = vi.fn()
       const restartFormation = vi.fn().mockResolvedValue()
-      vi.mocked(createHerokuClient).mockReturnValue({
-        dyno: {restart, restartAll, restartFormation},
+      vi.mocked(createPlatformClient).mockReturnValue({
+        dyno: { restart, restartAll, restartFormation },
       } as never)
 
-      await restartDynos('app-1', {type: 'web'})
+      await restartDynos('app-1', { type: 'web' })
 
       expect(restartFormation).toHaveBeenCalledWith('app-1', 'web')
       expect(restart).not.toHaveBeenCalled()
@@ -107,11 +107,11 @@ describe('dyno compositions', () => {
       const restartAll = vi.fn()
       const restart = vi.fn().mockResolvedValue()
       const restartFormation = vi.fn()
-      vi.mocked(createHerokuClient).mockReturnValue({
-        dyno: {restart, restartAll, restartFormation},
+      vi.mocked(createPlatformClient).mockReturnValue({
+        dyno: { restart, restartAll, restartFormation },
       } as never)
 
-      await restartDynos('app-1', {dyno: 'web.1'})
+      await restartDynos('app-1', { dyno: 'web.1' })
 
       expect(restart).toHaveBeenCalledWith('app-1', 'web.1')
       expect(restartAll).not.toHaveBeenCalled()
@@ -122,8 +122,8 @@ describe('dyno compositions', () => {
       const controller = new AbortController()
       controller.abort()
 
-      await expect(restartDynos('app-1', undefined, {signal: controller.signal})).rejects.toThrow()
-      expect(createHerokuClient).not.toHaveBeenCalled()
+      await expect(restartDynos('app-1', undefined, { signal: controller.signal })).rejects.toThrow()
+      expect(createPlatformClient).not.toHaveBeenCalled()
     })
   })
 })

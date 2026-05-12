@@ -1,11 +1,11 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
+import type { HerokuApiClientOptions } from '@heroku/api-client'
 import type {
   Formation,
   FormationBatchUpdateOpts,
   FormationUpdateOpts,
 } from '@heroku/types/3.sdk'
 
-import {createHerokuClient} from '../core/create-client.js'
+import { createPlatformClient } from '../services/platform.js'
 
 export type DynoOptions = {
   clientOptions?: HerokuApiClientOptions
@@ -17,8 +17,8 @@ export type ScaleDynosUpdate = FormationUpdateOpts & {
 }
 
 export type RestartDynosTarget
-  = | {dyno: string}
-  | {type: string}
+  = | { dyno: string }
+  | { type: string }
 
 export function scaleDynos(
   appIdentity: string,
@@ -36,13 +36,13 @@ export async function scaleDynos(
   options: DynoOptions = {},
 ): Promise<Formation | Formation[]> {
   options.signal?.throwIfAborted()
-  const client = createHerokuClient(options.clientOptions)
+  const client = createPlatformClient(options.clientOptions)
 
   if (Array.isArray(updates)) {
-    return client.formation.batchUpdate(appIdentity, {updates})
+    return client.formation.batchUpdate(appIdentity, { updates })
   }
 
-  const {type, ...body} = updates
+  const { type, ...body } = updates
   return client.formation.update(appIdentity, type, body)
 }
 
@@ -52,7 +52,7 @@ export async function restartDynos(
   options: DynoOptions = {},
 ): Promise<void> {
   options.signal?.throwIfAborted()
-  const client = createHerokuClient(options.clientOptions)
+  const client = createPlatformClient(options.clientOptions)
 
   if (!target) {
     await client.dyno.restartAll(appIdentity)
