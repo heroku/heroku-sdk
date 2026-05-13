@@ -74,7 +74,7 @@ describe('dyno compositions', () => {
 
   describe('restartDynos', () => {
     it('restarts all dynos when no target is provided', async () => {
-      const restartAll = vi.fn().mockResolvedValue()
+      const restartAll = vi.fn()
       const restart = vi.fn()
       const restartFormation = vi.fn()
       vi.mocked(createPlatformClient).mockReturnValue({
@@ -91,7 +91,7 @@ describe('dyno compositions', () => {
     it('restarts a formation when target is a process type', async () => {
       const restartAll = vi.fn()
       const restart = vi.fn()
-      const restartFormation = vi.fn().mockResolvedValue()
+      const restartFormation = vi.fn()
       vi.mocked(createPlatformClient).mockReturnValue({
         dyno: { restart, restartAll, restartFormation },
       } as never)
@@ -105,7 +105,7 @@ describe('dyno compositions', () => {
 
     it('restarts a specific dyno when target is a dyno name', async () => {
       const restartAll = vi.fn()
-      const restart = vi.fn().mockResolvedValue()
+      const restart = vi.fn()
       const restartFormation = vi.fn()
       vi.mocked(createPlatformClient).mockReturnValue({
         dyno: { restart, restartAll, restartFormation },
