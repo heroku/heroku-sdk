@@ -107,9 +107,7 @@ async function resolveAddonId(
   const attachment: AddOnAttachment | undefined = matches[0]
   const addonId = attachment?.addon?.id
   if (!addonId) {
-    throw new Error(
-      `Could not resolve add-on for ${appIdentity}${addonIdentity ? `::${addonIdentity}` : ''}`,
-    )
+    throw new Error(`Could not resolve add-on for ${appIdentity}${addonIdentity ? `::${addonIdentity}` : ''}`)
   }
 
   return addonId
