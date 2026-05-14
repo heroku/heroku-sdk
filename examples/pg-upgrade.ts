@@ -1,4 +1,4 @@
-import {upgradePrepare, upgradeRun} from '../src/compositions/pg.js'
+import {preparePgUpgrade, runPgUpgrade} from '../src/compositions/pg.js'
 
 // DESTRUCTIVE: runs an actual Postgres version upgrade.
 // Set CONFIRM=<app-name> to proceed.
@@ -12,9 +12,9 @@ if (process.env.CONFIRM !== app) {
 }
 
 if (mode === 'prepare') {
-  const result = await upgradePrepare(app, addon, version ? {version} : {})
-  console.log('upgradePrepare:', result)
+  const result = await preparePgUpgrade(app, addon, version ? {version} : {})
+  console.log('preparePgUpgrade:', result)
 } else {
-  const result = await upgradeRun(app, addon, version ? {version} : {})
-  console.log('upgradeRun:', result)
+  const result = await runPgUpgrade(app, addon, version ? {version} : {})
+  console.log('runPgUpgrade:', result)
 }

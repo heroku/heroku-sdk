@@ -21,7 +21,7 @@ export type PgUpgradeOpts = {
   version?: string
 }
 
-export async function info(
+export async function describePgDatabase(
   appIdentity: string,
   addonIdentity?: string,
   options: PgOptions = {},
@@ -32,7 +32,7 @@ export async function info(
   return data.database.info(addonId)
 }
 
-export async function credentials(
+export async function listPgCredentials(
   appIdentity: string,
   addonIdentity?: string,
   options: PgOptions = {},
@@ -43,7 +43,7 @@ export async function credentials(
   return data.postgresDatabase.listCredentials(addonId)
 }
 
-export async function maintenance(
+export async function describePgMaintenance(
   appIdentity: string,
   addonIdentity?: string,
   options: PgOptions = {},
@@ -54,7 +54,7 @@ export async function maintenance(
   return data.maintenance.info(addonId)
 }
 
-export async function backups(
+export async function listPgTransfers(
   appIdentity: string,
   options: PgOptions = {},
 ): Promise<TransferListByAppResult> {
@@ -63,7 +63,7 @@ export async function backups(
   return data.transfer.listByApp(appIdentity)
 }
 
-export async function upgradeRun(
+export async function runPgUpgrade(
   appIdentity: string,
   addonIdentity: string | undefined,
   body: PgUpgradeOpts = {},
@@ -78,7 +78,7 @@ export async function upgradeRun(
   return runUpgrade(addonId, body)
 }
 
-export async function upgradePrepare(
+export async function preparePgUpgrade(
   appIdentity: string,
   addonIdentity: string | undefined,
   body: PgUpgradeOpts = {},
@@ -87,7 +87,7 @@ export async function upgradePrepare(
   options.signal?.throwIfAborted()
   const addonId = await resolveAddonId(appIdentity, addonIdentity, options.clientOptions)
   const data = createDataClient(options.clientOptions)
-  // See note on upgradeRun.
+  // See note on runPgUpgrade.
   const prepareUpgrade = data.database.prepareUpgrade as (name: string, body: PgUpgradeOpts) => Promise<DatabasePrepareUpgradeResult>
   return prepareUpgrade(addonId, body)
 }
