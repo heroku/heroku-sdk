@@ -1,4 +1,4 @@
-import { createPlatformClient } from '../src/services/platform.js'
+import {createPlatformClient} from '../src/services/platform.js'
 
 // Create a client — automatically reads token from HEROKU_API_KEY or ~/.netrc
 //

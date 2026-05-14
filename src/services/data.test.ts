@@ -1,4 +1,6 @@
-import {describe, expect, it, vi} from 'vitest'
+import {
+  describe, expect, it, vi,
+} from 'vitest'
 
 const constructorSpy = vi.fn()
 
@@ -23,19 +25,15 @@ describe('createDataClient', () => {
 
     createDataClient({token: 'test-token'})
 
-    expect(constructorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({service: 'data', token: 'test-token'}),
-    )
+    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({service: 'data', token: 'test-token'}))
   })
 
   it('lets a user-supplied service override the default', async () => {
     constructorSpy.mockClear()
     const {createDataClient} = await import('./data.js')
 
-    createDataClient({service: 'custom', baseUrl: 'https://example.test', token: 'test-token'})
+    createDataClient({baseUrl: 'https://example.test', service: 'custom', token: 'test-token'})
 
-    expect(constructorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({service: 'custom', baseUrl: 'https://example.test'}),
-    )
+    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({baseUrl: 'https://example.test', service: 'custom'}))
   })
 })

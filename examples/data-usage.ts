@@ -1,4 +1,4 @@
-import { createDataClient } from '../src/services/data.js'
+import {createDataClient} from '../src/services/data.js'
 
 // Create a client — automatically reads token from HEROKU_API_KEY or ~/.netrc
 //
