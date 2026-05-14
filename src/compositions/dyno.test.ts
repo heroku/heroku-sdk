@@ -4,11 +4,11 @@ import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
 
-import {createHerokuClient} from '../core/create-client.js'
+import {createPlatformClient} from '../services/platform.js'
 import {restartDynos, scaleDynos} from './dyno.js'
 
-vi.mock('../core/create-client.js', () => ({
-  createHerokuClient: vi.fn(),
+vi.mock('../services/platform.js', () => ({
+  createPlatformClient: vi.fn(),
 }))
 
 describe('dyno compositions', () => {
@@ -21,7 +21,7 @@ describe('dyno compositions', () => {
       const formation = {quantity: 3, type: 'web'} as Formation
       const update = vi.fn().mockResolvedValue(formation)
       const batchUpdate = vi.fn()
-      vi.mocked(createHerokuClient).mockReturnValue({formation: {batchUpdate, update}} as never)
+      vi.mocked(createPlatformClient).mockReturnValue({formation: {batchUpdate, update}} as never)
 
       const result = await scaleDynos('app-1', {quantity: 3, type: 'web'})
 
@@ -37,7 +37,7 @@ describe('dyno compositions', () => {
       ]
       const update = vi.fn()
       const batchUpdate = vi.fn().mockResolvedValue(formations)
-      vi.mocked(createHerokuClient).mockReturnValue({formation: {batchUpdate, update}} as never)
+      vi.mocked(createPlatformClient).mockReturnValue({formation: {batchUpdate, update}} as never)
 
       const updates = [
         {quantity: 2, type: 'web'},
@@ -54,7 +54,7 @@ describe('dyno compositions', () => {
       const formations = [{quantity: 2, type: 'web'} as Formation]
       const update = vi.fn()
       const batchUpdate = vi.fn().mockResolvedValue(formations)
-      vi.mocked(createHerokuClient).mockReturnValue({formation: {batchUpdate, update}} as never)
+      vi.mocked(createPlatformClient).mockReturnValue({formation: {batchUpdate, update}} as never)
 
       await scaleDynos('app-1', [{quantity: 2, type: 'web'}])
 
@@ -68,16 +68,16 @@ describe('dyno compositions', () => {
 
       await expect(scaleDynos('app-1', {quantity: 1, type: 'web'}, {signal: controller.signal}))
         .rejects.toThrow()
-      expect(createHerokuClient).not.toHaveBeenCalled()
+      expect(createPlatformClient).not.toHaveBeenCalled()
     })
   })
 
   describe('restartDynos', () => {
     it('restarts all dynos when no target is provided', async () => {
-      const restartAll = vi.fn().mockResolvedValue()
+      const restartAll = vi.fn()
       const restart = vi.fn()
       const restartFormation = vi.fn()
-      vi.mocked(createHerokuClient).mockReturnValue({
+      vi.mocked(createPlatformClient).mockReturnValue({
         dyno: {restart, restartAll, restartFormation},
       } as never)
 
@@ -91,8 +91,8 @@ describe('dyno compositions', () => {
     it('restarts a formation when target is a process type', async () => {
       const restartAll = vi.fn()
       const restart = vi.fn()
-      const restartFormation = vi.fn().mockResolvedValue()
-      vi.mocked(createHerokuClient).mockReturnValue({
+      const restartFormation = vi.fn()
+      vi.mocked(createPlatformClient).mockReturnValue({
         dyno: {restart, restartAll, restartFormation},
       } as never)
 
@@ -105,9 +105,9 @@ describe('dyno compositions', () => {
 
     it('restarts a specific dyno when target is a dyno name', async () => {
       const restartAll = vi.fn()
-      const restart = vi.fn().mockResolvedValue()
+      const restart = vi.fn()
       const restartFormation = vi.fn()
-      vi.mocked(createHerokuClient).mockReturnValue({
+      vi.mocked(createPlatformClient).mockReturnValue({
         dyno: {restart, restartAll, restartFormation},
       } as never)
 
@@ -123,7 +123,7 @@ describe('dyno compositions', () => {
       controller.abort()
 
       await expect(restartDynos('app-1', undefined, {signal: controller.signal})).rejects.toThrow()
-      expect(createHerokuClient).not.toHaveBeenCalled()
+      expect(createPlatformClient).not.toHaveBeenCalled()
     })
   })
 })

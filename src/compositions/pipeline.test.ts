@@ -4,11 +4,11 @@ import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
 
-import {createHerokuClient} from '../core/create-client.js'
+import {createPlatformClient} from '../services/platform.js'
 import {promotePipeline} from './pipeline.js'
 
-vi.mock('../core/create-client.js', () => ({
-  createHerokuClient: vi.fn(),
+vi.mock('../services/platform.js', () => ({
+  createPlatformClient: vi.fn(),
 }))
 
 const createBody: PipelinePromotionCreateOpts = {
@@ -52,7 +52,7 @@ describe('promotePipeline', () => {
       {id: 't2', status: 'succeeded'},
     ]
     const {create, mockClient} = buildClient(promotion, [targets])
-    vi.mocked(createHerokuClient).mockReturnValue(mockClient as never)
+    vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
 
     const result = await promotePipeline(createBody)
 
@@ -75,7 +75,7 @@ describe('promotePipeline', () => {
       {id: 't2', status: 'succeeded'},
     ]
     const {list, mockClient} = buildClient(promotion, [pending, partial, done])
-    vi.mocked(createHerokuClient).mockReturnValue(mockClient as never)
+    vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
 
     const promise = promotePipeline(createBody, {intervalMs: 500})
     await vi.advanceTimersByTimeAsync(1000)
@@ -92,7 +92,7 @@ describe('promotePipeline', () => {
       {id: 't2', status: 'failed'},
     ]
     const {mockClient} = buildClient(promotion, [targets])
-    vi.mocked(createHerokuClient).mockReturnValue(mockClient as never)
+    vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
 
     const result = await promotePipeline(createBody)
 
@@ -102,7 +102,7 @@ describe('promotePipeline', () => {
   it('throws if the create response is missing an id', async () => {
     const promotion = {} as PipelinePromotion
     const {mockClient} = buildClient(promotion, [])
-    vi.mocked(createHerokuClient).mockReturnValue(mockClient as never)
+    vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
 
     await expect(promotePipeline(createBody)).rejects.toThrow(/did not include an id/)
   })
@@ -111,7 +111,7 @@ describe('promotePipeline', () => {
     const promotion = {id: 'promo-4'} as PipelinePromotion
     const pending: PipelinePromotionTarget[] = [{id: 't1', status: 'pending'}]
     const list = vi.fn().mockResolvedValue(pending)
-    vi.mocked(createHerokuClient).mockReturnValue({
+    vi.mocked(createPlatformClient).mockReturnValue({
       pipelinePromotion: {create: vi.fn().mockResolvedValue(promotion)},
       pipelinePromotionTarget: {list},
     } as never)
@@ -126,7 +126,7 @@ describe('promotePipeline', () => {
     const promotion = {id: 'promo-5'} as PipelinePromotion
     const pending: PipelinePromotionTarget[] = [{id: 't1', status: 'pending'}]
     const list = vi.fn().mockResolvedValue(pending)
-    vi.mocked(createHerokuClient).mockReturnValue({
+    vi.mocked(createPlatformClient).mockReturnValue({
       pipelinePromotion: {create: vi.fn().mockResolvedValue(promotion)},
       pipelinePromotionTarget: {list},
     } as never)
@@ -139,14 +139,14 @@ describe('promotePipeline', () => {
     await expectation
   })
 
-  it('forwards clientOptions to createHerokuClient', async () => {
+  it('forwards clientOptions to createPlatformClient', async () => {
     const promotion = {id: 'promo-6'} as PipelinePromotion
     const targets: PipelinePromotionTarget[] = [{id: 't1', status: 'succeeded'}]
     const {mockClient} = buildClient(promotion, [targets])
-    vi.mocked(createHerokuClient).mockReturnValue(mockClient as never)
+    vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
 
     await promotePipeline(createBody, {clientOptions: {token: 'abc'}})
 
-    expect(createHerokuClient).toHaveBeenCalledWith({token: 'abc'})
+    expect(createPlatformClient).toHaveBeenCalledWith({token: 'abc'})
   })
 })
