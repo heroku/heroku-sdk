@@ -21,6 +21,7 @@
     "example": "tsx",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
+    "prepare": "npm run build",
     "test": "vitest --run"
   },
   "license": "Apache-2.0",
