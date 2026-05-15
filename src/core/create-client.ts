@@ -3,8 +3,11 @@ import type {HerokuApiClientOptions} from '@heroku/api-client'
 import type {RouteDefinition} from '@heroku/types/3.sdk/routes'
 
 import {HerokuApiClient} from '@heroku/api-client'
+import createDebug from 'debug'
 
 import {dispatch} from './dispatcher.js'
+
+const debug = createDebug('heroku:sdk:client')
 
 type RoutesModule = Record<string, Record<string, RouteDefinition>>
 
@@ -13,14 +16,22 @@ export function createClient<T>(routes: RoutesModule, options: HerokuApiClientOp
 
   return new Proxy({}, {
     get(_target, resourceKey: string) {
-      if (!Object.hasOwn(routes, resourceKey)) return
+      if (!Object.hasOwn(routes, resourceKey)) {
+        debug('unknown resource: %s', resourceKey)
+        return
+      }
+
       const resourceRoutes = routes[resourceKey]
 
       return new Proxy({}, {
         get(_t, methodKey: string) {
           const route = resourceRoutes[methodKey]
-          if (!route) return
-          return (...args: unknown[]) => dispatch(httpClient, route, args)
+          if (!route) {
+            debug('unknown method: %s.%s', resourceKey, methodKey)
+            return
+          }
+
+          return (...args: unknown[]) => dispatch(httpClient, route, args, `${resourceKey}.${methodKey}`)
         },
       })
     },

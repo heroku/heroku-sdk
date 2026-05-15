@@ -1,7 +1,11 @@
 import type {HerokuApiClient} from '@heroku/api-client'
 import type {RouteDefinition} from '@heroku/types/3.sdk/routes'
 
+import createDebug from 'debug'
+
 import {interpolatePath} from './interpolate-path.js'
+
+const debug = createDebug('heroku:sdk:dispatcher')
 
 const PLACEHOLDER = /\{[^}]+\}/g
 
@@ -9,6 +13,7 @@ export async function dispatch(
   client: HerokuApiClient,
   route: RouteDefinition,
   args: unknown[],
+  invocation?: string,
 ): Promise<unknown> {
   const placeholderCount = (route.path.match(PLACEHOLDER) || []).length
   const pathParams = args.slice(0, placeholderCount) as string[]
@@ -21,10 +26,13 @@ export async function dispatch(
     body = remaining[0]
   }
 
+  debug('%s %s %s -> %s hasBody=%s', invocation ?? 'dispatch', route.method, route.path, path, body !== undefined)
+
   const response = await callMethod(client, route.method, path, body)
 
   const contentLength = response.headers.get('content-length')
   if (response.status === 204 || contentLength === '0') {
+    debug('%s empty response status=%d content-length=%s', invocation ?? 'dispatch', response.status, contentLength ?? '')
     return undefined
   }
 
@@ -59,6 +67,7 @@ function callMethod(
     }
 
     default: {
+      debug('unsupported HTTP method=%s path=%s', method, path)
       throw new Error(`Unsupported HTTP method: ${method}`)
     }
   }
