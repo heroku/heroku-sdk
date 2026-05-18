@@ -7,9 +7,16 @@ import type {
 
 import {createPlatformClient} from '../services/platform.js'
 
+export type ReleaseStreamContext = {
+  stream: ReadableStream<Uint8Array>
+  target: PipelinePromotionTarget
+}
+
 export type PromotePipelineOptions = {
   clientOptions?: HerokuApiClientOptions
   intervalMs?: number
+  onReleaseStream?: (context: ReleaseStreamContext) => Promise<void> | void
+  releaseStreamMaxAttempts?: number
   signal?: AbortSignal
   timeoutMs?: number
 }
@@ -20,6 +27,7 @@ export type PromotePipelineResult = {
 }
 
 const DEFAULT_INTERVAL_MS = 1000
+const DEFAULT_RELEASE_STREAM_MAX_ATTEMPTS = 100
 
 export async function promotePipeline(
   body: PipelinePromotionCreateOpts,
@@ -28,6 +36,8 @@ export async function promotePipeline(
   const {
     clientOptions,
     intervalMs = DEFAULT_INTERVAL_MS,
+    onReleaseStream,
+    releaseStreamMaxAttempts = DEFAULT_RELEASE_STREAM_MAX_ATTEMPTS,
     signal,
     timeoutMs,
   } = options
@@ -41,17 +51,76 @@ export async function promotePipeline(
 
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
 
+  let streamHandled = false
+
   while (true) {
     signal?.throwIfAborted()
 
     // eslint-disable-next-line no-await-in-loop
     const targets = await client.pipelinePromotionTarget.list(promotion.id)
+
     if (targets.every(target => target.status !== 'pending')) {
       return {promotion, targets}
     }
 
+    if (
+      onReleaseStream
+      && !streamHandled
+      && targets.length === 1
+      && targets[0].release?.id
+      && targets[0].app?.id
+    ) {
+      streamHandled = true
+      const target = targets[0]
+      // eslint-disable-next-line no-await-in-loop
+      const release = await client.release.info(target.app!.id!, target.release!.id!)
+
+      if (release.output_stream_url) {
+        // eslint-disable-next-line no-await-in-loop
+        const stream = await fetchReleaseOutput(
+          release.output_stream_url,
+          releaseStreamMaxAttempts,
+          intervalMs,
+          signal,
+        )
+        // eslint-disable-next-line no-await-in-loop
+        await onReleaseStream({stream, target})
+      }
+    }
+
     if (deadline !== undefined && Date.now() >= deadline) {
       throw new Error(`Pipeline promotion ${promotion.id} did not reach a terminal state within ${timeoutMs}ms`)
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    await wait(intervalMs, signal)
+  }
+}
+
+async function fetchReleaseOutput(
+  url: string,
+  maxAttempts: number,
+  intervalMs: number,
+  signal?: AbortSignal,
+): Promise<ReadableStream<Uint8Array>> {
+  let attempt = 0
+  while (true) {
+    signal?.throwIfAborted()
+    attempt++
+    // eslint-disable-next-line no-await-in-loop
+    const response = await fetch(url, {signal})
+    if (response.ok && response.body) {
+      return response.body
+    }
+
+    if (response.body) {
+      // Drain so the connection can be reused.
+      // eslint-disable-next-line no-await-in-loop
+      await response.body.cancel().catch(() => {})
+    }
+
+    if (attempt >= maxAttempts) {
+      throw new Error('stream release output not available')
     }
 
     // eslint-disable-next-line no-await-in-loop
