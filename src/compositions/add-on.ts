@@ -1,5 +1,5 @@
 import type {HerokuApiClientOptions} from '@heroku/api-client'
-import type {AddOn, AddOnService, Plan} from '@heroku/types/3.sdk'
+import type {AddOn} from '@heroku/types/3.sdk'
 
 import {createPlatformClient} from '../services/platform.js'
 
@@ -17,19 +17,4 @@ export async function upgrade(
   options.signal?.throwIfAborted()
   const client = createPlatformClient(options.clientOptions)
   return client.addOn.update(appIdentity, addOnIdentity, {plan})
-}
-
-export async function services(options: AddOnOptions = {}): Promise<AddOnService[]> {
-  options.signal?.throwIfAborted()
-  const client = createPlatformClient(options.clientOptions)
-  return client.addOnService.list()
-}
-
-export async function plans(
-  serviceIdentity: string,
-  options: AddOnOptions = {},
-): Promise<Plan[]> {
-  options.signal?.throwIfAborted()
-  const client = createPlatformClient(options.clientOptions)
-  return client.plan.listByAddOn(serviceIdentity)
 }
