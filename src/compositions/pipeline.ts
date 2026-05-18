@@ -1,5 +1,7 @@
 import type {HerokuApiClientOptions} from '@heroku/api-client'
 import type {
+  App,
+  PipelineCoupling,
   PipelinePromotion,
   PipelinePromotionCreateOpts,
   PipelinePromotionTarget,
@@ -8,6 +10,15 @@ import type {
 import {HerokuApiClient} from '@heroku/api-client'
 
 import {createPlatformClient} from '../services/platform.js'
+
+export type ListPipelineAppsOptions = {
+  clientOptions?: HerokuApiClientOptions
+  signal?: AbortSignal
+}
+
+export type AppWithPipelineCoupling = App & {
+  pipelineCoupling: PipelineCoupling
+}
 
 export type ReleaseStreamContext = {
   stream: ReadableStream<Uint8Array>
@@ -97,6 +108,40 @@ export async function promotePipeline(
     // eslint-disable-next-line no-await-in-loop
     await wait(intervalMs, signal)
   }
+}
+
+export async function listPipelineApps(
+  pipelineId: string,
+  options: ListPipelineAppsOptions = {},
+): Promise<AppWithPipelineCoupling[]> {
+  options.signal?.throwIfAborted()
+  const platformClient = createPlatformClient(options.clientOptions)
+  const couplings = await platformClient.pipelineCoupling.listByPipeline(pipelineId)
+  if (couplings.length === 0) {
+    return []
+  }
+
+  options.signal?.throwIfAborted()
+  // /filters/apps is a Platform bulk endpoint that's not in the SDK route
+  // registry, so call it through a raw HerokuApiClient. It accepts the
+  // standard platform Accept header but uses a different `.filters` suffix.
+  const apiClient = new HerokuApiClient({
+    ...options.clientOptions,
+    service: 'platform',
+  })
+  const ids = couplings.map(coupling => coupling.app!.id!)
+  const response = await apiClient.post('/filters/apps', {in: {id: ids}}, {
+    headers: {
+      Accept: 'application/vnd.heroku+json; version=3.filters',
+      Range: 'id ..; max=1000;',
+    },
+  })
+  const apps = (await response.json()) as App[]
+
+  return apps.map(app => ({
+    ...app,
+    pipelineCoupling: couplings.find(coupling => coupling.app!.id === app.id)!,
+  }))
 }
 
 async function fetchReleaseOutput(

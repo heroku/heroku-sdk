@@ -6,7 +6,7 @@ import {
 } from 'vitest'
 
 import {createPlatformClient} from '../services/platform.js'
-import {promotePipeline} from './pipeline.js'
+import {listPipelineApps, promotePipeline} from './pipeline.js'
 
 vi.mock('../services/platform.js', () => ({
   createPlatformClient: vi.fn(),
@@ -351,5 +351,82 @@ describe('promotePipeline', () => {
       expect(onReleaseStream).not.toHaveBeenCalled()
       expect(stream).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('listPipelineApps', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns merged app+coupling rows', async () => {
+    const couplings = [
+      {app: {id: 'app-1'}, id: 'c1', stage: 'staging'},
+      {app: {id: 'app-2'}, id: 'c2', stage: 'production'},
+    ]
+    const apps = [
+      {id: 'app-1', name: 'staging-app'},
+      {id: 'app-2', name: 'prod-app'},
+    ]
+
+    const listByPipeline = vi.fn().mockResolvedValue(couplings)
+    vi.mocked(createPlatformClient).mockReturnValue({
+      pipelineCoupling: {listByPipeline},
+    } as never)
+
+    const post = vi.fn().mockResolvedValue(new Response(JSON.stringify(apps), {
+      headers: {'content-type': 'application/json'},
+      status: 200,
+    }))
+    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
+      this.post = post
+    } as never)
+
+    const result = await listPipelineApps('pipeline-1', {clientOptions: {token: 'abc'}})
+
+    expect(listByPipeline).toHaveBeenCalledWith('pipeline-1')
+    expect(post).toHaveBeenCalledWith(
+      '/filters/apps',
+      {in: {id: ['app-1', 'app-2']}},
+      {
+        headers: {
+          Accept: 'application/vnd.heroku+json; version=3.filters',
+          Range: 'id ..; max=1000;',
+        },
+      },
+    )
+    expect(result).toEqual([
+      {id: 'app-1', name: 'staging-app', pipelineCoupling: couplings[0]},
+      {id: 'app-2', name: 'prod-app', pipelineCoupling: couplings[1]},
+    ])
+  })
+
+  it('returns an empty array when the pipeline has no couplings', async () => {
+    const listByPipeline = vi.fn().mockResolvedValue([])
+    vi.mocked(createPlatformClient).mockReturnValue({
+      pipelineCoupling: {listByPipeline},
+    } as never)
+    const post = vi.fn()
+    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
+      this.post = post
+    } as never)
+
+    const result = await listPipelineApps('pipeline-empty')
+
+    expect(result).toEqual([])
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('honors an aborted signal before any work runs', async () => {
+    const controller = new AbortController()
+    controller.abort()
+
+    const listByPipeline = vi.fn()
+    vi.mocked(createPlatformClient).mockReturnValue({
+      pipelineCoupling: {listByPipeline},
+    } as never)
+
+    await expect(listPipelineApps('pipeline-1', {signal: controller.signal})).rejects.toThrow()
+    expect(listByPipeline).not.toHaveBeenCalled()
   })
 })
