@@ -5,6 +5,8 @@ import type {
   PipelinePromotionTarget,
 } from '@heroku/types/3.sdk'
 
+import {HerokuApiClient} from '@heroku/api-client'
+
 import {createPlatformClient} from '../services/platform.js'
 
 export type ReleaseStreamContext = {
@@ -103,17 +105,35 @@ async function fetchReleaseOutput(
   intervalMs: number,
   signal?: AbortSignal,
 ): Promise<ReadableStream<Uint8Array>> {
+  const parsed = new URL(url)
+  const path = `${parsed.pathname}${parsed.search}`
+  // The release output URL points at a third-party stream host (e.g. busl).
+  // Use a custom-service client so the platform prefixUrl and bearer token
+  // don't leak across origins.
+  const client = new HerokuApiClient({
+    baseUrl: parsed.origin,
+    service: 'custom',
+    token: '',
+  })
+
   let attempt = 0
   while (true) {
     signal?.throwIfAborted()
     attempt++
-    // eslint-disable-next-line no-await-in-loop
-    const response = await fetch(url, {signal})
-    if (response.ok && response.body) {
+    let response: Response | undefined
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      response = await client.stream(path, {headers: {Accept: '*/*'}})
+    } catch {
+      // Treat HTTP errors thrown by the api-client as a retryable miss.
+      response = undefined
+    }
+
+    if (response?.ok && response.body) {
       return response.body
     }
 
-    if (response.body) {
+    if (response?.body) {
       // Drain so the connection can be reused.
       // eslint-disable-next-line no-await-in-loop
       await response.body.cancel().catch(() => {})

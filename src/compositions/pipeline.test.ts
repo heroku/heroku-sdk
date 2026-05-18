@@ -1,5 +1,6 @@
 import type {PipelinePromotion, PipelinePromotionCreateOpts, PipelinePromotionTarget} from '@heroku/types/3.sdk'
 
+import {HerokuApiClient} from '@heroku/api-client'
 import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
@@ -9,6 +10,10 @@ import {promotePipeline} from './pipeline.js'
 
 vi.mock('../services/platform.js', () => ({
   createPlatformClient: vi.fn(),
+}))
+
+vi.mock('@heroku/api-client', () => ({
+  HerokuApiClient: vi.fn(),
 }))
 
 const createBody: PipelinePromotionCreateOpts = {
@@ -33,6 +38,15 @@ function buildClient(promotion: PipelinePromotion, listResults: PipelinePromotio
       pipelinePromotionTarget: {list},
     },
   }
+}
+
+function mockBuslClient(stream: vi.Mock) {
+  const constructorMock = vi.mocked(HerokuApiClient)
+  // Use a constructor function so `new HerokuApiClient(...)` succeeds.
+  constructorMock.mockImplementation(function (this: {stream: vi.Mock}) {
+    this.stream = stream
+  } as never)
+  return constructorMock
 }
 
 function buildSingleTargetClient(
@@ -196,7 +210,7 @@ describe('promotePipeline', () => {
       }]
       const {mockClient, releaseInfo} = buildSingleTargetClient(promotion, [pendingWithRelease, done], {
         // eslint-disable-next-line camelcase
-        output_stream_url: 'https://busl.example/release',
+        output_stream_url: 'https://busl.example/release?token=abc',
       })
       vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
 
@@ -206,10 +220,11 @@ describe('promotePipeline', () => {
           controller.close()
         },
       })
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(streamBody, {status: 200}))
+      const stream = vi.fn().mockResolvedValue(new Response(streamBody, {status: 200}))
+      const constructorMock = mockBuslClient(stream)
 
-      const onReleaseStream = vi.fn(async ({stream}: {stream: ReadableStream<Uint8Array>}) => {
-        const reader = stream.getReader()
+      const onReleaseStream = vi.fn(async ({stream: body}: {stream: ReadableStream<Uint8Array>}) => {
+        const reader = body.getReader()
         const {value} = await reader.read()
         expect(new TextDecoder().decode(value)).toBe('Release Command Output')
         reader.releaseLock()
@@ -221,10 +236,13 @@ describe('promotePipeline', () => {
 
       expect(onReleaseStream).toHaveBeenCalledTimes(1)
       expect(releaseInfo).toHaveBeenCalledWith('target-app-1', 'release-1')
-      expect(fetchSpy).toHaveBeenCalledWith('https://busl.example/release', {signal: undefined})
+      expect(constructorMock).toHaveBeenCalledWith({
+        baseUrl: 'https://busl.example',
+        service: 'custom',
+        token: '',
+      })
+      expect(stream).toHaveBeenCalledWith('/release?token=abc', {headers: {Accept: '*/*'}})
       expect(result.targets).toEqual(done)
-
-      fetchSpy.mockRestore()
     })
 
     it('retries the busl fetch up to releaseStreamMaxAttempts before failing', async () => {
@@ -241,7 +259,8 @@ describe('promotePipeline', () => {
       })
       vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('not yet', {status: 404}))
+      const stream = vi.fn().mockResolvedValue(new Response('not yet', {status: 404}))
+      mockBuslClient(stream)
 
       const promise = promotePipeline(singleTargetBody, {
         intervalMs: 1,
@@ -252,8 +271,7 @@ describe('promotePipeline', () => {
       await vi.advanceTimersByTimeAsync(100)
       await expectation
 
-      expect(fetchSpy).toHaveBeenCalledTimes(3)
-      fetchSpy.mockRestore()
+      expect(stream).toHaveBeenCalledTimes(3)
     })
 
     it('skips streaming when there are multiple targets', async () => {
@@ -290,7 +308,8 @@ describe('promotePipeline', () => {
       vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
 
       const onReleaseStream = vi.fn()
-      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      const stream = vi.fn()
+      mockBuslClient(stream)
 
       const promise = promotePipeline(createBody, {intervalMs: 100, onReleaseStream})
       await vi.advanceTimersByTimeAsync(500)
@@ -298,8 +317,7 @@ describe('promotePipeline', () => {
 
       expect(onReleaseStream).not.toHaveBeenCalled()
       expect(releaseInfo).not.toHaveBeenCalled()
-      expect(fetchSpy).not.toHaveBeenCalled()
-      fetchSpy.mockRestore()
+      expect(stream).not.toHaveBeenCalled()
     })
 
     it('skips streaming when the release has no output_stream_url', async () => {
@@ -323,15 +341,15 @@ describe('promotePipeline', () => {
       vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
 
       const onReleaseStream = vi.fn()
-      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      const stream = vi.fn()
+      mockBuslClient(stream)
 
       const promise = promotePipeline(singleTargetBody, {intervalMs: 100, onReleaseStream})
       await vi.advanceTimersByTimeAsync(500)
       await promise
 
       expect(onReleaseStream).not.toHaveBeenCalled()
-      expect(fetchSpy).not.toHaveBeenCalled()
-      fetchSpy.mockRestore()
+      expect(stream).not.toHaveBeenCalled()
     })
   })
 })
