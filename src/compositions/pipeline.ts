@@ -44,8 +44,8 @@ export async function promotePipeline(
     timeoutMs,
   } = options
 
-  const client = createPlatformClient(clientOptions)
-  const promotion = await client.pipelinePromotion.create(body)
+  const platformClient = createPlatformClient(clientOptions)
+  const promotion = await platformClient.pipelinePromotion.create(body)
 
   if (!promotion.id) {
     throw new Error('Pipeline promotion response did not include an id')
@@ -59,7 +59,7 @@ export async function promotePipeline(
     signal?.throwIfAborted()
 
     // eslint-disable-next-line no-await-in-loop
-    const targets = await client.pipelinePromotionTarget.list(promotion.id)
+    const targets = await platformClient.pipelinePromotionTarget.list(promotion.id)
 
     if (targets.every(target => target.status !== 'pending')) {
       return {promotion, targets}
@@ -75,7 +75,7 @@ export async function promotePipeline(
       streamHandled = true
       const target = targets[0]
       // eslint-disable-next-line no-await-in-loop
-      const release = await client.release.info(target.app!.id!, target.release!.id!)
+      const release = await platformClient.release.info(target.app!.id!, target.release!.id!)
 
       if (release.output_stream_url) {
         // eslint-disable-next-line no-await-in-loop
@@ -110,7 +110,7 @@ async function fetchReleaseOutput(
   // The release output URL points at a third-party stream host (e.g. busl).
   // Use a custom-service client so the platform prefixUrl and bearer token
   // don't leak across origins.
-  const client = new HerokuApiClient({
+  const buslClient = new HerokuApiClient({
     baseUrl: parsed.origin,
     service: 'custom',
     token: '',
@@ -123,7 +123,7 @@ async function fetchReleaseOutput(
     let response: Response | undefined
     try {
       // eslint-disable-next-line no-await-in-loop
-      response = await client.stream(path, {headers: {Accept: '*/*'}})
+      response = await buslClient.stream(path, {headers: {Accept: '*/*'}})
     } catch {
       // Treat HTTP errors thrown by the api-client as a retryable miss.
       response = undefined
