@@ -1,5 +1,6 @@
 import type {PipelinePromotion, PipelinePromotionCreateOpts, PipelinePromotionTarget} from '@heroku/types/3.sdk'
 
+import {HerokuApiClient} from '@heroku/api-client'
 import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
@@ -9,6 +10,10 @@ import {promotePipeline} from './pipeline.js'
 
 vi.mock('../services/platform.js', () => ({
   createPlatformClient: vi.fn(),
+}))
+
+vi.mock('@heroku/api-client', () => ({
+  HerokuApiClient: vi.fn(),
 }))
 
 const createBody: PipelinePromotionCreateOpts = {
@@ -32,6 +37,38 @@ function buildClient(promotion: PipelinePromotion, listResults: PipelinePromotio
       pipelinePromotion: {create},
       pipelinePromotionTarget: {list},
     },
+  }
+}
+
+function mockBuslClient(stream: vi.Mock) {
+  const constructorMock = vi.mocked(HerokuApiClient)
+  // Use a constructor function so `new HerokuApiClient(...)` succeeds.
+  constructorMock.mockImplementation(function (this: {stream: vi.Mock}) {
+    this.stream = stream
+  } as never)
+  return constructorMock
+}
+
+function buildSingleTargetClient(
+  promotion: PipelinePromotion,
+  listResults: PipelinePromotionTarget[][],
+  release: {output_stream_url?: null | string},
+) {
+  const create = vi.fn().mockResolvedValue(promotion)
+  const list = vi.fn()
+  for (const result of listResults) {
+    list.mockResolvedValueOnce(result)
+  }
+
+  const releaseInfo = vi.fn().mockResolvedValue(release)
+
+  return {
+    mockClient: {
+      pipelinePromotion: {create},
+      pipelinePromotionTarget: {list},
+      release: {info: releaseInfo},
+    },
+    releaseInfo,
   }
 }
 
@@ -148,5 +185,171 @@ describe('promotePipeline', () => {
     await promotePipeline(createBody, {clientOptions: {token: 'abc'}})
 
     expect(createPlatformClient).toHaveBeenCalledWith({token: 'abc'})
+  })
+
+  describe('with onReleaseStream', () => {
+    const singleTargetBody: PipelinePromotionCreateOpts = {
+      pipeline: {id: 'pipeline-1'},
+      source: {app: {id: 'source-app'}},
+      targets: [{app: {id: 'target-app-1'}}],
+    }
+
+    it('hands the release output stream to onReleaseStream and resumes polling', async () => {
+      const promotion = {id: 'promo-stream'} as PipelinePromotion
+      const pendingWithRelease: PipelinePromotionTarget[] = [{
+        app: {id: 'target-app-1'},
+        id: 't1',
+        release: {id: 'release-1'},
+        status: 'pending',
+      }]
+      const done: PipelinePromotionTarget[] = [{
+        app: {id: 'target-app-1'},
+        id: 't1',
+        release: {id: 'release-1'},
+        status: 'succeeded',
+      }]
+      const {mockClient, releaseInfo} = buildSingleTargetClient(promotion, [pendingWithRelease, done], {
+        // eslint-disable-next-line camelcase
+        output_stream_url: 'https://busl.example/release?token=abc',
+      })
+      vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
+
+      const streamBody = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('Release Command Output'))
+          controller.close()
+        },
+      })
+      const stream = vi.fn().mockResolvedValue(new Response(streamBody, {status: 200}))
+      const constructorMock = mockBuslClient(stream)
+
+      const onReleaseStream = vi.fn(async ({stream: body}: {stream: ReadableStream<Uint8Array>}) => {
+        const reader = body.getReader()
+        const {value} = await reader.read()
+        expect(new TextDecoder().decode(value)).toBe('Release Command Output')
+        reader.releaseLock()
+      })
+
+      const promise = promotePipeline(singleTargetBody, {intervalMs: 100, onReleaseStream})
+      await vi.advanceTimersByTimeAsync(500)
+      const result = await promise
+
+      expect(onReleaseStream).toHaveBeenCalledTimes(1)
+      expect(releaseInfo).toHaveBeenCalledWith('target-app-1', 'release-1')
+      expect(constructorMock).toHaveBeenCalledWith({
+        baseUrl: 'https://busl.example',
+        service: 'custom',
+        token: '',
+      })
+      expect(stream).toHaveBeenCalledWith('/release?token=abc', {headers: {Accept: '*/*'}})
+      expect(result.targets).toEqual(done)
+    })
+
+    it('retries the busl fetch up to releaseStreamMaxAttempts before failing', async () => {
+      const promotion = {id: 'promo-retry'} as PipelinePromotion
+      const pendingWithRelease: PipelinePromotionTarget[] = [{
+        app: {id: 'target-app-1'},
+        id: 't1',
+        release: {id: 'release-1'},
+        status: 'pending',
+      }]
+      const {mockClient} = buildSingleTargetClient(promotion, [pendingWithRelease], {
+        // eslint-disable-next-line camelcase
+        output_stream_url: 'https://busl.example/release',
+      })
+      vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
+
+      const stream = vi.fn().mockResolvedValue(new Response('not yet', {status: 404}))
+      mockBuslClient(stream)
+
+      const promise = promotePipeline(singleTargetBody, {
+        intervalMs: 1,
+        onReleaseStream: vi.fn(),
+        releaseStreamMaxAttempts: 3,
+      })
+      const expectation = expect(promise).rejects.toThrow(/stream release output not available/)
+      await vi.advanceTimersByTimeAsync(100)
+      await expectation
+
+      expect(stream).toHaveBeenCalledTimes(3)
+    })
+
+    it('skips streaming when there are multiple targets', async () => {
+      const promotion = {id: 'promo-multi'} as PipelinePromotion
+      const pending: PipelinePromotionTarget[] = [
+        {
+          app: {id: 'target-app-1'},
+          id: 't1',
+          release: {id: 'release-1'},
+          status: 'pending',
+        },
+        {
+          app: {id: 'target-app-2'},
+          id: 't2',
+          status: 'pending',
+        },
+      ]
+      const done: PipelinePromotionTarget[] = [
+        {
+          app: {id: 'target-app-1'},
+          id: 't1',
+          status: 'succeeded',
+        },
+        {
+          app: {id: 'target-app-2'},
+          id: 't2',
+          status: 'succeeded',
+        },
+      ]
+      const {mockClient, releaseInfo} = buildSingleTargetClient(promotion, [pending, done], {
+        // eslint-disable-next-line camelcase
+        output_stream_url: 'https://busl.example/release',
+      })
+      vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
+
+      const onReleaseStream = vi.fn()
+      const stream = vi.fn()
+      mockBuslClient(stream)
+
+      const promise = promotePipeline(createBody, {intervalMs: 100, onReleaseStream})
+      await vi.advanceTimersByTimeAsync(500)
+      await promise
+
+      expect(onReleaseStream).not.toHaveBeenCalled()
+      expect(releaseInfo).not.toHaveBeenCalled()
+      expect(stream).not.toHaveBeenCalled()
+    })
+
+    it('skips streaming when the release has no output_stream_url', async () => {
+      const promotion = {id: 'promo-no-url'} as PipelinePromotion
+      const pendingWithRelease: PipelinePromotionTarget[] = [{
+        app: {id: 'target-app-1'},
+        id: 't1',
+        release: {id: 'release-1'},
+        status: 'pending',
+      }]
+      const done: PipelinePromotionTarget[] = [{
+        app: {id: 'target-app-1'},
+        id: 't1',
+        release: {id: 'release-1'},
+        status: 'succeeded',
+      }]
+      const {mockClient} = buildSingleTargetClient(promotion, [pendingWithRelease, done], {
+        // eslint-disable-next-line camelcase
+        output_stream_url: null,
+      })
+      vi.mocked(createPlatformClient).mockReturnValue(mockClient as never)
+
+      const onReleaseStream = vi.fn()
+      const stream = vi.fn()
+      mockBuslClient(stream)
+
+      const promise = promotePipeline(singleTargetBody, {intervalMs: 100, onReleaseStream})
+      await vi.advanceTimersByTimeAsync(500)
+      await promise
+
+      expect(onReleaseStream).not.toHaveBeenCalled()
+      expect(stream).not.toHaveBeenCalled()
+    })
   })
 })
