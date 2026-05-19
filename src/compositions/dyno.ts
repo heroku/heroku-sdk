@@ -1,10 +1,10 @@
 import type {HerokuApiClientOptions} from '@heroku/api-client'
-import type {
-  Formation,
-  FormationBatchUpdateOpts,
-  FormationUpdateOpts,
-} from '@heroku/types/3.sdk'
+import type {Formation, FormationBatchUpdateOpts} from '@heroku/types/3.sdk'
 
+import type {ResourceCtx} from '../core/extend-resource.js'
+
+import * as dynoResource from '../resources/platform/dyno.js'
+import {createDataClient} from '../services/data.js'
 import {createPlatformClient} from '../services/platform.js'
 
 export type DynoOptions = {
@@ -12,13 +12,23 @@ export type DynoOptions = {
   signal?: AbortSignal
 }
 
-export type ScaleDynosUpdate = FormationUpdateOpts & {
-  type: string
-}
+export type ScaleDynosUpdate = dynoResource.ScaleDynosUpdate
+export type RestartDynosTarget = dynoResource.RestartDynosTarget
 
-export type RestartDynosTarget
-  = | {dyno: string}
-  | {type: string}
+function makeCtx(options: DynoOptions): ResourceCtx {
+  let platform: ReturnType<typeof createPlatformClient> | undefined
+  let data: ReturnType<typeof createDataClient> | undefined
+  return {
+    get data() {
+      data ??= createDataClient(options.clientOptions)
+      return data
+    },
+    get platform() {
+      platform ??= createPlatformClient(options.clientOptions)
+      return platform
+    },
+  }
+}
 
 export function scaleDynos(
   appIdentity: string,
@@ -35,15 +45,11 @@ export async function scaleDynos(
   updates: FormationBatchUpdateOpts['updates'] | ScaleDynosUpdate,
   options: DynoOptions = {},
 ): Promise<Formation | Formation[]> {
-  options.signal?.throwIfAborted()
-  const client = createPlatformClient(options.clientOptions)
-
   if (Array.isArray(updates)) {
-    return client.formation.batchUpdate(appIdentity, {updates})
+    return dynoResource.scaleDynos(makeCtx(options), appIdentity, updates, {signal: options.signal})
   }
 
-  const {type, ...body} = updates
-  return client.formation.update(appIdentity, type, body)
+  return dynoResource.scaleDynos(makeCtx(options), appIdentity, updates, {signal: options.signal})
 }
 
 export async function restartDynos(
@@ -51,18 +57,5 @@ export async function restartDynos(
   target?: RestartDynosTarget,
   options: DynoOptions = {},
 ): Promise<void> {
-  options.signal?.throwIfAborted()
-  const client = createPlatformClient(options.clientOptions)
-
-  if (!target) {
-    await client.dyno.restartAll(appIdentity)
-    return
-  }
-
-  if ('dyno' in target) {
-    await client.dyno.restart(appIdentity, target.dyno)
-    return
-  }
-
-  await client.dyno.restartFormation(appIdentity, target.type)
+  await dynoResource.restartDynos(makeCtx(options), appIdentity, target, {signal: options.signal})
 }
