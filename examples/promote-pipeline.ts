@@ -1,6 +1,13 @@
-import {promotePipeline} from '../src/compositions/pipeline.js'
+// Run: npm run example -- examples/promote-pipeline.ts
+// Requires: HEROKU_API_KEY in env or a valid .netrc entry for api.heroku.com.
+//          PIPELINE_ID, SOURCE_APP_ID, TARGET_APP_ID in env.
 
-const result = await promotePipeline(
+import {HerokuSDK} from '../src/core/heroku-sdk.js'
+import {pipelinePromotionExtensions} from '../src/resources/extensions/platform.js'
+
+const sdk = new HerokuSDK({extensions: [pipelinePromotionExtensions]})
+
+const result = await sdk.platform.pipelinePromotion.promote(
   {
     pipeline: {id: process.env.PIPELINE_ID!},
     source: {app: {id: process.env.SOURCE_APP_ID!}},
