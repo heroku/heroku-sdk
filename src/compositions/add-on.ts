@@ -1,9 +1,9 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
-import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
+import type { HerokuApiClientOptions } from '@heroku/api-client'
+import type { AddOn, AddOnAttachment, Plan } from '@heroku/types/3.sdk'
 
-import {NotFoundError} from '@heroku/api-client'
+import { NotFoundError } from '@heroku/api-client'
 
-import {createPlatformClient} from '../services/platform.js'
+import { createPlatformClient } from '../services/platform.js'
 
 type PlatformClient = ReturnType<typeof createPlatformClient>
 
@@ -24,7 +24,7 @@ export type ResolveAddonOptions = AddOnOptions & {
  * can rely on the narrower type.
  */
 export type ResolvedAddOn = AddOn & {
-  app: AddOn['app'] & {id: string}
+  app: AddOn['app'] & { id: string }
   id: string
 }
 
@@ -42,7 +42,7 @@ export class AddonNotFoundError extends Error {
   }
 
   public get body() {
-    return {id: this.id, message: this.message, resource: this.resource}
+    return { id: this.id, message: this.message, resource: this.resource }
   }
 }
 
@@ -56,7 +56,7 @@ export class AddonAmbiguousError extends Error {
   }
 
   public get body() {
-    return {id: this.id, message: this.message}
+    return { id: this.id, message: this.message }
   }
 }
 
@@ -82,7 +82,7 @@ export async function upgrade(
   })
 
   options.signal?.throwIfAborted()
-  return client.addOn.update(addon.app.id, addon.id, {plan})
+  return client.addOn.update(addon.app.id, addon.id, { plan })
 }
 
 /**
@@ -139,7 +139,7 @@ export async function describeAddon(
   const plan = addon.plan as Plan | undefined
   return {
     ...addon,
-    ...(plan && {plan: {...plan, price: grandfatheredPrice(addon)}}),
+    ...(plan && { plan: { ...plan, price: grandfatheredPrice(addon) } }),
     attachments,
   }
 }
@@ -217,12 +217,12 @@ export async function resolveAddonByAttachment(
 async function resolveAddonInternal(
   client: PlatformClient,
   addonIdentity: string,
-  options: {addonService?: string; appIdentity?: string} = {},
+  options: { addonService?: string; appIdentity?: string } = {},
 ): Promise<ResolvedAddOn> {
-  const {addonService, appIdentity} = options
+  const { addonService, appIdentity } = options
 
   const resolveBy = async (app?: string): Promise<ResolvedAddOn> => {
-    const body = app ? {addon: addonIdentity, app} : {addon: addonIdentity}
+    const body = app ? { addon: addonIdentity, app } : { addon: addonIdentity }
     const matches = await client.addOn.resolution(body)
     const filtered = addonService
       ? matches.filter(addon => addon.addon_service?.name === addonService)
@@ -251,7 +251,7 @@ async function isAddOnNotFound(error: unknown): Promise<boolean> {
   }
 
   try {
-    const body = await error.response.clone().json() as {resource?: string}
+    const body = await error.response.clone().json() as { resource?: string }
     return body.resource === 'add_on'
   } catch {
     return false
