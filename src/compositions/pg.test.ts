@@ -11,6 +11,7 @@ import {
   describePgMaintenance,
   listPgCredentials,
   listPgTransfers,
+  parseAddonReference,
   preparePgUpgrade,
   runPgUpgrade,
 } from './pg.js'
@@ -175,6 +176,33 @@ describe('pg compositions', () => {
 
       expect(prepareUpgrade).toHaveBeenCalledWith('addon-8', {version: '17'})
       expect(result).toEqual({message: 'scheduled'})
+    })
+  })
+
+  describe('parseAddonReference', () => {
+    it('splits a parent::branch reference', () => {
+      expect(parseAddonReference('parent-app::branch')).toEqual({
+        addon: 'branch',
+        app: 'parent-app',
+      })
+    })
+
+    it('uses fallbackApp when the reference has no namespace', () => {
+      expect(parseAddonReference('my-branch', 'fallback-app')).toEqual({
+        addon: 'my-branch',
+        app: 'fallback-app',
+      })
+    })
+
+    it('omits app when neither a namespace nor fallback is provided', () => {
+      expect(parseAddonReference('my-branch')).toEqual({addon: 'my-branch'})
+    })
+
+    it('prefers the parsed namespace over fallbackApp', () => {
+      expect(parseAddonReference('parent::branch', 'fallback-app')).toEqual({
+        addon: 'branch',
+        app: 'parent',
+      })
     })
   })
 })

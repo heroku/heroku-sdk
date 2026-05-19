@@ -21,6 +21,28 @@ export type PgUpgradeOpts = {
   version?: string
 }
 
+/**
+ * Split a Heroku Postgres addon reference of the form `parent::branch`
+ * into its app and addon parts. References without `::` resolve to the
+ * `fallbackApp` (when provided).
+ *
+ * Examples:
+ *   parseAddonReference('parent-app::branch')       → {app: 'parent-app', addon: 'branch'}
+ *   parseAddonReference('branch-name', 'fallback')  → {app: 'fallback',   addon: 'branch-name'}
+ *   parseAddonReference('branch-name')              → {addon: 'branch-name'}
+ */
+export function parseAddonReference(
+  reference: string,
+  fallbackApp?: string,
+): {addon: string; app?: string} {
+  const match = reference.match(/^(.+)::(.+)$/)
+  if (match) {
+    return {addon: match[2], app: match[1]}
+  }
+
+  return fallbackApp ? {addon: reference, app: fallbackApp} : {addon: reference}
+}
+
 export async function describePgDatabase(
   appIdentity: string,
   addonIdentity?: string,

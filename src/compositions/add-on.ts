@@ -134,6 +134,35 @@ export async function describeAddon(
   return Object.assign(addon, {attachments})
 }
 
+/**
+ * Resolve a Platform add-on by identity.
+ *
+ * The add-on identity may be:
+ *   - a UUID (`d5e3f2a4-...`)
+ *   - a globally-unique name (`postgres-curved-12345`)
+ *   - a namespaced credential reference (`postgres-curved-12345::SECONDARY`)
+ *
+ * When `appIdentity` is provided, the resolve is scoped to that app first
+ * and falls back to a global resolve if the platform returns 404 add_on.
+ * Namespaced identities (containing `::`) skip the app-scoped lookup
+ * because they are globally unique.
+ *
+ * `addonService` (e.g. `heroku-postgresql`) is filtered client-side after
+ * the resolve. The platform's server-side `addon_service` filter excludes
+ * alpha add-ons, so we don't pass it through.
+ *
+ * Errors:
+ *   - throws `AddonNotFoundError` if no match is found
+ *   - throws `AddonAmbiguousError` if multiple matches remain after filtering
+ *
+ * NOTE on Heroku Postgres branch references:
+ * The data CLI accepts a `parent-app::branch-name` syntax that means
+ * "branch `branch-name` of the database on app `parent-app`." That
+ * convention is *not* the same as the `service::name` credential
+ * reference understood here. If you have a branch reference, parse it
+ * first with `parseAddonReference` (in `pg.ts`) and pass `addon` /
+ * `app` separately to this resolver.
+ */
 async function resolveAddon(
   client: PlatformClient,
   addonIdentity: string,
@@ -143,8 +172,6 @@ async function resolveAddon(
 
   const resolveBy = async (app?: string): Promise<AddOn> => {
     const body = app ? {addon: addonIdentity, app} : {addon: addonIdentity}
-    // Note: we deliberately don't pass `addon_service` to the platform here.
-    // Its server-side filter excludes alpha add-ons. Filter client-side instead.
     const matches = await client.addOn.resolution(body)
     const filtered = addonService
       ? matches.filter(addon => (addon.addon_service as undefined | {name?: string})?.name === addonService)
@@ -152,8 +179,6 @@ async function resolveAddon(
     return singularize(filtered)
   }
 
-  // A namespaced identity (`service::name`) is globally resolvable; skip the
-  // app-scoped lookup. Same when no app was provided.
   if (!appIdentity || addonIdentity.includes('::')) {
     return resolveBy()
   }
