@@ -1,4 +1,4 @@
-import type {AddOn, AddOnAttachment} from '@heroku/types/3.sdk'
+import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
 import {NotFoundError} from '@heroku/api-client'
 import {
@@ -6,7 +6,7 @@ import {
 } from 'vitest'
 
 import {createPlatformClient} from '../services/platform.js'
-import {describeAddon, upgrade} from './add-on.js'
+import {describeAddon, listPlans, upgrade} from './add-on.js'
 
 vi.mock('../services/platform.js', () => ({
   createPlatformClient: vi.fn(),
@@ -26,9 +26,11 @@ function buildAddon(overrides: Partial<AddOn> = {}): AddOn {
 function buildAddOnClient({
   attachments = [],
   resolveResponses,
+  updateResponse,
 }: {
   attachments?: AddOnAttachment[]
   resolveResponses: Array<AddOn[] | Error>
+  updateResponse?: AddOn
 }) {
   const resolution = vi.fn()
   for (const response of resolveResponses) {
@@ -40,14 +42,15 @@ function buildAddOnClient({
   }
 
   const listByAddOn = vi.fn().mockResolvedValue(attachments)
+  const update = vi.fn().mockResolvedValue(updateResponse ?? {})
 
   const client = {
-    addOn: {resolution},
+    addOn: {resolution, update},
     addOnAttachment: {listByAddOn},
   }
   vi.mocked(createPlatformClient).mockReturnValue(client as never)
 
-  return {listByAddOn, resolution}
+  return {listByAddOn, resolution, update}
 }
 
 function buildNotFound(resource = 'add_on'): NotFoundError {
@@ -64,22 +67,41 @@ describe('add-on compositions', () => {
   })
 
   describe('upgrade', () => {
-    it('calls addOn.update with the plan', async () => {
-      const addOn = {name: 'heroku-postgresql', plan: {name: 'premium-0'}} as AddOn
-      const update = vi.fn().mockResolvedValue(addOn)
-      vi.mocked(createPlatformClient).mockReturnValue({addOn: {update}} as never)
+    it('resolves the addon then calls addOn.update with the plan', async () => {
+      const resolved = buildAddon({app: {id: 'app-1', name: 'my-app'}, id: 'addon-1', name: 'kafka-swiftly-123'})
+      const updated = buildAddon({id: 'addon-1', name: 'kafka-swiftly-123'})
+      const {resolution, update} = buildAddOnClient({
+        resolveResponses: [[resolved]],
+        updateResponse: updated,
+      })
 
-      const result = await upgrade('my-app', 'heroku-postgresql', 'heroku-postgresql:premium-0')
+      const result = await upgrade('kafka-swiftly-123', 'heroku-kafka:hobby', {appIdentity: 'my-app'})
 
-      expect(update).toHaveBeenCalledWith('my-app', 'heroku-postgresql', {plan: 'heroku-postgresql:premium-0'})
-      expect(result).toBe(addOn)
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'kafka-swiftly-123', app: 'my-app'})
+      expect(update).toHaveBeenCalledExactlyOnceWith('app-1', 'addon-1', {plan: 'heroku-kafka:hobby'})
+      expect(result).toBe(updated)
+    })
+
+    it('resolves globally when no appIdentity is provided', async () => {
+      const resolved = buildAddon({app: {id: 'app-1', name: 'my-app'}, id: 'addon-1'})
+      const {resolution, update} = buildAddOnClient({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+
+      await upgrade('postgres::sushi', 'heroku-postgresql:premium-0')
+
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'postgres::sushi'})
+      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'heroku-postgresql:premium-0'})
     })
 
     it('forwards clientOptions to createPlatformClient', async () => {
-      const update = vi.fn().mockResolvedValue({} as AddOn)
-      vi.mocked(createPlatformClient).mockReturnValue({addOn: {update}} as never)
+      buildAddOnClient({
+        resolveResponses: [[buildAddon({app: {id: 'app-1'}, id: 'addon-1'})]],
+        updateResponse: buildAddon(),
+      })
 
-      await upgrade('my-app', 'addon-1', 'plan-1', {clientOptions: {token: 'test-token'}})
+      await upgrade('addon-1', 'plan-1', {clientOptions: {token: 'test-token'}})
 
       expect(createPlatformClient).toHaveBeenCalledWith({token: 'test-token'})
     })
@@ -88,7 +110,60 @@ describe('add-on compositions', () => {
       const controller = new AbortController()
       controller.abort()
 
-      await expect(upgrade('my-app', 'addon-1', 'plan-1', {signal: controller.signal})).rejects.toThrow()
+      await expect(upgrade('addon-1', 'plan-1', {signal: controller.signal})).rejects.toThrow()
+      expect(createPlatformClient).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('listPlans', () => {
+    it('returns plans sorted ascending by price.cents', async () => {
+      const plans = [
+        {id: 'p3', name: 'premium-0', price: {cents: 5000, unit: 'month'}},
+        {id: 'p1', name: 'free', price: {cents: 0, unit: 'month'}},
+        {id: 'p2', name: 'hobby', price: {cents: 700, unit: 'month'}},
+      ] as Plan[]
+      const listByAddOn = vi.fn().mockResolvedValue(plans)
+      vi.mocked(createPlatformClient).mockReturnValue({plan: {listByAddOn}} as never)
+
+      const result = await listPlans('heroku-postgresql')
+
+      expect(listByAddOn).toHaveBeenCalledWith('heroku-postgresql')
+      expect(result.map(plan => plan.id)).toEqual(['p1', 'p2', 'p3'])
+    })
+
+    it('places plans without a price after priced plans', async () => {
+      const plans = [
+        {id: 'p3', name: 'premium-0', price: {cents: 5000}},
+        {id: 'p4', name: 'metered', price: {metered: true}},
+        {id: 'p1', name: 'free', price: {cents: 0}},
+      ] as Plan[]
+      const listByAddOn = vi.fn().mockResolvedValue(plans)
+      vi.mocked(createPlatformClient).mockReturnValue({plan: {listByAddOn}} as never)
+
+      const result = await listPlans('heroku-redis')
+
+      expect(result.map(plan => plan.id)).toEqual(['p1', 'p3', 'p4'])
+    })
+
+    it('does not mutate the input list', async () => {
+      const plans = [
+        {id: 'p2', name: 'b', price: {cents: 100}},
+        {id: 'p1', name: 'a', price: {cents: 0}},
+      ] as Plan[]
+      const original = [...plans]
+      const listByAddOn = vi.fn().mockResolvedValue(plans)
+      vi.mocked(createPlatformClient).mockReturnValue({plan: {listByAddOn}} as never)
+
+      await listPlans('svc')
+
+      expect(plans).toEqual(original)
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(listPlans('svc', {signal: controller.signal})).rejects.toThrow()
       expect(createPlatformClient).not.toHaveBeenCalled()
     })
   })

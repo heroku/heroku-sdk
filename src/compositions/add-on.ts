@@ -16,15 +16,50 @@ export type DescribedAddOn = AddOn & {
   attachments: AddOnAttachment[]
 }
 
+/**
+ * Change the plan of an add-on.
+ *
+ * Resolves the add-on first so the caller can pass any identifier
+ * (UUID, globally unique name, or namespaced `service::name`). When
+ * `appIdentity` is provided, the resolve is scoped to that app and
+ * falls back to a global resolve if the platform returns 404 add_on.
+ */
 export async function upgrade(
-  appIdentity: string,
-  addOnIdentity: string,
+  addonIdentity: string,
   plan: string,
-  options: AddOnOptions = {},
+  options: AddOnOptions & {appIdentity?: string} = {},
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
   const client = createPlatformClient(options.clientOptions)
-  return client.addOn.update(appIdentity, addOnIdentity, {plan})
+
+  const addon = await resolveAddon(client, addonIdentity, options.appIdentity)
+
+  options.signal?.throwIfAborted()
+  return client.addOn.update(addon.app!.id!, addon.id, {plan})
+}
+
+/**
+ * List the plans available for an add-on service, sorted ascending by
+ * `price.cents`. Plans without a price (or with equal prices) are
+ * returned later in the list.
+ */
+export async function listPlans(
+  serviceIdentity: string,
+  options: AddOnOptions = {},
+): Promise<Plan[]> {
+  options.signal?.throwIfAborted()
+  const client = createPlatformClient(options.clientOptions)
+  const plans = await client.plan.listByAddOn(serviceIdentity)
+  return [...plans].sort(byPriceCentsAsc)
+}
+
+function byPriceCentsAsc(a: Plan, b: Plan): number {
+  return sortableCents(a) - sortableCents(b)
+}
+
+function sortableCents(plan: Plan): number {
+  const cents = plan.price?.cents
+  return typeof cents === 'number' ? cents : Number.MAX_SAFE_INTEGER
 }
 
 /**
