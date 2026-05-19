@@ -292,6 +292,37 @@ describe('pipeline-promotion resource', () => {
     expect(stream).not.toHaveBeenCalled()
   })
 
+  it('promotePipeline skips streaming when the release has no output_stream_url', async () => {
+    const promotion = {id: 'promo-no-url'} as PipelinePromotion
+    const pendingWithRelease: PipelinePromotionTarget[] = [{
+      app: {id: 'target-app-1'},
+      id: 't1',
+      release: {id: 'release-1'},
+      status: 'pending',
+    }]
+    const done: PipelinePromotionTarget[] = [{
+      app: {id: 'target-app-1'},
+      id: 't1',
+      release: {id: 'release-1'},
+      status: 'succeeded',
+    }]
+    const {ctx} = ctxWithRelease(promotion, [pendingWithRelease, done], {
+      // eslint-disable-next-line camelcase
+      output_stream_url: null,
+    })
+
+    const onReleaseStream = vi.fn()
+    const stream = vi.fn()
+    mockBuslClient(stream)
+
+    const promise = promotePipeline(ctx, singleTargetBody, {intervalMs: 100, onReleaseStream})
+    await vi.advanceTimersByTimeAsync(500)
+    await promise
+
+    expect(onReleaseStream).not.toHaveBeenCalled()
+    expect(stream).not.toHaveBeenCalled()
+  })
+
   it('pipelinePromotionExtensions declares service: platform, resource: pipelinePromotion', () => {
     expect(pipelinePromotionExtensions.service).toBe('platform')
     expect(pipelinePromotionExtensions.resource).toBe('pipelinePromotion')
