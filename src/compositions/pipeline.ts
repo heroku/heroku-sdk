@@ -1,4 +1,4 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
+import type { HerokuApiClientOptions } from '@heroku/api-client'
 import type {
   App,
   PipelineCoupling,
@@ -7,9 +7,11 @@ import type {
   PipelinePromotionTarget,
 } from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/api-client'
+import type { ResourceCtx } from '../core/extend-resource.js'
 
-import {createPlatformClient} from '../services/platform.js'
+import * as pipelinePromotionResource from '../resources/platform/pipeline-promotion.js'
+import { createDataClient } from '../services/data.js'
+import { createPlatformClient } from '../services/platform.js'
 
 export type PipelineWarning = {
   limit: number
@@ -43,13 +45,22 @@ export type PromotePipelineOptions = {
   timeoutMs?: number
 }
 
-export type PromotePipelineResult = {
-  promotion: PipelinePromotion
-  targets: PipelinePromotionTarget[]
-}
+export type PromotePipelineResult = pipelinePromotionResource.PromotePipelineResult
 
-const DEFAULT_INTERVAL_MS = 1000
-const DEFAULT_RELEASE_STREAM_MAX_ATTEMPTS = 100
+function makeCtx(options: PromotePipelineOptions): ResourceCtx {
+  let platform: ReturnType<typeof createPlatformClient> | undefined
+  let data: ReturnType<typeof createDataClient> | undefined
+  return {
+    get data() {
+      data ??= createDataClient(options.clientOptions)
+      return data
+    },
+    get platform() {
+      platform ??= createPlatformClient(options.clientOptions)
+      return platform
+    },
+  }
+}
 
 export async function promotePipeline(
   body: PipelinePromotionCreateOpts,
@@ -82,7 +93,7 @@ export async function promotePipeline(
     const targets = await platformClient.pipelinePromotionTarget.list(promotion.id)
 
     if (targets.every(target => target.status !== 'pending')) {
-      return {promotion, targets}
+      return { promotion, targets }
     }
 
     if (
@@ -106,7 +117,7 @@ export async function promotePipeline(
           signal,
         )
         // eslint-disable-next-line no-await-in-loop
-        await onReleaseStream({stream, target})
+        await onReleaseStream({ stream, target })
       }
     }
 
@@ -139,7 +150,7 @@ export async function listPipelineApps(
         + 'Pass an onWarning handler to opt into a truncated result.')
     }
 
-    options.onWarning({limit: APPS_FILTER_LIMIT, pipelineId, type: 'apps_truncated'})
+    options.onWarning({ limit: APPS_FILTER_LIMIT, pipelineId, type: 'apps_truncated' })
     couplingsToResolve = couplings.slice(0, APPS_FILTER_LIMIT)
   }
 
@@ -152,7 +163,7 @@ export async function listPipelineApps(
     service: 'platform',
   })
   const ids = couplingsToResolve.map(coupling => coupling.app!.id!)
-  const response = await apiClient.post('/filters/apps', {in: {id: ids}}, {
+  const response = await apiClient.post('/filters/apps', { in: { id: ids } }, {
     headers: {
       Accept: 'application/vnd.heroku+json; version=3.filters',
       Range: `id ..; max=${APPS_FILTER_LIMIT};`,
@@ -195,7 +206,7 @@ async function fetchReleaseOutput(
     let response: Response | undefined
     try {
       // eslint-disable-next-line no-await-in-loop
-      response = await buslClient.stream(path, {headers: {Accept: '*/*'}})
+      response = await buslClient.stream(path, { headers: { Accept: '*/*' } })
     } catch {
       // Treat HTTP errors thrown by the api-client as a retryable miss.
       response = undefined
@@ -208,7 +219,7 @@ async function fetchReleaseOutput(
     if (response?.body) {
       // Drain so the connection can be reused.
       // eslint-disable-next-line no-await-in-loop
-      await response.body.cancel().catch(() => {})
+      await response.body.cancel().catch(() => { })
     }
 
     if (attempt >= maxAttempts) {
@@ -239,7 +250,7 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
         return
       }
 
-      signal.addEventListener('abort', onAbort, {once: true})
+      signal.addEventListener('abort', onAbort, { once: true })
     }
   })
 }
