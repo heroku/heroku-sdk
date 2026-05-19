@@ -62,8 +62,6 @@ This is the Heroku SDK (`@heroku/sdk`). It generates fully-typed clients at runt
 
 **Resource modules (`src/resources/<service>/<resource>.ts`):** Each resource module exports both tree-shakable named functions (callable with explicit `ctx`) and an `*Extensions` bundle produced by `extendResource`. The bundle is mechanical delegation — every method delegates one-line into the corresponding named function. Cross-service helpers (e.g., the pg flow that needs both platform and data clients) destructure both services from `ctx`.
 
-**`compositions/` is deprecated:** Each composition file is now a transitional alias that constructs a lazy `ResourceCtx` from the legacy `clientOptions` shape and delegates to a named function in `src/resources/`. New code should use `HerokuSDK` (with `extensions/<service>`) or named-function imports from `resources/<service>/<resource>.ts`.
-
 **Per-service factories:** Each `src/services/<name>.ts` is a thin wrapper that imports its service's routes and types from `@heroku/types/<subpath>`, delegates to the internal `createClient` engine, and injects the matching `service` identifier so `@heroku/api-client` resolves the correct baseUrl.
 
 **Generic engine (`createClient`)** is internal — reachable only by sibling files in `src/services/`. It returns a nested Proxy: the outer proxy resolves resource names (e.g., `client.app`), the inner proxy resolves methods (e.g., `.list()`, `.info()`). Both look up keys against the routes registry passed as a parameter. Unknown keys return `undefined`.
