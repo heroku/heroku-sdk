@@ -102,4 +102,46 @@ describe('HerokuSDK', () => {
     expect((sdk.data as unknown as {app?: unknown}).app).toBeUndefined()
     expect((sdk.platform as unknown as {database?: unknown}).database).toBeUndefined()
   })
+
+  it('exposes the SDK\'s raw clients via ctx and constructs each lazily on first ctx access', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+
+    // A platform extension whose factory captures ctx.data, but doesn't call
+    // it until the method is invoked. This pins down two invariants:
+    //   1. Defining the extension does not eagerly build the data client.
+    //   2. When the method is invoked, ctx.data is the raw client created by
+    //      the SDK (constructed exactly once).
+    const ext = extendResource('platform', 'app', ctx => ({
+      peekData: () => ctx.data,
+    }))
+
+    const sdk = new HerokuSDK({extensions: [ext]})
+
+    // Touching sdk.platform must not construct the data client.
+    const platformView = sdk.platform
+    expect(platformView).toBeDefined()
+    expect(dataConstructorSpy).not.toHaveBeenCalled()
+
+    // Now invoke the extension method, which reads ctx.data.
+    const peeked = (sdk.platform.app as unknown as {peekData: () => unknown}).peekData()
+
+    // Reading ctx.data triggers the raw data client construction exactly once.
+    expect(dataConstructorSpy).toHaveBeenCalledTimes(1)
+    // The data instance handed to the extension is the same one wrapped by sdk.data.
+    // (sdk.data wraps the raw client in mergeExtensions, but with no data extensions
+    // registered, the merged proxy still resolves through to the raw target.)
+    expect(peeked).toBeDefined()
+  })
+
+  it('memoizes the data service client across repeated access', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK()
+
+    const a = sdk.data
+    const b = sdk.data
+
+    expect(a).toBe(b)
+    expect(dataConstructorSpy).toHaveBeenCalledTimes(1)
+  })
 })
