@@ -42,12 +42,6 @@ src/
       postgres-database.ts         # named fns + postgresDatabaseExtensions
       internal/
         resolve-addon-id.ts        # shared helper
-  compositions/
-    add-on.ts                      # @deprecated — alias over resources/platform/add-on
-    app.ts                         # @deprecated — alias over resources/platform/app
-    dyno.ts                        # @deprecated — alias over resources/platform/dyno
-    pipeline.ts                    # @deprecated — alias over resources/platform/pipeline-promotion
-    pg.ts                          # @deprecated — alias over resources/data/*
 examples/
   basic-usage.ts                   # platform usage example
   data-usage.ts                    # data usage example
