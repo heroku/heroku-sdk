@@ -30,16 +30,31 @@ function makeCtx(options: DynoOptions): ResourceCtx {
   }
 }
 
+/**
+ * @deprecated Use `sdk.platform.dyno.scale` from `@heroku/sdk/sdk` with
+ * `dynoExtensions` from `@heroku/sdk/extensions/platform`, or import `scaleDynos`
+ * directly from `@heroku/sdk/resources/platform/dyno`.
+ */
 export function scaleDynos(
   appIdentity: string,
   updates: ScaleDynosUpdate,
   options?: DynoOptions,
 ): Promise<Formation>
+/**
+ * @deprecated Use `sdk.platform.dyno.scale` from `@heroku/sdk/sdk` with
+ * `dynoExtensions` from `@heroku/sdk/extensions/platform`, or import `scaleDynos`
+ * directly from `@heroku/sdk/resources/platform/dyno`.
+ */
 export function scaleDynos(
   appIdentity: string,
   updates: FormationBatchUpdateOpts['updates'],
   options?: DynoOptions,
 ): Promise<Formation[]>
+/**
+ * @deprecated Use `sdk.platform.dyno.scale` from `@heroku/sdk/sdk` with
+ * `dynoExtensions` from `@heroku/sdk/extensions/platform`, or import `scaleDynos`
+ * directly from `@heroku/sdk/resources/platform/dyno`.
+ */
 export async function scaleDynos(
   appIdentity: string,
   updates: FormationBatchUpdateOpts['updates'] | ScaleDynosUpdate,
@@ -52,6 +67,11 @@ export async function scaleDynos(
   return dynoResource.scaleDynos(makeCtx(options), appIdentity, updates, {signal: options.signal})
 }
 
+/**
+ * @deprecated Use `sdk.platform.dyno.restart` from `@heroku/sdk/sdk` with
+ * `dynoExtensions` from `@heroku/sdk/extensions/platform`, or import `restartDynos`
+ * directly from `@heroku/sdk/resources/platform/dyno`.
+ */
 export async function restartDynos(
   appIdentity: string,
   target?: RestartDynosTarget,

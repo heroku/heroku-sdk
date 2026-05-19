@@ -84,6 +84,11 @@ function parseBranchReference(
   return fallbackApp ? { addon: reference, app: fallbackApp } : { addon: reference }
 }
 
+/**
+ * @deprecated Use `sdk.data.database.describe` from `@heroku/sdk/sdk` with
+ * `databaseExtensions` from `@heroku/sdk/extensions/data`, or import `describe_`
+ * directly from `@heroku/sdk/resources/data/database`.
+ */
 export async function describePgDatabase(
   appIdentity: string,
   addonIdentity?: string,
@@ -95,6 +100,11 @@ export async function describePgDatabase(
   return data.database.info(addon.id)
 }
 
+/**
+ * @deprecated Use `sdk.data.postgresDatabase.listCredentials` from `@heroku/sdk/sdk` with
+ * `postgresDatabaseExtensions` from `@heroku/sdk/extensions/data`, or import `listCredentials`
+ * directly from `@heroku/sdk/resources/data/postgres-database`.
+ */
 export async function listPgCredentials(
   appIdentity: string,
   addonIdentity?: string,
@@ -106,6 +116,11 @@ export async function listPgCredentials(
   return data.postgresDatabase.listCredentials(addon.id)
 }
 
+/**
+ * @deprecated Use `sdk.data.maintenance.info` from `@heroku/sdk/sdk` with
+ * `maintenanceExtensions` from `@heroku/sdk/extensions/data`, or import `info`
+ * directly from `@heroku/sdk/resources/data/maintenance`.
+ */
 export async function describePgMaintenance(
   appIdentity: string,
   addonIdentity?: string,
@@ -117,6 +132,11 @@ export async function describePgMaintenance(
   return data.maintenance.info(addon.id)
 }
 
+/**
+ * @deprecated Use `sdk.data.transfer.listByApp` (upstream route — no extension needed),
+ * accessed via `sdk` from `@heroku/sdk/sdk` or directly via `createDataClient` from
+ * `@heroku/sdk/data`.
+ */
 export async function listPgTransfers(
   appIdentity: string,
   options: PgOptions = {},
@@ -125,6 +145,11 @@ export async function listPgTransfers(
   return makeCtx(options).data.transfer.listByApp(appIdentity)
 }
 
+/**
+ * @deprecated Use `sdk.data.database.runUpgrade` from `@heroku/sdk/sdk` with
+ * `databaseExtensions` from `@heroku/sdk/extensions/data`, or import `runUpgrade`
+ * directly from `@heroku/sdk/resources/data/database`.
+ */
 export async function runPgUpgrade(
   appIdentity: string,
   addonIdentity?: string,
@@ -140,6 +165,11 @@ export async function runPgUpgrade(
   return runUpgrade(addon.id, body)
 }
 
+/**
+ * @deprecated Use `sdk.data.database.prepareUpgrade` from `@heroku/sdk/sdk` with
+ * `databaseExtensions` from `@heroku/sdk/extensions/data`, or import `prepareUpgrade`
+ * directly from `@heroku/sdk/resources/data/database`.
+ */
 export async function preparePgUpgrade(
   appIdentity: string,
   addonIdentity?: string,

@@ -27,6 +27,11 @@ function makeCtx(options: AppOptions): ResourceCtx {
   }
 }
 
+/**
+ * @deprecated Use `sdk.platform.app.enableMaintenance` from `@heroku/sdk/sdk` with
+ * `appExtensions` from `@heroku/sdk/extensions/platform`, or import `enableMaintenance`
+ * directly from `@heroku/sdk/resources/platform/app`.
+ */
 export async function enableMaintenanceMode(
   appIdentity: string,
   options: AppOptions = {},
@@ -34,6 +39,11 @@ export async function enableMaintenanceMode(
   return appResource.enableMaintenance(makeCtx(options), appIdentity, {signal: options.signal})
 }
 
+/**
+ * @deprecated Use `sdk.platform.app.disableMaintenance` from `@heroku/sdk/sdk` with
+ * `appExtensions` from `@heroku/sdk/extensions/platform`, or import `disableMaintenance`
+ * directly from `@heroku/sdk/resources/platform/app`.
+ */
 export async function disableMaintenanceMode(
   appIdentity: string,
   options: AppOptions = {},

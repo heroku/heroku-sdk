@@ -62,6 +62,11 @@ function makeCtx(options: PromotePipelineOptions): ResourceCtx {
   }
 }
 
+/**
+ * @deprecated Use `sdk.platform.pipelinePromotion.promote` from `@heroku/sdk/sdk` with
+ * `pipelinePromotionExtensions` from `@heroku/sdk/extensions/platform`, or import
+ * `promotePipeline` directly from `@heroku/sdk/resources/platform/pipeline-promotion`.
+ */
 export async function promotePipeline(
   body: PipelinePromotionCreateOpts,
   options: PromotePipelineOptions = {},
