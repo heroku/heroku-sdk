@@ -12,8 +12,41 @@ export type AddOnOptions = {
   signal?: AbortSignal
 }
 
+export type ResolveAddonOptions = AddOnOptions & {
+  addonService?: string
+  appIdentity?: string
+}
+
 export type DescribedAddOn = AddOn & {
   attachments: AddOnAttachment[]
+}
+
+export class AddonNotFoundError extends Error {
+  public readonly id = 'not_found'
+  public readonly statusCode = 404
+
+  constructor(public readonly resource: string = 'addon') {
+    super(`Couldn't find that ${resource}.`)
+    this.name = 'AddonNotFoundError'
+  }
+
+  public get body() {
+    return {id: this.id, message: this.message, resource: this.resource}
+  }
+}
+
+export class AddonAmbiguousError extends Error {
+  public readonly id = 'multiple_matches'
+  public readonly statusCode = 422
+
+  constructor(public readonly matches: AddOn[]) {
+    super(`Ambiguous identifier; multiple matching add-ons found: ${matches.map(m => m.name).join(', ')}.`)
+    this.name = 'AddonAmbiguousError'
+  }
+
+  public get body() {
+    return {id: this.id, message: this.message}
+  }
 }
 
 /**
@@ -27,12 +60,15 @@ export type DescribedAddOn = AddOn & {
 export async function upgrade(
   addonIdentity: string,
   plan: string,
-  options: AddOnOptions & {appIdentity?: string} = {},
+  options: ResolveAddonOptions = {},
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
   const client = createPlatformClient(options.clientOptions)
 
-  const addon = await resolveAddon(client, addonIdentity, options.appIdentity)
+  const addon = await resolveAddon(client, addonIdentity, {
+    addonService: options.addonService,
+    appIdentity: options.appIdentity,
+  })
 
   options.signal?.throwIfAborted()
   return client.addOn.update(addon.app!.id!, addon.id, {plan})
@@ -76,12 +112,15 @@ function sortableCents(plan: Plan): number {
  */
 export async function describeAddon(
   addonIdentity: string,
-  options: AddOnOptions & {appIdentity?: string} = {},
+  options: ResolveAddonOptions = {},
 ): Promise<DescribedAddOn> {
   options.signal?.throwIfAborted()
   const client = createPlatformClient(options.clientOptions)
 
-  const addon = await resolveAddon(client, addonIdentity, options.appIdentity)
+  const addon = await resolveAddon(client, addonIdentity, {
+    addonService: options.addonService,
+    appIdentity: options.appIdentity,
+  })
 
   options.signal?.throwIfAborted()
   const attachments = await client.addOnAttachment.listByAddOn(addon.id)
@@ -98,12 +137,19 @@ export async function describeAddon(
 async function resolveAddon(
   client: PlatformClient,
   addonIdentity: string,
-  appIdentity?: string,
+  options: {addonService?: string; appIdentity?: string} = {},
 ): Promise<AddOn> {
+  const {addonService, appIdentity} = options
+
   const resolveBy = async (app?: string): Promise<AddOn> => {
     const body = app ? {addon: addonIdentity, app} : {addon: addonIdentity}
+    // Note: we deliberately don't pass `addon_service` to the platform here.
+    // Its server-side filter excludes alpha add-ons. Filter client-side instead.
     const matches = await client.addOn.resolution(body)
-    return singularize(matches)
+    const filtered = addonService
+      ? matches.filter(addon => (addon.addon_service as undefined | {name?: string})?.name === addonService)
+      : matches
+    return singularize(filtered)
   }
 
   // A namespaced identity (`service::name`) is globally resolvable; skip the
@@ -138,19 +184,14 @@ async function isAddOnNotFound(error: unknown): Promise<boolean> {
 
 function singularize(matches: AddOn[]): AddOn {
   if (matches.length === 0) {
-    const error = new Error('Couldn\'t find that add-on.')
-    Object.assign(error, {id: 'not_found', statusCode: 404})
-    throw error
+    throw new AddonNotFoundError()
   }
 
   if (matches.length === 1) {
     return matches[0]
   }
 
-  const names = matches.map(m => m.name).join(', ')
-  const error = new Error(`Ambiguous identifier; multiple matching add-ons found: ${names}.`)
-  Object.assign(error, {id: 'multiple_matches', matches, statusCode: 422})
-  throw error
+  throw new AddonAmbiguousError(matches)
 }
 
 function grandfatheredPrice(addon: AddOn): Plan['price'] {

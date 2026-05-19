@@ -6,7 +6,9 @@ import {
 } from 'vitest'
 
 import {createPlatformClient} from '../services/platform.js'
-import {describeAddon, listPlans, upgrade} from './add-on.js'
+import {
+  AddonAmbiguousError, AddonNotFoundError, describeAddon, listPlans, upgrade,
+} from './add-on.js'
 
 vi.mock('../services/platform.js', () => ({
   createPlatformClient: vi.fn(),
@@ -222,23 +224,41 @@ describe('add-on compositions', () => {
       expect(resolution).toHaveBeenCalledTimes(1)
     })
 
-    it('throws not_found when the resolver returns no matches', async () => {
+    it('throws AddonNotFoundError when the resolver returns no matches', async () => {
       buildAddOnClient({resolveResponses: [[]]})
 
-      await expect(describeAddon('nope')).rejects.toMatchObject({
-        id: 'not_found',
-        statusCode: 404,
-      })
+      await expect(describeAddon('nope')).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
-    it('throws multiple_matches when the resolver returns more than one', async () => {
+    it('throws AddonAmbiguousError when the resolver returns more than one', async () => {
       const matches = [buildAddon({id: 'a1', name: 'one'}), buildAddon({id: 'a2', name: 'two'})]
       buildAddOnClient({resolveResponses: [matches]})
 
-      await expect(describeAddon('ambig')).rejects.toMatchObject({
-        id: 'multiple_matches',
-        statusCode: 422,
-      })
+      await expect(describeAddon('ambig')).rejects.toBeInstanceOf(AddonAmbiguousError)
+    })
+
+    it('filters resolver matches by addonService when provided', async () => {
+      /* eslint-disable camelcase */
+      const matches = [
+        buildAddon({addon_service: {name: 'heroku-redis'}, id: 'a1', name: 'redis-app'}),
+        buildAddon({addon_service: {name: 'heroku-postgresql'}, id: 'a2', name: 'pg-app'}),
+      ]
+      /* eslint-enable camelcase */
+      const {resolution} = buildAddOnClient({resolveResponses: [matches]})
+
+      const result = await describeAddon('shared-name', {addonService: 'heroku-postgresql'})
+
+      // The platform's filter would exclude alpha add-ons, so we filter client-side.
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'shared-name'})
+      expect(result.id).toBe('a2')
+    })
+
+    it('throws AddonNotFoundError when addonService filter eliminates all matches', async () => {
+      // eslint-disable-next-line camelcase
+      const matches = [buildAddon({addon_service: {name: 'heroku-redis'}, id: 'a1'})]
+      buildAddOnClient({resolveResponses: [matches]})
+
+      await expect(describeAddon('shared-name', {addonService: 'heroku-postgresql'})).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
     it('replaces plan.price with grandfathered cents/contract from billed_price', async () => {
