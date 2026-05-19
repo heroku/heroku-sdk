@@ -94,16 +94,10 @@ export async function describePgDatabase(
   addonIdentity?: string,
   options: PgOptions = {},
 ): Promise<DatabaseInfoResult> {
-<<<<<<< HEAD
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase({ appIdentity, input: addonIdentity, ...options })
   const data = createDataClient(options.clientOptions)
   return data.database.info(addon.id)
-=======
-  return databaseResource.describe(makeCtx(options), appIdentity, addonIdentity, {
-    signal: options.signal,
-  })
->>>>>>> ad20733 (refactor(resources): rename describe_ to describe)
 }
 
 /**
