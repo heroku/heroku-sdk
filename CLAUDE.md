@@ -32,6 +32,7 @@ src/
       platform.ts                  # curated barrel of platform *Extensions
       data.ts                      # curated barrel of data *Extensions
     platform/
+      add-on.ts                    # named fns + addOnExtensions
       app.ts                       # named fns + appExtensions
       dyno.ts                      # named fns + dynoExtensions
       pipeline-promotion.ts        # named fns + pipelinePromotionExtensions
@@ -42,6 +43,7 @@ src/
       internal/
         resolve-addon-id.ts        # shared helper
   compositions/
+    add-on.ts                      # @deprecated — alias over resources/platform/add-on
     app.ts                         # @deprecated — alias over resources/platform/app
     dyno.ts                        # @deprecated — alias over resources/platform/dyno
     pipeline.ts                    # @deprecated — alias over resources/platform/pipeline-promotion
