@@ -86,7 +86,7 @@ function parseBranchReference(
 
 /**
  * @deprecated Use `sdk.data.database.describe` from `@heroku/sdk/sdk` with
- * `databaseExtensions` from `@heroku/sdk/extensions/data`, or import `describe_`
+ * `databaseExtensions` from `@heroku/sdk/extensions/data`, or import `describe`
  * directly from `@heroku/sdk/resources/data/database`.
  */
 export async function describePgDatabase(
@@ -94,10 +94,16 @@ export async function describePgDatabase(
   addonIdentity?: string,
   options: PgOptions = {},
 ): Promise<DatabaseInfoResult> {
+<<<<<<< HEAD
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase({ appIdentity, input: addonIdentity, ...options })
   const data = createDataClient(options.clientOptions)
   return data.database.info(addon.id)
+=======
+  return databaseResource.describe(makeCtx(options), appIdentity, addonIdentity, {
+    signal: options.signal,
+  })
+>>>>>>> ad20733 (refactor(resources): rename describe_ to describe)
 }
 
 /**

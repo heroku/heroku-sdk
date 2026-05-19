@@ -4,10 +4,10 @@ import type {
   DatabaseRunUpgradeResult,
 } from '@heroku/types/data'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type { ResourceCtx } from '../../core/extend-resource.js'
 
-import {extendResource} from '../../core/extend-resource.js'
-import {resolveAddonId} from './internal/resolve-addon-id.js'
+import { extendResource } from '../../core/extend-resource.js'
+import { resolveAddonId } from './internal/resolve-addon-id.js'
 
 export type DatabaseOptions = {
   signal?: AbortSignal
@@ -17,7 +17,7 @@ export type DatabaseUpgradeBody = {
   version?: string
 }
 
-export async function describe_(
+export async function describe(
   ctx: ResourceCtx,
   appIdentity: string,
   addonIdentity?: string,
@@ -61,7 +61,7 @@ export async function prepareUpgrade(
 
 export const databaseExtensions = extendResource('data', 'database', ctx => ({
   describe: (appIdentity: string, addonIdentity?: string, options?: DatabaseOptions) =>
-    describe_(ctx, appIdentity, addonIdentity, options),
+    describe(ctx, appIdentity, addonIdentity, options),
   prepareUpgrade: (
     appIdentity: string,
     addonIdentity?: string,
