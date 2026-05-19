@@ -256,6 +256,42 @@ describe('pipeline-promotion resource', () => {
     expect(stream).toHaveBeenCalledTimes(3)
   })
 
+  it('promotePipeline skips streaming when there are multiple targets', async () => {
+    const promotion = {id: 'promo-multi'} as PipelinePromotion
+    const pending: PipelinePromotionTarget[] = [
+      {
+        app: {id: 'target-app-1'}, id: 't1', release: {id: 'release-1'}, status: 'pending',
+      },
+      {app: {id: 'target-app-2'}, id: 't2', status: 'pending'},
+    ]
+    const done: PipelinePromotionTarget[] = [
+      {app: {id: 'target-app-1'}, id: 't1', status: 'succeeded'},
+      {app: {id: 'target-app-2'}, id: 't2', status: 'succeeded'},
+    ]
+    const {ctx, releaseInfo} = ctxWithRelease(promotion, [pending, done], {
+      // eslint-disable-next-line camelcase
+      output_stream_url: 'https://busl.example/release',
+    })
+
+    const onReleaseStream = vi.fn()
+    const stream = vi.fn()
+    mockBuslClient(stream)
+
+    const multiTargetBody: PipelinePromotionCreateOpts = {
+      pipeline: {id: 'pipeline-1'},
+      source: {app: {id: 'source-app'}},
+      targets: [{app: {id: 'target-app-1'}}, {app: {id: 'target-app-2'}}],
+    }
+
+    const promise = promotePipeline(ctx, multiTargetBody, {intervalMs: 100, onReleaseStream})
+    await vi.advanceTimersByTimeAsync(500)
+    await promise
+
+    expect(onReleaseStream).not.toHaveBeenCalled()
+    expect(releaseInfo).not.toHaveBeenCalled()
+    expect(stream).not.toHaveBeenCalled()
+  })
+
   it('pipelinePromotionExtensions declares service: platform, resource: pipelinePromotion', () => {
     expect(pipelinePromotionExtensions.service).toBe('platform')
     expect(pipelinePromotionExtensions.resource).toBe('pipelinePromotion')
