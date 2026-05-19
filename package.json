@@ -9,8 +9,13 @@
     ".": "./dist/index.js",
     "./platform": "./dist/services/platform.js",
     "./data": "./dist/services/data.js",
+    "./sdk": "./dist/core/heroku-sdk.js",
+    "./extensions/platform": "./dist/resources/extensions/platform.js",
+    "./extensions/data": "./dist/resources/extensions/data.js",
+    "./resources/*": "./dist/resources/*.js",
     "./compositions/*": "./dist/compositions/*.js"
   },
+  "sideEffects": false,
   "repository": {
     "type": "git",
     "url": "https://github.com/heroku/heroku-sdk"
