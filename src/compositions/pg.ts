@@ -1,4 +1,4 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
+import type { HerokuApiClientOptions } from '@heroku/api-client'
 import type {
   DatabaseInfoResult,
   DatabasePrepareUpgradeResult,
@@ -8,10 +8,10 @@ import type {
   TransferListByAppResult,
 } from '@heroku/types/data'
 
-import type {ResolveAddonOptions, ResolvedAddOn} from './add-on.js'
+import type { ResolveAddonOptions, ResolvedAddOn } from './add-on.js'
 
-import {createDataClient} from '../services/data.js'
-import {resolveAddon, resolveAddonByAttachment} from './add-on.js'
+import { createDataClient } from '../services/data.js'
+import { resolveAddon, resolveAddonByAttachment } from './add-on.js'
 
 const DEFAULT_PG_ATTACHMENT = 'DATABASE_URL'
 
@@ -46,7 +46,7 @@ export type ResolvePgDatabaseOptions = ResolveAddonOptions & {
  * is available to default the attachment lookup to.
  */
 export async function resolvePgDatabase(options: ResolvePgDatabaseOptions = {}): Promise<ResolvedAddOn> {
-  const {appIdentity, input, ...rest} = options
+  const { appIdentity, input, ...rest } = options
 
   if (!input) {
     if (!appIdentity) {
@@ -57,15 +57,15 @@ export async function resolvePgDatabase(options: ResolvePgDatabaseOptions = {}):
   }
 
   if (input.includes('::')) {
-    const {addon, app} = parseBranchReference(input, appIdentity)
-    return resolveAddon(addon, {...rest, appIdentity: app})
+    const { addon, app } = parseBranchReference(input, appIdentity)
+    return resolveAddon(addon, { ...rest, appIdentity: app })
   }
 
   if (appIdentity && isAttachmentName(input)) {
     return resolveAddonByAttachment(appIdentity, input, rest)
   }
 
-  return resolveAddon(input, {...rest, appIdentity})
+  return resolveAddon(input, { ...rest, appIdentity })
 }
 
 function isAttachmentName(input: string): boolean {
@@ -75,13 +75,13 @@ function isAttachmentName(input: string): boolean {
 function parseBranchReference(
   reference: string,
   fallbackApp?: string,
-): {addon: string; app?: string} {
+): { addon: string; app?: string } {
   const match = reference.match(/^(.+)::(.+)$/)
   if (match) {
-    return {addon: match[2], app: match[1]}
+    return { addon: match[2], app: match[1] }
   }
 
-  return fallbackApp ? {addon: reference, app: fallbackApp} : {addon: reference}
+  return fallbackApp ? { addon: reference, app: fallbackApp } : { addon: reference }
 }
 
 export async function describePgDatabase(
@@ -90,7 +90,7 @@ export async function describePgDatabase(
   options: PgOptions = {},
 ): Promise<DatabaseInfoResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase({ appIdentity, input: addonIdentity, ...options })
   const data = createDataClient(options.clientOptions)
   return data.database.info(addon.id)
 }
@@ -101,7 +101,7 @@ export async function listPgCredentials(
   options: PgOptions = {},
 ): Promise<PostgresDatabaseListCredentialsResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase({ appIdentity, input: addonIdentity, ...options })
   const data = createDataClient(options.clientOptions)
   return data.postgresDatabase.listCredentials(addon.id)
 }
@@ -112,7 +112,7 @@ export async function describePgMaintenance(
   options: PgOptions = {},
 ): Promise<MaintenanceInfoResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase({ appIdentity, input: addonIdentity, ...options })
   const data = createDataClient(options.clientOptions)
   return data.maintenance.info(addon.id)
 }
@@ -122,18 +122,17 @@ export async function listPgTransfers(
   options: PgOptions = {},
 ): Promise<TransferListByAppResult> {
   options.signal?.throwIfAborted()
-  const data = createDataClient(options.clientOptions)
-  return data.transfer.listByApp(appIdentity)
+  return makeCtx(options).data.transfer.listByApp(appIdentity)
 }
 
 export async function runPgUpgrade(
   appIdentity: string,
-  addonIdentity: string | undefined,
+  addonIdentity?: string,
   body: PgUpgradeOpts = {},
   options: PgOptions = {},
 ): Promise<DatabaseRunUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase({ appIdentity, input: addonIdentity, ...options })
   const data = createDataClient(options.clientOptions)
   // Cast: routes.js declares hasRequestBody for runUpgrade but the generated
   // HerokuClient interface omits the body param (Shogun spec lacks a request schema).
@@ -143,12 +142,12 @@ export async function runPgUpgrade(
 
 export async function preparePgUpgrade(
   appIdentity: string,
-  addonIdentity: string | undefined,
+  addonIdentity?: string,
   body: PgUpgradeOpts = {},
   options: PgOptions = {},
 ): Promise<DatabasePrepareUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase({ appIdentity, input: addonIdentity, ...options })
   const data = createDataClient(options.clientOptions)
   // See note on runPgUpgrade.
   const prepareUpgrade = data.database.prepareUpgrade as (name: string, body: PgUpgradeOpts) => Promise<DatabasePrepareUpgradeResult>
