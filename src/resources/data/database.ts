@@ -18,7 +18,7 @@ export type DatabaseUpgradeBody = {
 }
 
 export async function describe(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
   addonIdentity?: string,
   options: DatabaseOptions = {},
@@ -29,7 +29,7 @@ export async function describe(
 }
 
 export async function runUpgrade(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
   addonIdentity?: string,
   body: DatabaseUpgradeBody = {},
@@ -45,7 +45,7 @@ export async function runUpgrade(
 }
 
 export async function prepareUpgrade(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
   addonIdentity?: string,
   body: DatabaseUpgradeBody = {},

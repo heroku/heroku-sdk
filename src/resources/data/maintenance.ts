@@ -10,7 +10,7 @@ export type MaintenanceInfoOptions = {
 }
 
 export async function info(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
   addonIdentity?: string,
   options: MaintenanceInfoOptions = {},

@@ -9,7 +9,7 @@ export type AppMaintenanceOptions = {
 }
 
 export async function enableMaintenance(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   options: AppMaintenanceOptions = {},
 ): Promise<App> {
@@ -18,7 +18,7 @@ export async function enableMaintenance(
 }
 
 export async function disableMaintenance(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   options: AppMaintenanceOptions = {},
 ): Promise<App> {

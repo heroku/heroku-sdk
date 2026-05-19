@@ -10,7 +10,7 @@ export type ListCredentialsOptions = {
 }
 
 export async function listCredentials(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
   addonIdentity?: string,
   options: ListCredentialsOptions = {},

@@ -21,19 +21,19 @@ export type RestartDynosTarget
   | { type: string }
 
 export function scaleDynos(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   updates: ScaleDynosUpdate,
   options?: DynoOptions,
 ): Promise<Formation>
 export function scaleDynos(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   updates: FormationBatchUpdateOpts['updates'],
   options?: DynoOptions,
 ): Promise<Formation[]>
 export async function scaleDynos(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   updates: FormationBatchUpdateOpts['updates'] | ScaleDynosUpdate,
   options: DynoOptions = {},
@@ -49,7 +49,7 @@ export async function scaleDynos(
 }
 
 export async function restartDynos(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   target?: RestartDynosTarget,
   options: DynoOptions = {},

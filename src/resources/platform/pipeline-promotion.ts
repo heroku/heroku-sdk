@@ -22,7 +22,7 @@ export type PromotePipelineResult = {
 const DEFAULT_INTERVAL_MS = 1000
 
 export async function promotePipeline(
-  ctx: ResourceCtx,
+  ctx: Pick<ResourceCtx, 'platform'>,
   body: PipelinePromotionCreateOpts,
   options: PromotePipelineOptions = {},
 ): Promise<PromotePipelineResult> {
