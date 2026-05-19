@@ -34,12 +34,12 @@
   "devDependencies": {
     "@heroku-cli/test-utils": "^0.3.0",
     "@types/debug": "^4.1.12",
-    "@types/node": "^25.6.2",
+    "@types/node": "^25.9.1",
     "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^9.39.4",
-    "eslint-config-oclif": "^6.0.164",
+    "eslint-config-oclif": "^6.0.165",
     "eslint-plugin-vitest": "0.5.4",
-    "tsx": "^4.21.0",
+    "tsx": "^4.22.3",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },
