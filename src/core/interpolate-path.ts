@@ -1,4 +1,8 @@
-const PLACEHOLDER = /\{[^}]+\}/g
+export const PLACEHOLDER = /\{[^}]+\}/g
+
+export function countPlaceholders(template: string): number {
+  return template.match(PLACEHOLDER)?.length ?? 0
+}
 
 export function interpolatePath(template: string, params: string[]): string {
   let i = 0

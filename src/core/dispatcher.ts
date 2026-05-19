@@ -3,11 +3,9 @@ import type { RouteDefinition } from '@heroku/types/types'
 
 import createDebug from 'debug'
 
-import { interpolatePath } from './interpolate-path.js'
+import { countPlaceholders, interpolatePath } from './interpolate-path.js'
 
 const debug = createDebug('heroku:sdk:dispatcher')
-
-const PLACEHOLDER = /\{[^}]+\}/g
 
 export async function dispatch(
   client: HerokuApiClient,
@@ -15,7 +13,7 @@ export async function dispatch(
   args: unknown[],
   invocation?: string,
 ): Promise<unknown> {
-  const placeholderCount = (route.path.match(PLACEHOLDER) || []).length
+  const placeholderCount = countPlaceholders(route.path)
   const pathParams = args.slice(0, placeholderCount) as string[]
   const remaining = args.slice(placeholderCount)
 
