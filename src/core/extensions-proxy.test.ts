@@ -76,4 +76,18 @@ describe('mergeExtensions', () => {
     mergeExtensions({} as Record<string, unknown>, [ext], ctx)
     expect(factory).toHaveBeenCalledWith(ctx)
   })
+
+  it('invokes each extension factory exactly once regardless of access count', () => {
+    const factory = vi.fn().mockReturnValue({hello: () => 'x'})
+    const ext: ResourceExtension = {factory, resource: 'app', service: 'platform'}
+    const merged = mergeExtensions({} as Record<string, unknown>, [ext], fakeCtx()) as {
+      app: {hello: () => string};
+    }
+    merged.app.hello()
+    merged.app.hello()
+    // Touching the resource property again should not re-invoke the factory.
+    const _touch = merged.app
+    expect(_touch).toBeDefined()
+    expect(factory).toHaveBeenCalledTimes(1)
+  })
 })

@@ -37,7 +37,8 @@ export function mergeExtensions<T extends object>(
         return routeResource
       }
 
-      return new Proxy(routeResource ?? {}, {
+      const innerTarget: object = routeResource && typeof routeResource === 'object' ? routeResource : {}
+      return new Proxy(innerTarget, {
         get(routeTarget, methodKey: string, methodReceiver) {
           if (Object.hasOwn(extMethods, methodKey)) {
             return extMethods[methodKey]
