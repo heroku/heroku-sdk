@@ -429,4 +429,87 @@ describe('listPipelineApps', () => {
     await expect(listPipelineApps('pipeline-1', {signal: controller.signal})).rejects.toThrow()
     expect(listByPipeline).not.toHaveBeenCalled()
   })
+
+  it('skips couplings missing app.id', async () => {
+    const couplings = [
+      {app: {id: 'app-1'}, id: 'c1'},
+      {id: 'c2'}, // no app
+      {app: {}, id: 'c3'}, // app, no id
+    ]
+    const apps = [{id: 'app-1', name: 'app-one'}]
+
+    const listByPipeline = vi.fn().mockResolvedValue(couplings)
+    vi.mocked(createPlatformClient).mockReturnValue({
+      pipelineCoupling: {listByPipeline},
+    } as never)
+
+    const post = vi.fn().mockResolvedValue(new Response(JSON.stringify(apps), {
+      headers: {'content-type': 'application/json'},
+      status: 200,
+    }))
+    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
+      this.post = post
+    } as never)
+
+    const result = await listPipelineApps('pipeline-1')
+
+    expect(post).toHaveBeenCalledWith(
+      '/filters/apps',
+      {in: {id: ['app-1']}},
+      expect.anything(),
+    )
+    expect(result).toEqual([{id: 'app-1', name: 'app-one', pipelineCoupling: couplings[0]}])
+  })
+
+  it('throws when over the apps filter limit and no onWarning is provided', async () => {
+    const couplings = Array.from({length: 1001}, (_, i) => ({
+      app: {id: `app-${i}`},
+      id: `c-${i}`,
+    }))
+
+    const listByPipeline = vi.fn().mockResolvedValue(couplings)
+    vi.mocked(createPlatformClient).mockReturnValue({
+      pipelineCoupling: {listByPipeline},
+    } as never)
+    const post = vi.fn()
+    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
+      this.post = post
+    } as never)
+
+    await expect(listPipelineApps('pipeline-big')).rejects.toThrow(/more than 1000 apps/)
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('truncates results and notifies onWarning when over the limit', async () => {
+    const couplings = Array.from({length: 1500}, (_, i) => ({
+      app: {id: `app-${i}`},
+      id: `c-${i}`,
+    }))
+    const apps = Array.from({length: 1000}, (_, i) => ({id: `app-${i}`, name: `name-${i}`}))
+
+    const listByPipeline = vi.fn().mockResolvedValue(couplings)
+    vi.mocked(createPlatformClient).mockReturnValue({
+      pipelineCoupling: {listByPipeline},
+    } as never)
+
+    const post = vi.fn().mockResolvedValue(new Response(JSON.stringify(apps), {
+      headers: {'content-type': 'application/json'},
+      status: 200,
+    }))
+    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
+      this.post = post
+    } as never)
+
+    const onWarning = vi.fn()
+    const result = await listPipelineApps('pipeline-big', {onWarning})
+
+    expect(onWarning).toHaveBeenCalledWith({
+      limit: 1000,
+      pipelineId: 'pipeline-big',
+      type: 'apps_truncated',
+    })
+    const postCall = post.mock.calls[0]
+    expect(postCall[1].in.id).toHaveLength(1000)
+    expect(result).toHaveLength(1000)
+  })
 })

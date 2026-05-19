@@ -11,14 +11,23 @@ import {HerokuApiClient} from '@heroku/api-client'
 
 import {createPlatformClient} from '../services/platform.js'
 
+export type PipelineWarning = {
+  limit: number
+  pipelineId: string
+  type: 'apps_truncated'
+}
+
 export type ListPipelineAppsOptions = {
   clientOptions?: HerokuApiClientOptions
+  onWarning?: (warning: PipelineWarning) => void
   signal?: AbortSignal
 }
 
 export type AppWithPipelineCoupling = App & {
   pipelineCoupling: PipelineCoupling
 }
+
+const APPS_FILTER_LIMIT = 1000
 
 export type ReleaseStreamContext = {
   stream: ReadableStream<Uint8Array>
@@ -116,9 +125,22 @@ export async function listPipelineApps(
 ): Promise<AppWithPipelineCoupling[]> {
   options.signal?.throwIfAborted()
   const platformClient = createPlatformClient(options.clientOptions)
-  const couplings = await platformClient.pipelineCoupling.listByPipeline(pipelineId)
+  const allCouplings = await platformClient.pipelineCoupling.listByPipeline(pipelineId)
+  // Drop malformed couplings (no app id) before issuing the bulk filter call.
+  const couplings = allCouplings.filter(coupling => coupling.app?.id)
   if (couplings.length === 0) {
     return []
+  }
+
+  let couplingsToResolve = couplings
+  if (couplings.length > APPS_FILTER_LIMIT) {
+    if (!options.onWarning) {
+      throw new Error(`Pipeline ${pipelineId} has more than ${APPS_FILTER_LIMIT} apps. `
+        + 'Pass an onWarning handler to opt into a truncated result.')
+    }
+
+    options.onWarning({limit: APPS_FILTER_LIMIT, pipelineId, type: 'apps_truncated'})
+    couplingsToResolve = couplings.slice(0, APPS_FILTER_LIMIT)
   }
 
   options.signal?.throwIfAborted()
@@ -129,18 +151,23 @@ export async function listPipelineApps(
     ...options.clientOptions,
     service: 'platform',
   })
-  const ids = couplings.map(coupling => coupling.app!.id!)
+  const ids = couplingsToResolve.map(coupling => coupling.app!.id!)
   const response = await apiClient.post('/filters/apps', {in: {id: ids}}, {
     headers: {
       Accept: 'application/vnd.heroku+json; version=3.filters',
-      Range: 'id ..; max=1000;',
+      Range: `id ..; max=${APPS_FILTER_LIMIT};`,
     },
   })
   const apps = (await response.json()) as App[]
 
+  const couplingByAppId = new Map<string, PipelineCoupling>()
+  for (const coupling of couplingsToResolve) {
+    couplingByAppId.set(coupling.app!.id!, coupling)
+  }
+
   return apps.map(app => ({
     ...app,
-    pipelineCoupling: couplings.find(coupling => coupling.app!.id === app.id)!,
+    pipelineCoupling: couplingByAppId.get(app.id!)!,
   }))
 }
 
