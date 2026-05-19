@@ -12,8 +12,7 @@
     "./sdk": "./dist/core/heroku-sdk.js",
     "./extensions/platform": "./dist/resources/extensions/platform.js",
     "./extensions/data": "./dist/resources/extensions/data.js",
-    "./resources/*": "./dist/resources/*.js",
-    "./compositions/*": "./dist/compositions/*.js"
+    "./resources/*": "./dist/resources/*.js"
   },
   "sideEffects": false,
   "repository": {
