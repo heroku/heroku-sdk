@@ -75,6 +75,19 @@ describe('pipeline-promotion resource', () => {
     expect(result.targets).toEqual(done)
   })
 
+  it('promotePipeline treats failed targets as terminal and returns them in the result', async () => {
+    const promotion = {id: 'promo-failed'} as PipelinePromotion
+    const targets: PipelinePromotionTarget[] = [
+      {id: 't1', status: 'succeeded'},
+      {id: 't2', status: 'failed'},
+    ]
+    const {ctx} = ctxFor(promotion, [targets])
+
+    const result = await promotePipeline(ctx, createBody)
+
+    expect(result.targets).toEqual(targets)
+  })
+
   it('promotePipeline throws if the create response is missing an id', async () => {
     const {ctx} = ctxFor({} as PipelinePromotion, [])
 
