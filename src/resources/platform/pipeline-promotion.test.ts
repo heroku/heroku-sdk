@@ -228,6 +228,34 @@ describe('pipeline-promotion resource', () => {
     expect(result.targets).toEqual(done)
   })
 
+  it('promotePipeline retries the busl fetch up to releaseStreamMaxAttempts before failing', async () => {
+    const promotion = {id: 'promo-retry'} as PipelinePromotion
+    const pendingWithRelease: PipelinePromotionTarget[] = [{
+      app: {id: 'target-app-1'},
+      id: 't1',
+      release: {id: 'release-1'},
+      status: 'pending',
+    }]
+    const {ctx} = ctxWithRelease(promotion, [pendingWithRelease], {
+      // eslint-disable-next-line camelcase
+      output_stream_url: 'https://busl.example/release',
+    })
+
+    const stream = vi.fn().mockResolvedValue(new Response('not yet', {status: 404}))
+    mockBuslClient(stream)
+
+    const promise = promotePipeline(ctx, singleTargetBody, {
+      intervalMs: 1,
+      onReleaseStream: vi.fn(),
+      releaseStreamMaxAttempts: 3,
+    })
+    const expectation = expect(promise).rejects.toThrow(/stream release output not available/)
+    await vi.advanceTimersByTimeAsync(100)
+    await expectation
+
+    expect(stream).toHaveBeenCalledTimes(3)
+  })
+
   it('pipelinePromotionExtensions declares service: platform, resource: pipelinePromotion', () => {
     expect(pipelinePromotionExtensions.service).toBe('platform')
     expect(pipelinePromotionExtensions.resource).toBe('pipelinePromotion')
