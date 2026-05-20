@@ -169,9 +169,9 @@ export async function describeAddon(
  * The data CLI accepts a `parent-app::branch-name` syntax that means
  * "branch `branch-name` of the database on app `parent-app`." That
  * convention is *not* the same as the `service::name` credential
- * reference understood here. If you have a branch reference, parse it
- * first with `parseAddonReference` (in `pg.ts`) and pass `addon` /
- * `app` separately to this resolver.
+ * reference understood here. For branch references, call
+ * `resolvePgBranchAddon` (in `pg.ts`) instead — it parses the data
+ * convention and delegates here.
  *
  * For attachment-based resolution (e.g. `DATABASE_URL` on a particular
  * app), use `resolveAddonByAttachment` instead.

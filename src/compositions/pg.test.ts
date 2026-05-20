@@ -12,8 +12,8 @@ import {
   describePgMaintenance,
   listPgCredentials,
   listPgTransfers,
-  parseAddonReference,
   preparePgUpgrade,
+  resolvePgBranchAddon,
   runPgUpgrade,
 } from './pg.js'
 
@@ -27,6 +27,14 @@ vi.mock('../services/data.js', () => ({
 
 function attachmentMatch(addonId: string): AddOnAttachment[] {
   return [{addon: {app: {id: 'app-uuid-1', name: 'app-1'}, id: addonId, name: 'postgresql-addon'}}]
+}
+
+function buildBranchAddon(addonId: string) {
+  return {
+    app: {id: 'app-uuid-1', name: 'parent-app'},
+    id: addonId,
+    name: 'pg-branch',
+  }
 }
 
 describe('pg compositions', () => {
@@ -180,30 +188,42 @@ describe('pg compositions', () => {
     })
   })
 
-  describe('parseAddonReference', () => {
-    it('splits a parent::branch reference', () => {
-      expect(parseAddonReference('parent-app::branch')).toEqual({
-        addon: 'branch',
-        app: 'parent-app',
-      })
+  describe('resolvePgBranchAddon', () => {
+    it('resolves a parent::branch reference scoped to the parsed parent app', async () => {
+      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-9')])
+      vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
+
+      const result = await resolvePgBranchAddon('parent-app::branch')
+
+      expect(resolution).toHaveBeenCalledWith({addon: 'branch', app: 'parent-app'})
+      expect(result.id).toBe('addon-9')
     })
 
-    it('uses fallbackApp when the reference has no namespace', () => {
-      expect(parseAddonReference('my-branch', 'fallback-app')).toEqual({
-        addon: 'my-branch',
-        app: 'fallback-app',
-      })
+    it('falls back to options.appIdentity when the reference has no namespace', async () => {
+      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-10')])
+      vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
+
+      await resolvePgBranchAddon('branch-name', {appIdentity: 'fallback-app'})
+
+      expect(resolution).toHaveBeenCalledWith({addon: 'branch-name', app: 'fallback-app'})
     })
 
-    it('omits app when neither a namespace nor fallback is provided', () => {
-      expect(parseAddonReference('my-branch')).toEqual({addon: 'my-branch'})
+    it('prefers the parsed namespace over options.appIdentity', async () => {
+      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-11')])
+      vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
+
+      await resolvePgBranchAddon('parent::branch', {appIdentity: 'fallback-app'})
+
+      expect(resolution).toHaveBeenCalledWith({addon: 'branch', app: 'parent'})
     })
 
-    it('prefers the parsed namespace over fallbackApp', () => {
-      expect(parseAddonReference('parent::branch', 'fallback-app')).toEqual({
-        addon: 'branch',
-        app: 'parent',
-      })
+    it('resolves globally when the reference has no namespace and no appIdentity', async () => {
+      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-12')])
+      vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
+
+      await resolvePgBranchAddon('branch-name')
+
+      expect(resolution).toHaveBeenCalledWith({addon: 'branch-name'})
     })
   })
 })

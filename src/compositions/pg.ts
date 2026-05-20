@@ -8,8 +8,10 @@ import type {
   TransferListByAppResult,
 } from '@heroku/types/data'
 
+import type {ResolveAddonOptions, ResolvedAddOn} from './add-on.js'
+
 import {createDataClient} from '../services/data.js'
-import {resolveAddonByAttachment} from './add-on.js'
+import {resolveAddon, resolveAddonByAttachment} from './add-on.js'
 
 const DEFAULT_PG_ATTACHMENT = 'DATABASE_URL'
 
@@ -23,16 +25,32 @@ export type PgUpgradeOpts = {
 }
 
 /**
- * Split a Heroku Postgres addon reference of the form `parent::branch`
- * into its app and addon parts. References without `::` resolve to the
- * `fallbackApp` (when provided).
+ * Resolve a Heroku Postgres branch reference of the form
+ * `parent-app::branch-name` (or a bare `branch-name` when an
+ * `appIdentity` is provided in options as a fallback).
+ *
+ * The reference syntax is data-specific: the part before `::` is
+ * the parent app, the part after is the branch's add-on name. This
+ * is *not* the same as the `service::name` credential reference
+ * understood by `resolveAddon` directly. Use this function for any
+ * Heroku Postgres command that accepts the `parent::branch` shape.
  *
  * Examples:
- *   parseAddonReference('parent-app::branch')       → {app: 'parent-app', addon: 'branch'}
- *   parseAddonReference('branch-name', 'fallback')  → {app: 'fallback',   addon: 'branch-name'}
- *   parseAddonReference('branch-name')              → {addon: 'branch-name'}
+ *   resolvePgBranchAddon('parent-app::branch')
+ *   resolvePgBranchAddon('branch-name', {appIdentity: 'parent-app'})
+ *
+ * If the reference has no `::` and no `appIdentity` is provided,
+ * the reference is resolved as a bare add-on identity.
  */
-export function parseAddonReference(
+export async function resolvePgBranchAddon(
+  reference: string,
+  options: ResolveAddonOptions = {},
+): Promise<ResolvedAddOn> {
+  const {addon, app} = parseAddonReference(reference, options.appIdentity)
+  return resolveAddon(addon, {...options, appIdentity: app})
+}
+
+function parseAddonReference(
   reference: string,
   fallbackApp?: string,
 ): {addon: string; app?: string} {
