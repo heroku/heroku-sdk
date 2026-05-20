@@ -44,7 +44,7 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
-    "@heroku/heroku-fetch": "github:heroku/heroku-fetch#eb/feat/preserve-error-body",
+    "@heroku/heroku-fetch": "github:heroku/heroku-fetch",
     "@heroku/types": "github:heroku/heroku-types",
     "debug": "^4.4.0"
   }
