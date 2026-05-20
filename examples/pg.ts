@@ -1,22 +1,31 @@
+// Run: npm run example -- examples/pg.ts
+// Requires: HEROKU_API_KEY in env or a valid .netrc entry for api.heroku.com.
+//          APP=<app-name> in env. ADDON optional (defaults to DATABASE_URL).
+
+import {HerokuSDK} from '../src/core/heroku-sdk.js'
 import {
-  describePgDatabase,
-  describePgMaintenance,
-  listPgCredentials,
-  listPgTransfers,
-} from '../src/compositions/pg.js'
+  databaseExtensions,
+  maintenanceExtensions,
+  postgresDatabaseExtensions,
+} from '../src/resources/extensions/data.js'
+
+const sdk = new HerokuSDK({
+  extensions: [databaseExtensions, postgresDatabaseExtensions, maintenanceExtensions],
+})
 
 const app = process.env.APP!
 const addon = process.env.ADDON
 
-const dbInfo = await describePgDatabase(app, addon)
+const dbInfo = await sdk.data.database.describe(app, addon)
 console.log(`Database (${app}::${addon ?? 'DATABASE_URL'}):`, dbInfo)
 
-const creds = await listPgCredentials(app, addon)
+const creds = await sdk.data.postgresDatabase.listCredentials(app, addon)
 console.log('Credentials:', creds)
 
-const maint = await describePgMaintenance(app, addon)
+const maint = await sdk.data.maintenance.info(app, addon)
 console.log('Maintenance:', maint)
 
-// transfers is an array at runtime; @heroku/types ships a permissive shape for it.
-const transfers = await listPgTransfers(app)
+// transfer.listByApp is an upstream route on the data client (not an extension);
+// it's available on the SDK without registering an extension bundle.
+const transfers = await sdk.data.transfer.listByApp(app)
 console.log('Transfers:', transfers)

@@ -1,33 +1,14 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
 import type {
-  App,
-  PipelineCoupling,
   PipelinePromotion,
   PipelinePromotionCreateOpts,
   PipelinePromotionTarget,
 } from '@heroku/types/3.sdk'
 
+import type {ResourceCtx} from '../../core/extend-resource.js'
+
 import {HerokuApiClient} from '@heroku/api-client'
 
-import {createPlatformClient} from '../services/platform.js'
-
-export type PipelineWarning = {
-  limit: number
-  pipelineId: string
-  type: 'apps_truncated'
-}
-
-export type ListPipelineAppsOptions = {
-  clientOptions?: HerokuApiClientOptions
-  onWarning?: (warning: PipelineWarning) => void
-  signal?: AbortSignal
-}
-
-export type AppWithPipelineCoupling = App & {
-  pipelineCoupling: PipelineCoupling
-}
-
-const APPS_FILTER_LIMIT = 1000
+import {extendResource} from '../../core/extend-resource.js'
 
 export type ReleaseStreamContext = {
   stream: ReadableStream<Uint8Array>
@@ -35,7 +16,6 @@ export type ReleaseStreamContext = {
 }
 
 export type PromotePipelineOptions = {
-  clientOptions?: HerokuApiClientOptions
   intervalMs?: number
   onReleaseStream?: (context: ReleaseStreamContext) => Promise<void> | void
   releaseStreamMaxAttempts?: number
@@ -52,11 +32,11 @@ const DEFAULT_INTERVAL_MS = 1000
 const DEFAULT_RELEASE_STREAM_MAX_ATTEMPTS = 100
 
 export async function promotePipeline(
+  ctx: Pick<ResourceCtx, 'platform'>,
   body: PipelinePromotionCreateOpts,
   options: PromotePipelineOptions = {},
 ): Promise<PromotePipelineResult> {
   const {
-    clientOptions,
     intervalMs = DEFAULT_INTERVAL_MS,
     onReleaseStream,
     releaseStreamMaxAttempts = DEFAULT_RELEASE_STREAM_MAX_ATTEMPTS,
@@ -64,9 +44,7 @@ export async function promotePipeline(
     timeoutMs,
   } = options
 
-  const platformClient = createPlatformClient(clientOptions)
-  const promotion = await platformClient.pipelinePromotion.create(body)
-
+  const promotion = await ctx.platform.pipelinePromotion.create(body)
   if (!promotion.id) {
     throw new Error('Pipeline promotion response did not include an id')
   }
@@ -79,8 +57,7 @@ export async function promotePipeline(
     signal?.throwIfAborted()
 
     // eslint-disable-next-line no-await-in-loop
-    const targets = await platformClient.pipelinePromotionTarget.list(promotion.id)
-
+    const targets = await ctx.platform.pipelinePromotionTarget.list(promotion.id)
     if (targets.every(target => target.status !== 'pending')) {
       return {promotion, targets}
     }
@@ -95,7 +72,7 @@ export async function promotePipeline(
       streamHandled = true
       const target = targets[0]
       // eslint-disable-next-line no-await-in-loop
-      const release = await platformClient.release.info(target.app!.id!, target.release!.id!)
+      const release = await ctx.platform.release.info(target.app!.id!, target.release!.id!)
 
       if (release.output_stream_url) {
         // eslint-disable-next-line no-await-in-loop
@@ -119,57 +96,10 @@ export async function promotePipeline(
   }
 }
 
-export async function listPipelineApps(
-  pipelineId: string,
-  options: ListPipelineAppsOptions = {},
-): Promise<AppWithPipelineCoupling[]> {
-  options.signal?.throwIfAborted()
-  const platformClient = createPlatformClient(options.clientOptions)
-  const allCouplings = await platformClient.pipelineCoupling.listByPipeline(pipelineId)
-  // Drop malformed couplings (no app id) before issuing the bulk filter call.
-  const couplings = allCouplings.filter(coupling => coupling.app?.id)
-  if (couplings.length === 0) {
-    return []
-  }
-
-  let couplingsToResolve = couplings
-  if (couplings.length > APPS_FILTER_LIMIT) {
-    if (!options.onWarning) {
-      throw new Error(`Pipeline ${pipelineId} has more than ${APPS_FILTER_LIMIT} apps. `
-        + 'Pass an onWarning handler to opt into a truncated result.')
-    }
-
-    options.onWarning({limit: APPS_FILTER_LIMIT, pipelineId, type: 'apps_truncated'})
-    couplingsToResolve = couplings.slice(0, APPS_FILTER_LIMIT)
-  }
-
-  options.signal?.throwIfAborted()
-  // /filters/apps is a Platform bulk endpoint that's not in the SDK route
-  // registry, so call it through a raw HerokuApiClient. It accepts the
-  // standard platform Accept header but uses a different `.filters` suffix.
-  const apiClient = new HerokuApiClient({
-    ...options.clientOptions,
-    service: 'platform',
-  })
-  const ids = couplingsToResolve.map(coupling => coupling.app!.id!)
-  const response = await apiClient.post('/filters/apps', {in: {id: ids}}, {
-    headers: {
-      Accept: 'application/vnd.heroku+json; version=3.filters',
-      Range: `id ..; max=${APPS_FILTER_LIMIT};`,
-    },
-  })
-  const apps = (await response.json()) as App[]
-
-  const couplingByAppId = new Map<string, PipelineCoupling>()
-  for (const coupling of couplingsToResolve) {
-    couplingByAppId.set(coupling.app!.id!, coupling)
-  }
-
-  return apps.map(app => ({
-    ...app,
-    pipelineCoupling: couplingByAppId.get(app.id!)!,
-  }))
-}
+export const pipelinePromotionExtensions = extendResource('platform', 'pipelinePromotion', ctx => ({
+  promote: (body: PipelinePromotionCreateOpts, options?: PromotePipelineOptions) =>
+    promotePipeline(ctx, body, options),
+}))
 
 async function fetchReleaseOutput(
   url: string,

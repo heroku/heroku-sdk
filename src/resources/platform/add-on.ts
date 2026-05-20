@@ -1,14 +1,13 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
 import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
+
+import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {PlatformClient} from '../../services/platform.js'
 
 import {NotFoundError} from '@heroku/api-client'
 
-import {createPlatformClient} from '../services/platform.js'
-
-type PlatformClient = ReturnType<typeof createPlatformClient>
+import {extendResource} from '../../core/extend-resource.js'
 
 export type AddOnOptions = {
-  clientOptions?: HerokuApiClientOptions
   signal?: AbortSignal
 }
 
@@ -69,20 +68,20 @@ export class AddonAmbiguousError extends Error {
  * falls back to a global resolve if the platform returns 404 add_on.
  */
 export async function upgrade(
+  ctx: Pick<ResourceCtx, 'platform'>,
   addonIdentity: string,
   plan: string,
   options: ResolveAddonOptions = {},
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
-  const client = createPlatformClient(options.clientOptions)
 
-  const addon = await resolveAddonInternal(client, addonIdentity, {
+  const addon = await resolveAddonInternal(ctx.platform, addonIdentity, {
     addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
 
   options.signal?.throwIfAborted()
-  return client.addOn.update(addon.app.id, addon.id, {plan})
+  return ctx.platform.addOn.update(addon.app.id, addon.id, {plan})
 }
 
 /**
@@ -91,12 +90,12 @@ export async function upgrade(
  * returned later in the list.
  */
 export async function listPlans(
+  ctx: Pick<ResourceCtx, 'platform'>,
   serviceIdentity: string,
   options: AddOnOptions = {},
 ): Promise<Plan[]> {
   options.signal?.throwIfAborted()
-  const client = createPlatformClient(options.clientOptions)
-  const plans = await client.plan.listByAddOn(serviceIdentity)
+  const plans = await ctx.platform.plan.listByAddOn(serviceIdentity)
   return [...plans].sort(byPriceCentsAsc)
 }
 
@@ -122,24 +121,24 @@ function sortableCents(plan: Plan): number {
  * supplied.
  */
 export async function describeAddon(
+  ctx: Pick<ResourceCtx, 'platform'>,
   addonIdentity: string,
   options: ResolveAddonOptions = {},
 ): Promise<DescribedAddOn> {
   options.signal?.throwIfAborted()
-  const client = createPlatformClient(options.clientOptions)
 
-  const addon = await resolveAddonInternal(client, addonIdentity, {
+  const addon = await resolveAddonInternal(ctx.platform, addonIdentity, {
     addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
 
   options.signal?.throwIfAborted()
-  const attachments = await client.addOnAttachment.listByAddOn(addon.id)
+  const attachments = await ctx.platform.addOnAttachment.listByAddOn(addon.id)
 
   const plan = addon.plan as Plan | undefined
   return {
     ...addon,
-    ...(plan && {plan: {...plan, price: grandfatheredPrice(addon)}}),
+    ...(plan && {plan: {...plan, price: grandfatheredPrice(addon)} as AddOn['plan']}),
     attachments,
   }
 }
@@ -165,21 +164,16 @@ export async function describeAddon(
  *   - throws `AddonNotFoundError` if no match is found
  *   - throws `AddonAmbiguousError` if multiple matches remain after filtering
  *
- * For Heroku Postgres input shapes (attachment names like
- * `DATABASE_URL`, `parent-app::branch-name` references, etc.) use
- * `resolvePgDatabase` (in `pg.ts`); it routes those shapes to the
- * appropriate resolver.
- *
  * For attachment-based resolution (e.g. `DATABASE_URL` on a particular
  * app), use `resolveAddonByAttachment` instead.
  */
 export async function resolveAddon(
+  ctx: Pick<ResourceCtx, 'platform'>,
   addonIdentity: string,
   options: ResolveAddonOptions = {},
 ): Promise<ResolvedAddOn> {
   options.signal?.throwIfAborted()
-  const client = createPlatformClient(options.clientOptions)
-  return resolveAddonInternal(client, addonIdentity, options)
+  return resolveAddonInternal(ctx.platform, addonIdentity, options)
 }
 
 /**
@@ -193,13 +187,13 @@ export async function resolveAddon(
  * For resolving by add-on identity, use `resolveAddon`.
  */
 export async function resolveAddonByAttachment(
+  ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   attachmentName: string,
   options: AddOnOptions = {},
 ): Promise<ResolvedAddOn> {
   options.signal?.throwIfAborted()
-  const client = createPlatformClient(options.clientOptions)
-  const matches = await client.addOnAttachment.resolution({
+  const matches = await ctx.platform.addOnAttachment.resolution({
     // eslint-disable-next-line camelcase
     addon_attachment: attachmentName,
     app: appIdentity,
@@ -215,7 +209,7 @@ export async function resolveAddonByAttachment(
 }
 
 async function resolveAddonInternal(
-  client: PlatformClient,
+  platform: PlatformClient,
   addonIdentity: string,
   options: {addonService?: string; appIdentity?: string} = {},
 ): Promise<ResolvedAddOn> {
@@ -223,7 +217,7 @@ async function resolveAddonInternal(
 
   const resolveBy = async (app?: string): Promise<ResolvedAddOn> => {
     const body = app ? {addon: addonIdentity, app} : {addon: addonIdentity}
-    const matches = await client.addOn.resolution(body)
+    const matches = await platform.addOn.resolution(body)
     const filtered = addonService
       ? matches.filter(addon => addon.addon_service?.name === addonService)
       : matches
@@ -283,3 +277,16 @@ function grandfatheredPrice(addon: AddOn): Plan['price'] {
     contract: addon.billed_price?.contract,
   }
 }
+
+export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
+  describe: (addonIdentity: string, options?: ResolveAddonOptions) =>
+    describeAddon(ctx, addonIdentity, options),
+  listPlans: (serviceIdentity: string, options?: AddOnOptions) =>
+    listPlans(ctx, serviceIdentity, options),
+  resolve: (addonIdentity: string, options?: ResolveAddonOptions) =>
+    resolveAddon(ctx, addonIdentity, options),
+  resolveByAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
+    resolveAddonByAttachment(ctx, appIdentity, attachmentName, options),
+  upgrade: (addonIdentity: string, plan: string, options?: ResolveAddonOptions) =>
+    upgrade(ctx, addonIdentity, plan, options),
+}))

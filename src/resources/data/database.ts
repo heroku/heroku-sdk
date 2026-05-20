@@ -1,0 +1,77 @@
+import type {
+  DatabaseInfoResult,
+  DatabasePrepareUpgradeResult,
+  DatabaseRunUpgradeResult,
+} from '@heroku/types/data'
+
+import type {ResourceCtx} from '../../core/extend-resource.js'
+
+import {extendResource} from '../../core/extend-resource.js'
+import {resolvePgDatabase} from './internal/resolve-pg-database.js'
+
+export type DatabaseOptions = {
+  signal?: AbortSignal
+}
+
+export type DatabaseUpgradeBody = {
+  version?: string
+}
+
+export async function describe(
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
+  appIdentity: string,
+  addonIdentity?: string,
+  options: DatabaseOptions = {},
+): Promise<DatabaseInfoResult> {
+  options.signal?.throwIfAborted()
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  return ctx.data.database.info(addon.id)
+}
+
+export async function runUpgrade(
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
+  appIdentity: string,
+  addonIdentity?: string,
+  body: DatabaseUpgradeBody = {},
+  options: DatabaseOptions = {},
+): Promise<DatabaseRunUpgradeResult> {
+  options.signal?.throwIfAborted()
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  // Cast: routes.js declares hasRequestBody for runUpgrade but the generated
+  // HerokuClient interface omits the body param (Shogun spec lacks a request schema).
+  const fn = ctx.data.database.runUpgrade as
+    (name: string, body: DatabaseUpgradeBody) => Promise<DatabaseRunUpgradeResult>
+  return fn(addon.id, body)
+}
+
+export async function prepareUpgrade(
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
+  appIdentity: string,
+  addonIdentity?: string,
+  body: DatabaseUpgradeBody = {},
+  options: DatabaseOptions = {},
+): Promise<DatabasePrepareUpgradeResult> {
+  options.signal?.throwIfAborted()
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  // See note on runUpgrade.
+  const fn = ctx.data.database.prepareUpgrade as
+    (name: string, body: DatabaseUpgradeBody) => Promise<DatabasePrepareUpgradeResult>
+  return fn(addon.id, body)
+}
+
+export const databaseExtensions = extendResource('data', 'database', ctx => ({
+  describe: (appIdentity: string, addonIdentity?: string, options?: DatabaseOptions) =>
+    describe(ctx, appIdentity, addonIdentity, options),
+  prepareUpgrade: (
+    appIdentity: string,
+    addonIdentity?: string,
+    body?: DatabaseUpgradeBody,
+    options?: DatabaseOptions,
+  ) => prepareUpgrade(ctx, appIdentity, addonIdentity, body, options),
+  runUpgrade: (
+    appIdentity: string,
+    addonIdentity?: string,
+    body?: DatabaseUpgradeBody,
+    options?: DatabaseOptions,
+  ) => runUpgrade(ctx, appIdentity, addonIdentity, body, options),
+}))

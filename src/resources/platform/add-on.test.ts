@@ -5,15 +5,18 @@ import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
 
-import {createPlatformClient} from '../services/platform.js'
-import {
-  AddonAmbiguousError, AddonNotFoundError, describeAddon, listPlans,
-  resolveAddon, resolveAddonByAttachment, upgrade,
-} from './add-on.js'
+import type {ResourceCtx} from '../../core/extend-resource.js'
 
-vi.mock('../services/platform.js', () => ({
-  createPlatformClient: vi.fn(),
-}))
+import {
+  addOnExtensions,
+  AddonAmbiguousError,
+  AddonNotFoundError,
+  describeAddon,
+  listPlans,
+  resolveAddon,
+  resolveAddonByAttachment,
+  upgrade,
+} from './add-on.js'
 
 function buildAddon(overrides: Partial<AddOn> = {}): AddOn {
   return {
@@ -27,15 +30,26 @@ function buildAddon(overrides: Partial<AddOn> = {}): AddOn {
   } as AddOn
 }
 
-function buildAddOnClient({
+function buildCtx({
   attachments = [],
-  resolveResponses,
+  plans,
+  resolveResponses = [],
+  resolveByAttachmentResponses,
   updateResponse,
 }: {
   attachments?: AddOnAttachment[]
-  resolveResponses: Array<AddOn[] | Error>
+  plans?: Plan[]
+  resolveResponses?: Array<AddOn[] | Error>
+  resolveByAttachmentResponses?: AddOnAttachment[]
   updateResponse?: AddOn
-}) {
+} = {}): {
+  ctx: ResourceCtx
+  listByAddOn: ReturnType<typeof vi.fn>
+  listByAddOnService: ReturnType<typeof vi.fn>
+  resolution: ReturnType<typeof vi.fn>
+  resolutionByAttachment: ReturnType<typeof vi.fn>
+  update: ReturnType<typeof vi.fn>
+} {
   const resolution = vi.fn()
   for (const response of resolveResponses) {
     if (response instanceof Error) {
@@ -45,16 +59,26 @@ function buildAddOnClient({
     }
   }
 
+  const resolutionByAttachment = vi.fn().mockResolvedValue(resolveByAttachmentResponses ?? [])
   const listByAddOn = vi.fn().mockResolvedValue(attachments)
+  const listByAddOnService = vi.fn().mockResolvedValue(plans ?? [])
   const update = vi.fn().mockResolvedValue(updateResponse ?? {})
 
-  const client = {
-    addOn: {resolution, update},
-    addOnAttachment: {listByAddOn},
+  return {
+    ctx: {
+      data: {} as never,
+      platform: {
+        addOn: {resolution, update},
+        addOnAttachment: {listByAddOn, resolution: resolutionByAttachment},
+        plan: {listByAddOn: listByAddOnService},
+      } as never,
+    },
+    listByAddOn,
+    listByAddOnService,
+    resolution,
+    resolutionByAttachment,
+    update,
   }
-  vi.mocked(createPlatformClient).mockReturnValue(client as never)
-
-  return {listByAddOn, resolution, update}
 }
 
 function buildNotFound(resource = 'add_on'): NotFoundError {
@@ -65,7 +89,7 @@ function buildNotFound(resource = 'add_on'): NotFoundError {
   return new NotFoundError(response, {id: 'not_found'})
 }
 
-describe('add-on compositions', () => {
+describe('add-on resource', () => {
   afterEach(() => {
     vi.clearAllMocks()
   })
@@ -74,12 +98,12 @@ describe('add-on compositions', () => {
     it('resolves the addon then calls addOn.update with the plan', async () => {
       const resolved = buildAddon({app: {id: 'app-1', name: 'my-app'}, id: 'addon-1', name: 'kafka-swiftly-123'})
       const updated = buildAddon({id: 'addon-1', name: 'kafka-swiftly-123'})
-      const {resolution, update} = buildAddOnClient({
+      const {ctx, resolution, update} = buildCtx({
         resolveResponses: [[resolved]],
         updateResponse: updated,
       })
 
-      const result = await upgrade('kafka-swiftly-123', 'heroku-kafka:hobby', {appIdentity: 'my-app'})
+      const result = await upgrade(ctx, 'kafka-swiftly-123', 'heroku-kafka:hobby', {appIdentity: 'my-app'})
 
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'kafka-swiftly-123', app: 'my-app'})
       expect(update).toHaveBeenCalledExactlyOnceWith('app-1', 'addon-1', {plan: 'heroku-kafka:hobby'})
@@ -88,34 +112,26 @@ describe('add-on compositions', () => {
 
     it('resolves globally when no appIdentity is provided', async () => {
       const resolved = buildAddon({app: {id: 'app-1', name: 'my-app'}, id: 'addon-1'})
-      const {resolution, update} = buildAddOnClient({
+      const {ctx, resolution, update} = buildCtx({
         resolveResponses: [[resolved]],
         updateResponse: resolved,
       })
 
-      await upgrade('postgres::sushi', 'heroku-postgresql:premium-0')
+      await upgrade(ctx, 'postgres::sushi', 'heroku-postgresql:premium-0')
 
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'postgres::sushi'})
       expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'heroku-postgresql:premium-0'})
     })
 
-    it('forwards clientOptions to createPlatformClient', async () => {
-      buildAddOnClient({
-        resolveResponses: [[buildAddon({app: {id: 'app-1'}, id: 'addon-1'})]],
-        updateResponse: buildAddon(),
-      })
-
-      await upgrade('addon-1', 'plan-1', {clientOptions: {token: 'test-token'}})
-
-      expect(createPlatformClient).toHaveBeenCalledWith({token: 'test-token'})
-    })
-
-    it('throws if the signal is already aborted', async () => {
+    it('throws if the abort signal is already aborted', async () => {
+      const {ctx, resolution} = buildCtx()
       const controller = new AbortController()
       controller.abort()
 
-      await expect(upgrade('addon-1', 'plan-1', {signal: controller.signal})).rejects.toThrow()
-      expect(createPlatformClient).not.toHaveBeenCalled()
+      await expect(
+        upgrade(ctx, 'addon-1', 'plan-1', {signal: controller.signal}),
+      ).rejects.toThrow()
+      expect(resolution).not.toHaveBeenCalled()
     })
   })
 
@@ -126,12 +142,11 @@ describe('add-on compositions', () => {
         {id: 'p1', name: 'free', price: {cents: 0, unit: 'month'}},
         {id: 'p2', name: 'hobby', price: {cents: 700, unit: 'month'}},
       ] as Plan[]
-      const listByAddOn = vi.fn().mockResolvedValue(plans)
-      vi.mocked(createPlatformClient).mockReturnValue({plan: {listByAddOn}} as never)
+      const {ctx, listByAddOnService} = buildCtx({plans})
 
-      const result = await listPlans('heroku-postgresql')
+      const result = await listPlans(ctx, 'heroku-postgresql')
 
-      expect(listByAddOn).toHaveBeenCalledWith('heroku-postgresql')
+      expect(listByAddOnService).toHaveBeenCalledWith('heroku-postgresql')
       expect(result.map(plan => plan.id)).toEqual(['p1', 'p2', 'p3'])
     })
 
@@ -141,10 +156,9 @@ describe('add-on compositions', () => {
         {id: 'p4', name: 'metered', price: {metered: true}},
         {id: 'p1', name: 'free', price: {cents: 0}},
       ] as Plan[]
-      const listByAddOn = vi.fn().mockResolvedValue(plans)
-      vi.mocked(createPlatformClient).mockReturnValue({plan: {listByAddOn}} as never)
+      const {ctx} = buildCtx({plans})
 
-      const result = await listPlans('heroku-redis')
+      const result = await listPlans(ctx, 'heroku-redis')
 
       expect(result.map(plan => plan.id)).toEqual(['p1', 'p3', 'p4'])
     })
@@ -155,32 +169,32 @@ describe('add-on compositions', () => {
         {id: 'p1', name: 'a', price: {cents: 0}},
       ] as Plan[]
       const original = [...plans]
-      const listByAddOn = vi.fn().mockResolvedValue(plans)
-      vi.mocked(createPlatformClient).mockReturnValue({plan: {listByAddOn}} as never)
+      const {ctx} = buildCtx({plans})
 
-      await listPlans('svc')
+      await listPlans(ctx, 'svc')
 
       expect(plans).toEqual(original)
     })
 
     it('throws if the signal is already aborted', async () => {
+      const {ctx, listByAddOnService} = buildCtx()
       const controller = new AbortController()
       controller.abort()
 
-      await expect(listPlans('svc', {signal: controller.signal})).rejects.toThrow()
-      expect(createPlatformClient).not.toHaveBeenCalled()
+      await expect(listPlans(ctx, 'svc', {signal: controller.signal})).rejects.toThrow()
+      expect(listByAddOnService).not.toHaveBeenCalled()
     })
   })
 
   describe('describeAddon', () => {
     it('resolves the add-on globally when no app is given', async () => {
       const addon = buildAddon()
-      const {listByAddOn, resolution} = buildAddOnClient({
+      const {ctx, listByAddOn, resolution} = buildCtx({
         attachments: [{id: 'att-1'} as AddOnAttachment],
         resolveResponses: [[addon]],
       })
 
-      const result = await describeAddon('my-postgres')
+      const result = await describeAddon(ctx, 'my-postgres')
 
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-postgres'})
       expect(listByAddOn).toHaveBeenCalledWith(addon.id)
@@ -189,29 +203,29 @@ describe('add-on compositions', () => {
 
     it('resolves scoped to an app when one is provided', async () => {
       const addon = buildAddon()
-      const {resolution} = buildAddOnClient({resolveResponses: [[addon]]})
+      const {ctx, resolution} = buildCtx({resolveResponses: [[addon]]})
 
-      await describeAddon('my-postgres', {appIdentity: 'my-app'})
+      await describeAddon(ctx, 'my-postgres', {appIdentity: 'my-app'})
 
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-postgres', app: 'my-app'})
     })
 
     it('skips the app-scoped lookup for namespaced identities', async () => {
       const addon = buildAddon()
-      const {resolution} = buildAddOnClient({resolveResponses: [[addon]]})
+      const {ctx, resolution} = buildCtx({resolveResponses: [[addon]]})
 
-      await describeAddon('postgres::sushi', {appIdentity: 'my-app'})
+      await describeAddon(ctx, 'postgres::sushi', {appIdentity: 'my-app'})
 
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'postgres::sushi'})
     })
 
     it('falls back to a global resolve when the app-scoped lookup is 404 add_on', async () => {
       const addon = buildAddon()
-      const {resolution} = buildAddOnClient({
+      const {ctx, resolution} = buildCtx({
         resolveResponses: [buildNotFound('add_on'), [addon]],
       })
 
-      const result = await describeAddon('my-postgres', {appIdentity: 'other-app'})
+      const result = await describeAddon(ctx, 'my-postgres', {appIdentity: 'other-app'})
 
       expect(resolution).toHaveBeenNthCalledWith(1, {addon: 'my-postgres', app: 'other-app'})
       expect(resolution).toHaveBeenNthCalledWith(2, {addon: 'my-postgres'})
@@ -220,23 +234,23 @@ describe('add-on compositions', () => {
 
     it('rethrows non-add_on 404s without falling back', async () => {
       const error = buildNotFound('app')
-      const {resolution} = buildAddOnClient({resolveResponses: [error]})
+      const {ctx, resolution} = buildCtx({resolveResponses: [error]})
 
-      await expect(describeAddon('my-postgres', {appIdentity: 'my-app'})).rejects.toBe(error)
+      await expect(describeAddon(ctx, 'my-postgres', {appIdentity: 'my-app'})).rejects.toBe(error)
       expect(resolution).toHaveBeenCalledTimes(1)
     })
 
     it('throws AddonNotFoundError when the resolver returns no matches', async () => {
-      buildAddOnClient({resolveResponses: [[]]})
+      const {ctx} = buildCtx({resolveResponses: [[]]})
 
-      await expect(describeAddon('nope')).rejects.toBeInstanceOf(AddonNotFoundError)
+      await expect(describeAddon(ctx, 'nope')).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
     it('throws AddonAmbiguousError when the resolver returns more than one', async () => {
       const matches = [buildAddon({id: 'a1', name: 'one'}), buildAddon({id: 'a2', name: 'two'})]
-      buildAddOnClient({resolveResponses: [matches]})
+      const {ctx} = buildCtx({resolveResponses: [matches]})
 
-      await expect(describeAddon('ambig')).rejects.toBeInstanceOf(AddonAmbiguousError)
+      await expect(describeAddon(ctx, 'ambig')).rejects.toBeInstanceOf(AddonAmbiguousError)
     })
 
     it('filters resolver matches by addonService when provided', async () => {
@@ -246,9 +260,9 @@ describe('add-on compositions', () => {
         buildAddon({addon_service: {name: 'heroku-postgresql'}, id: 'a2', name: 'pg-app'}),
       ]
       /* eslint-enable camelcase */
-      const {resolution} = buildAddOnClient({resolveResponses: [matches]})
+      const {ctx, resolution} = buildCtx({resolveResponses: [matches]})
 
-      const result = await describeAddon('shared-name', {addonService: 'heroku-postgresql'})
+      const result = await describeAddon(ctx, 'shared-name', {addonService: 'heroku-postgresql'})
 
       // The platform's filter would exclude alpha add-ons, so we filter client-side.
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'shared-name'})
@@ -258,9 +272,9 @@ describe('add-on compositions', () => {
     it('throws AddonNotFoundError when addonService filter eliminates all matches', async () => {
       // eslint-disable-next-line camelcase
       const matches = [buildAddon({addon_service: {name: 'heroku-redis'}, id: 'a1'})]
-      buildAddOnClient({resolveResponses: [matches]})
+      const {ctx} = buildCtx({resolveResponses: [matches]})
 
-      await expect(describeAddon('shared-name', {addonService: 'heroku-postgresql'})).rejects.toBeInstanceOf(AddonNotFoundError)
+      await expect(describeAddon(ctx, 'shared-name', {addonService: 'heroku-postgresql'})).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
     it('replaces plan.price with grandfathered cents/contract from billed_price', async () => {
@@ -269,9 +283,9 @@ describe('add-on compositions', () => {
         billed_price: {cents: 0, contract: true},
         plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}},
       })
-      buildAddOnClient({resolveResponses: [[addon]]})
+      const {ctx} = buildCtx({resolveResponses: [[addon]]})
 
-      const result = await describeAddon('my-postgres')
+      const result = await describeAddon(ctx, 'my-postgres')
 
       expect(result.plan).toMatchObject({
         name: 'heroku-postgresql:standard-0',
@@ -286,9 +300,9 @@ describe('add-on compositions', () => {
         plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}},
       })
       const originalPriceCents = (addon.plan as {price: {cents: number}}).price.cents
-      buildAddOnClient({resolveResponses: [[addon]]})
+      const {ctx} = buildCtx({resolveResponses: [[addon]]})
 
-      const result = await describeAddon('my-postgres')
+      const result = await describeAddon(ctx, 'my-postgres')
 
       // The returned object reflects grandfathered pricing.
       expect((result.plan as {price: {cents: number}}).price.cents).toBe(0)
@@ -300,50 +314,53 @@ describe('add-on compositions', () => {
 
     it('throws if the resolver returns an add-on missing required ids', async () => {
       const broken = {id: 'addon-id', name: 'broken'} as AddOn // no app
-      buildAddOnClient({resolveResponses: [[broken]]})
+      const {ctx} = buildCtx({resolveResponses: [[broken]]})
 
-      await expect(describeAddon('broken')).rejects.toThrow(/missing required fields/)
+      await expect(describeAddon(ctx, 'broken')).rejects.toThrow(/missing required fields/)
     })
 
     it('throws if the signal is already aborted', async () => {
+      const {ctx, resolution} = buildCtx()
       const controller = new AbortController()
       controller.abort()
 
-      await expect(describeAddon('my-postgres', {signal: controller.signal})).rejects.toThrow()
-      expect(createPlatformClient).not.toHaveBeenCalled()
+      await expect(describeAddon(ctx, 'my-postgres', {signal: controller.signal})).rejects.toThrow()
+      expect(resolution).not.toHaveBeenCalled()
     })
   })
 
   describe('resolveAddon', () => {
     it('returns the resolved add-on directly', async () => {
       const addon = buildAddon()
-      const {resolution} = buildAddOnClient({resolveResponses: [[addon]]})
+      const {ctx, resolution} = buildCtx({resolveResponses: [[addon]]})
 
-      const result = await resolveAddon('my-postgres', {appIdentity: 'my-app'})
+      const result = await resolveAddon(ctx, 'my-postgres', {appIdentity: 'my-app'})
 
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-postgres', app: 'my-app'})
       expect(result.id).toBe('addon-id')
     })
 
     it('throws if the signal is already aborted', async () => {
+      const {ctx, resolution} = buildCtx()
       const controller = new AbortController()
       controller.abort()
 
-      await expect(resolveAddon('my-postgres', {signal: controller.signal})).rejects.toThrow()
-      expect(createPlatformClient).not.toHaveBeenCalled()
+      await expect(resolveAddon(ctx, 'my-postgres', {signal: controller.signal})).rejects.toThrow()
+      expect(resolution).not.toHaveBeenCalled()
     })
   })
 
   describe('resolveAddonByAttachment', () => {
     it('resolves and returns the add-on from the matched attachment', async () => {
-      const resolution = vi.fn().mockResolvedValue([
-        {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}},
-      ])
-      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
+      const {ctx, resolutionByAttachment} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}} as AddOnAttachment,
+        ],
+      })
 
-      const result = await resolveAddonByAttachment('my-app', 'DATABASE_URL')
+      const result = await resolveAddonByAttachment(ctx, 'my-app', 'DATABASE_URL')
 
-      expect(resolution).toHaveBeenCalledWith({
+      expect(resolutionByAttachment).toHaveBeenCalledWith({
         // eslint-disable-next-line camelcase
         addon_attachment: 'DATABASE_URL',
         app: 'my-app',
@@ -353,25 +370,60 @@ describe('add-on compositions', () => {
     })
 
     it('throws AddonNotFoundError when no attachment matches', async () => {
-      const resolution = vi.fn().mockResolvedValue([])
-      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
+      const {ctx} = buildCtx({resolveByAttachmentResponses: []})
 
-      await expect(resolveAddonByAttachment('my-app', 'NONEXISTENT')).rejects.toBeInstanceOf(AddonNotFoundError)
+      await expect(resolveAddonByAttachment(ctx, 'my-app', 'NONEXISTENT')).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
     it('throws AddonNotFoundError when the matched attachment lacks an addon id', async () => {
-      const resolution = vi.fn().mockResolvedValue([{addon: {app: {name: 'my-app'}, name: 'incomplete'}}])
-      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {name: 'my-app'}, name: 'incomplete'}} as AddOnAttachment,
+        ],
+      })
 
-      await expect(resolveAddonByAttachment('my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonNotFoundError)
+      await expect(resolveAddonByAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
     it('throws if the signal is already aborted', async () => {
+      const {ctx, resolutionByAttachment} = buildCtx()
       const controller = new AbortController()
       controller.abort()
 
-      await expect(resolveAddonByAttachment('my-app', 'DATABASE_URL', {signal: controller.signal})).rejects.toThrow()
-      expect(createPlatformClient).not.toHaveBeenCalled()
+      await expect(
+        resolveAddonByAttachment(ctx, 'my-app', 'DATABASE_URL', {signal: controller.signal}),
+      ).rejects.toThrow()
+      expect(resolutionByAttachment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('addOnExtensions', () => {
+    it('declares service: platform, resource: addOn', () => {
+      expect(addOnExtensions.service).toBe('platform')
+      expect(addOnExtensions.resource).toBe('addOn')
+    })
+
+    it('factory exposes describe, listPlans, resolve, resolveByAttachment, upgrade', () => {
+      const {ctx} = buildCtx()
+      const methods = addOnExtensions.factory(ctx)
+      expect(typeof methods.describe).toBe('function')
+      expect(typeof methods.listPlans).toBe('function')
+      expect(typeof methods.resolve).toBe('function')
+      expect(typeof methods.resolveByAttachment).toBe('function')
+      expect(typeof methods.upgrade).toBe('function')
+    })
+
+    it('upgrade delegates to the named function', async () => {
+      const resolved = buildAddon({app: {id: 'app-1', name: 'my-app'}, id: 'addon-1'})
+      const {ctx, update} = buildCtx({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+      const methods = addOnExtensions.factory(ctx)
+
+      await methods.upgrade('addon-1', 'plan-1')
+
+      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'plan-1'})
     })
   })
 })

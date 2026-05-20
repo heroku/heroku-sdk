@@ -1,0 +1,147 @@
+import {
+  afterEach, describe, expect, it, vi,
+} from 'vitest'
+
+const platformConstructorSpy = vi.fn()
+const dataConstructorSpy = vi.fn()
+
+vi.mock('@heroku/api-client', () => ({
+  HerokuApiClient: class {
+    constructor(options: unknown) {
+      // The same constructor is used for platform and data; spies are
+      // distinguished by the service field in options.
+      const {service} = (options as {service?: string})
+      if (service === 'platform') platformConstructorSpy(options)
+      else if (service === 'data') dataConstructorSpy(options)
+    }
+  },
+}))
+
+vi.mock('@heroku/types/3.sdk/routes', () => ({
+  app: {
+    update: {hasRequestBody: true, method: 'PATCH', path: '/apps/{appIdentity}'},
+  },
+}))
+
+vi.mock('@heroku/types/data/routes', () => ({
+  database: {
+    info: {method: 'GET', path: '/databases/{databaseIdentity}'},
+  },
+}))
+
+describe('HerokuSDK', () => {
+  afterEach(() => {
+    platformConstructorSpy.mockClear()
+    dataConstructorSpy.mockClear()
+    vi.resetModules()
+  })
+
+  it('constructs no service clients eagerly', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+
+    const sdk = new HerokuSDK()
+    expect(sdk).toBeDefined()
+
+    expect(platformConstructorSpy).not.toHaveBeenCalled()
+    expect(dataConstructorSpy).not.toHaveBeenCalled()
+  })
+
+  it('lazily constructs the platform client on first access', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({clientOptions: {token: 'abc'}})
+
+    const _touch = sdk.platform
+    expect(_touch).toBeDefined()
+
+    expect(platformConstructorSpy).toHaveBeenCalledTimes(1)
+    expect(platformConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      service: 'platform',
+      token: 'abc',
+    }))
+    expect(dataConstructorSpy).not.toHaveBeenCalled()
+  })
+
+  it('memoizes service clients across repeated access', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK()
+
+    const a = sdk.platform
+    const b = sdk.platform
+
+    expect(a).toBe(b)
+    expect(platformConstructorSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('routes extension methods through the merged proxy', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+
+    const ext = extendResource('platform', 'app', () => ({
+      enableMaintenance: () => 'maintenance-on',
+    }))
+
+    const sdk = new HerokuSDK({extensions: [ext]})
+
+    // Cast to bypass overly-narrow inferred types for the test.
+    const result = (sdk.platform.app as unknown as {enableMaintenance: () => string}).enableMaintenance()
+    expect(result).toBe('maintenance-on')
+  })
+
+  it('partitions extensions by service so platform extensions do not leak into data', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+
+    const platformExt = extendResource('platform', 'app', () => ({onlyPlatform: () => 'p'}))
+    const dataExt = extendResource('data', 'database', () => ({onlyData: () => 'd'}))
+
+    const sdk = new HerokuSDK({extensions: [platformExt, dataExt]})
+
+    expect((sdk.platform.app as unknown as {onlyPlatform: () => string}).onlyPlatform()).toBe('p')
+    expect((sdk.data.database as unknown as {onlyData: () => string}).onlyData()).toBe('d')
+    // Platform extension does not appear on data.app, and data extension does not appear on platform.database.
+    expect((sdk.data as unknown as {app?: unknown}).app).toBeUndefined()
+    expect((sdk.platform as unknown as {database?: unknown}).database).toBeUndefined()
+  })
+
+  it('exposes the SDK\'s raw clients via ctx and constructs each lazily on first ctx access', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+
+    // A platform extension whose factory captures ctx.data, but doesn't call
+    // it until the method is invoked. This pins down two invariants:
+    //   1. Defining the extension does not eagerly build the data client.
+    //   2. When the method is invoked, ctx.data is the raw client created by
+    //      the SDK (constructed exactly once).
+    const ext = extendResource('platform', 'app', ctx => ({
+      peekData: () => ctx.data,
+    }))
+
+    const sdk = new HerokuSDK({extensions: [ext]})
+
+    // Touching sdk.platform must not construct the data client.
+    const platformView = sdk.platform
+    expect(platformView).toBeDefined()
+    expect(dataConstructorSpy).not.toHaveBeenCalled()
+
+    // Now invoke the extension method, which reads ctx.data.
+    const peeked = (sdk.platform.app as unknown as {peekData: () => unknown}).peekData()
+
+    // Reading ctx.data triggers the raw data client construction exactly once.
+    expect(dataConstructorSpy).toHaveBeenCalledTimes(1)
+    // The data instance handed to the extension is the same one wrapped by sdk.data.
+    // (sdk.data wraps the raw client in mergeExtensions, but with no data extensions
+    // registered, the merged proxy still resolves through to the raw target.)
+    expect(peeked).toBeDefined()
+  })
+
+  it('memoizes the data service client across repeated access', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK()
+
+    const a = sdk.data
+    const b = sdk.data
+
+    expect(a).toBe(b)
+    expect(dataConstructorSpy).toHaveBeenCalledTimes(1)
+  })
+})

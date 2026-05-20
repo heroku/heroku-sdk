@@ -23,12 +23,31 @@ src/
     create-client.ts               # generic createClient<T>(routes, opts) — internal
     dispatcher.ts                  # route → HTTP call mapping
     interpolate-path.ts            # {placeholder} substitution
+    extend-resource.ts             # extendResource + ResourceCtx + type utilities
+    extensions-proxy.ts            # mergeExtensions Proxy
+    heroku-sdk.ts                  # HerokuSDK class (generic in Exts)
     *.test.ts                      # co-located vitest tests
-  compositions/
-    promote-pipeline.ts            # multi-call workflow built on createPlatformClient
+  resources/
+    extensions/
+      platform.ts                  # curated barrel of platform *Extensions
+      data.ts                      # curated barrel of data *Extensions
+    platform/
+      add-on.ts                    # named fns + addOnExtensions
+      app.ts                       # named fns + appExtensions
+      dyno.ts                      # named fns + dynoExtensions
+      pipeline-coupling.ts         # named fns + pipelineCouplingExtensions
+      pipeline-promotion.ts        # named fns + pipelinePromotionExtensions
+    data/
+      database.ts                  # named fns + databaseExtensions
+      maintenance.ts               # named fns + maintenanceExtensions
+      postgres-database.ts         # named fns + postgresDatabaseExtensions
+      internal/
+        resolve-pg-database.ts     # shared add-on resolver for pg flows
 examples/
-  basic-usage.ts                   # platform usage example (npm run example)
+  basic-usage.ts                   # platform usage example
   data-usage.ts                    # data usage example
+  sdk-usage.ts                     # HerokuSDK + extensions example
+  sdk-tree-shaken.ts               # named-function path (smallest bundle)
 ```
 
 ## Architecture
@@ -39,6 +58,10 @@ This is the Heroku SDK (`@heroku/sdk`). It generates fully-typed clients at runt
 - `@heroku/sdk/platform` → `createPlatformClient`, `PlatformClient`
 - `@heroku/sdk/data` → `createDataClient`, `DataClient`
 - `@heroku/sdk` (root) → `HerokuApiClientOptions` (shared types only)
+
+**SDK class (`@heroku/sdk/sdk` → `HerokuSDK`):** Combines per-service clients with hand-written resource extensions. Lazy per-service getters return Proxy-merged views: `sdk.platform.app.enableMaintenance()` is a hand-written method, `sdk.platform.app.info()` is the upstream route, both available on the same namespace. Extension bundles are imported by name from `@heroku/sdk/extensions/<service>` and passed at construction.
+
+**Resource modules (`src/resources/<service>/<resource>.ts`):** Each resource module exports both tree-shakable named functions (callable with explicit `ctx`) and an `*Extensions` bundle produced by `extendResource`. The bundle is mechanical delegation — every method delegates one-line into the corresponding named function. Cross-service helpers (e.g., the pg flow that needs both platform and data clients) destructure both services from `ctx`.
 
 **Per-service factories:** Each `src/services/<name>.ts` is a thin wrapper that imports its service's routes and types from `@heroku/types/<subpath>`, delegates to the internal `createClient` engine, and injects the matching `service` identifier so `@heroku/api-client` resolves the correct baseUrl.
 
