@@ -129,12 +129,17 @@ function sortableCents(plan: Plan): number {
  *
  * - Resolves the add-on by identity (optionally scoped to an app).
  * - Loads the add-on's attachments.
- * - Mutates `plan.price` so it reflects any grandfathered/billed pricing.
+ * - Returns a copy with `plan.price` set from `billed_price` (so the
+ *   value reflects any grandfathered/contract pricing).
  *
  * If `appIdentity` is provided and the platform returns 404 (resource
  * `add_on`), the resolve falls back to a global lookup. This handles
  * the case where the add-on belongs to a different app than the one
  * supplied.
+ *
+ * Requests the `version=3.sdk` accept variant with `addon_service,plan`
+ * expansion so the resolved add-on includes the full `Plan` shape
+ * (`price.unit`, etc.) needed to render pricing.
  */
 export async function describeAddon(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -143,13 +148,18 @@ export async function describeAddon(
 ): Promise<DescribedAddOn> {
   options.signal?.throwIfAborted()
 
-  const addon = await resolveAddonInternal(ctx.platform, addonIdentity, {
+  const platform = ctx.platform.withHeaders({
+    Accept: 'application/vnd.heroku+json; version=3.sdk',
+    'Accept-Expansion': 'addon_service,plan',
+  })
+
+  const addon = await resolveAddonInternal(platform, addonIdentity, {
     addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
 
   options.signal?.throwIfAborted()
-  const attachments = await ctx.platform.addOnAttachment.listByAddOn(addon.id)
+  const attachments = await platform.addOnAttachment.listByAddOn(addon.id)
 
   const plan = addon.plan as Plan | undefined
   return {

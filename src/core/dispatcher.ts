@@ -1,4 +1,4 @@
-import type {HerokuApiClient} from '@heroku/heroku-fetch'
+import type {HerokuApiClient, RequestOptions} from '@heroku/heroku-fetch'
 import type {RouteDefinition} from '@heroku/types/types'
 
 import createDebug from 'debug'
@@ -12,6 +12,7 @@ export async function dispatch(
   route: RouteDefinition,
   args: unknown[],
   invocation?: string,
+  requestOptions?: RequestOptions,
 ): Promise<unknown> {
   const placeholderCount = countPlaceholders(route.path)
   const pathParams = args.slice(0, placeholderCount) as string[]
@@ -26,7 +27,7 @@ export async function dispatch(
 
   debug('%s %s %s -> %s hasBody=%s', invocation ?? 'dispatch', route.method, route.path, path, body !== undefined)
 
-  const response = await callMethod(client, route.method, path, body)
+  const response = await callMethod(client, route.method, path, body, requestOptions)
 
   const contentLength = response.headers.get('content-length')
   if (response.status === 204 || contentLength === '0') {
@@ -42,26 +43,27 @@ function callMethod(
   method: string,
   path: string,
   body: unknown,
+  requestOptions?: RequestOptions,
 ): Promise<Response> {
   switch (method) {
     case 'DELETE': {
-      return client.delete(path)
+      return requestOptions ? client.delete(path, requestOptions) : client.delete(path)
     }
 
     case 'GET': {
-      return client.get(path)
+      return requestOptions ? client.get(path, requestOptions) : client.get(path)
     }
 
     case 'PATCH': {
-      return client.patch(path, body)
+      return requestOptions ? client.patch(path, body, requestOptions) : client.patch(path, body)
     }
 
     case 'POST': {
-      return client.post(path, body)
+      return requestOptions ? client.post(path, body, requestOptions) : client.post(path, body)
     }
 
     case 'PUT': {
-      return client.put(path, body)
+      return requestOptions ? client.put(path, body, requestOptions) : client.put(path, body)
     }
 
     default: {

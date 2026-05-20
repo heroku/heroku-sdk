@@ -49,6 +49,7 @@ function buildCtx({
   resolution: ReturnType<typeof vi.fn>
   resolutionByAttachment: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
+  withHeaders: ReturnType<typeof vi.fn>
 } {
   const resolution = vi.fn()
   for (const response of resolveResponses) {
@@ -64,20 +65,26 @@ function buildCtx({
   const listByAddOnService = vi.fn().mockResolvedValue(plans ?? [])
   const update = vi.fn().mockResolvedValue(updateResponse ?? {})
 
+  const platform = {
+    addOn: {resolution, update},
+    addOnAttachment: {listByAddOn, resolution: resolutionByAttachment},
+    plan: {listByAddOn: listByAddOnService},
+    withHeaders: vi.fn(),
+  }
+  // withHeaders should return a same-shaped client; our mock is self-referential.
+  platform.withHeaders.mockReturnValue(platform)
+
   return {
     ctx: {
       data: {} as never,
-      platform: {
-        addOn: {resolution, update},
-        addOnAttachment: {listByAddOn, resolution: resolutionByAttachment},
-        plan: {listByAddOn: listByAddOnService},
-      } as never,
+      platform: platform as never,
     },
     listByAddOn,
     listByAddOnService,
     resolution,
     resolutionByAttachment,
     update,
+    withHeaders: platform.withHeaders,
   }
 }
 
@@ -258,6 +265,18 @@ describe('add-on resource', () => {
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-postgres'})
       expect(listByAddOn).toHaveBeenCalledWith(addon.id)
       expect(result.attachments).toEqual([{id: 'att-1'}])
+    })
+
+    it('requests 3.sdk + addon_service,plan expansion via withHeaders', async () => {
+      const addon = buildAddon()
+      const {ctx, withHeaders} = buildCtx({resolveResponses: [[addon]]})
+
+      await describeAddon(ctx, 'my-postgres')
+
+      expect(withHeaders).toHaveBeenCalledWith({
+        Accept: 'application/vnd.heroku+json; version=3.sdk',
+        'Accept-Expansion': 'addon_service,plan',
+      })
     })
 
     it('resolves scoped to an app when one is provided', async () => {
