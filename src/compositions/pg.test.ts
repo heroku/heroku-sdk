@@ -6,12 +6,14 @@ import {
 
 import {createDataClient} from '../services/data.js'
 import {createPlatformClient} from '../services/platform.js'
+import {AddonNotFoundError} from './add-on.js'
 import {
   describePgDatabase,
   describePgMaintenance,
   listPgCredentials,
   listPgTransfers,
   preparePgUpgrade,
+  resolvePgDatabase,
   runPgUpgrade,
 } from './pg.js'
 
@@ -24,7 +26,15 @@ vi.mock('../services/data.js', () => ({
 }))
 
 function attachmentMatch(addonId: string): AddOnAttachment[] {
-  return [{addon: {app: {name: 'app-1'}, id: addonId, name: 'postgresql-addon'}}]
+  return [{addon: {app: {id: 'app-uuid-1', name: 'app-1'}, id: addonId, name: 'postgresql-addon'}}]
+}
+
+function buildBranchAddon(addonId: string) {
+  return {
+    app: {id: 'app-uuid-1', name: 'parent-app'},
+    id: addonId,
+    name: 'pg-branch',
+  }
 }
 
 describe('pg compositions', () => {
@@ -64,7 +74,7 @@ describe('pg compositions', () => {
       vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
       vi.mocked(createDataClient).mockReturnValue({database: {info: vi.fn()}} as never)
 
-      await expect(describePgDatabase('app-1', 'NOPE')).rejects.toThrow(/Could not resolve add-on/)
+      await expect(describePgDatabase('app-1', 'NOPE')).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
     it('throws if the abort signal is already aborted', async () => {
@@ -175,6 +185,58 @@ describe('pg compositions', () => {
 
       expect(prepareUpgrade).toHaveBeenCalledWith('addon-8', {version: '17'})
       expect(result).toEqual({message: 'scheduled'})
+    })
+  })
+
+  describe('resolvePgDatabase', () => {
+    it('routes a parent::branch reference through addOn.resolution with parsed parts', async () => {
+      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-9')])
+      vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
+
+      const result = await resolvePgDatabase({input: 'parent-app::branch'})
+
+      expect(resolution).toHaveBeenCalledWith({addon: 'branch', app: 'parent-app'})
+      expect(result.id).toBe('addon-9')
+    })
+
+    it('routes a SHOUTY_SNAKE_CASE input through addOnAttachment.resolution', async () => {
+      const resolution = vi.fn().mockResolvedValue(attachmentMatch('addon-13'))
+      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
+
+      const result = await resolvePgDatabase({appIdentity: 'app-1', input: 'HEROKU_POSTGRESQL_GREEN'})
+
+      expect(resolution).toHaveBeenCalledWith({
+        // eslint-disable-next-line camelcase
+        addon_attachment: 'HEROKU_POSTGRESQL_GREEN',
+        app: 'app-1',
+      })
+      expect(result.id).toBe('addon-13')
+    })
+
+    it('routes a kebab-case input through addOn.resolution as an add-on identity', async () => {
+      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-14')])
+      vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
+
+      await resolvePgDatabase({appIdentity: 'app-1', input: 'postgres-curved-12345'})
+
+      expect(resolution).toHaveBeenCalledWith({addon: 'postgres-curved-12345', app: 'app-1'})
+    })
+
+    it('defaults to the DATABASE_URL attachment when input is omitted', async () => {
+      const resolution = vi.fn().mockResolvedValue(attachmentMatch('addon-15'))
+      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
+
+      await resolvePgDatabase({appIdentity: 'app-1'})
+
+      expect(resolution).toHaveBeenCalledWith({
+        // eslint-disable-next-line camelcase
+        addon_attachment: 'DATABASE_URL',
+        app: 'app-1',
+      })
+    })
+
+    it('throws when input is omitted and no appIdentity is provided', async () => {
+      await expect(resolvePgDatabase({})).rejects.toThrow(/requires either input or appIdentity/)
     })
   })
 })
