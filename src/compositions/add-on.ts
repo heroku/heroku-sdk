@@ -117,9 +117,9 @@ function sortableCents(plan: Plan): number {
  * - Mutates `plan.price` so it reflects any grandfathered/billed pricing.
  *
  * If `appIdentity` is provided and the platform returns 404 (resource
- * `add_on`), falls back to a global resolve. This matches the behavior
- * of `heroku addons:info` when the user passes `--app` but the add-on
- * is owned by a different app.
+ * `add_on`), the resolve falls back to a global lookup. This handles
+ * the case where the add-on belongs to a different app than the one
+ * supplied.
  */
 export async function describeAddon(
   addonIdentity: string,
@@ -165,11 +165,10 @@ export async function describeAddon(
  *   - throws `AddonNotFoundError` if no match is found
  *   - throws `AddonAmbiguousError` if multiple matches remain after filtering
  *
- * NOTE on Heroku Postgres-flavored input:
- * The data CLI accepts several input shapes — `parent-app::branch-name`,
- * attachment names like `DATABASE_URL`, etc. — that aren't handled
- * here. For Postgres database resolution, use `resolvePgDatabase` (in
- * `pg.ts`); it routes any of those shapes to the right resolver.
+ * For Heroku Postgres input shapes (attachment names like
+ * `DATABASE_URL`, `parent-app::branch-name` references, etc.) use
+ * `resolvePgDatabase` (in `pg.ts`); it routes those shapes to the
+ * appropriate resolver.
  *
  * For attachment-based resolution (e.g. `DATABASE_URL` on a particular
  * app), use `resolveAddonByAttachment` instead.

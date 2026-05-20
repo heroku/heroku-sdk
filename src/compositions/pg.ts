@@ -30,7 +30,7 @@ export type ResolvePgDatabaseOptions = ResolveAddonOptions & {
 
 /**
  * Resolve a Heroku Postgres database add-on from any of the input
- * shapes a Heroku Postgres CLI command accepts:
+ * shapes the platform recognizes:
  *
  *   - omitted → the `DATABASE_URL` attachment on `appIdentity`.
  *   - `DATABASE_URL`, `HEROKU_POSTGRESQL_GREEN`, etc. → that attachment
