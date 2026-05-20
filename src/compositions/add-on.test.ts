@@ -1,6 +1,6 @@
 import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
-import {NotFoundError} from '@heroku/api-client'
+import {NotFoundError} from '@heroku/heroku-fetch'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -62,7 +62,7 @@ function buildNotFound(resource = 'add_on'): NotFoundError {
     headers: {'content-type': 'application/json'},
     status: 404,
   })
-  return new NotFoundError(response, {id: 'not_found'})
+  return new NotFoundError(response, {id: 'not_found', resource})
 }
 
 describe('add-on compositions', () => {
