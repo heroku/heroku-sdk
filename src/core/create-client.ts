@@ -1,10 +1,10 @@
-import type { HerokuApiClientOptions } from '@heroku/heroku-fetch'
-import type { RouteDefinition } from '@heroku/types/types'
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
+import type {RouteDefinition} from '@heroku/types/types'
 
-import { HerokuApiClient } from '@heroku/heroku-fetch'
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
-import { dispatch } from './dispatcher.js'
+import {dispatch} from './dispatcher.js'
 
 const debug = createDebug('heroku:sdk:client')
 

@@ -13,8 +13,8 @@ import {
 function buildCtx(opts: {
   databaseInfo?: ReturnType<typeof vi.fn>
   prepareUpgrade?: ReturnType<typeof vi.fn>
-  resolutionByAttachment?: ReturnType<typeof vi.fn>
   resolution?: ReturnType<typeof vi.fn>
+  resolutionByAttachment?: ReturnType<typeof vi.fn>
   runUpgrade?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
   return {

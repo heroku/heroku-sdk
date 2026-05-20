@@ -8,8 +8,8 @@ import {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {
-  addOnExtensions,
   AddonAmbiguousError,
+  addOnExtensions,
   AddonNotFoundError,
   describeAddon,
   listPlans,
@@ -33,14 +33,14 @@ function buildAddon(overrides: Partial<AddOn> = {}): AddOn {
 function buildCtx({
   attachments = [],
   plans,
-  resolveResponses = [],
   resolveByAttachmentResponses,
+  resolveResponses = [],
   updateResponse,
 }: {
   attachments?: AddOnAttachment[]
   plans?: Plan[]
-  resolveResponses?: Array<AddOn[] | Error>
   resolveByAttachmentResponses?: AddOnAttachment[]
+  resolveResponses?: Array<AddOn[] | Error>
   updateResponse?: AddOn
 } = {}): {
   ctx: ResourceCtx
@@ -128,10 +128,69 @@ describe('add-on resource', () => {
       const controller = new AbortController()
       controller.abort()
 
-      await expect(
-        upgrade(ctx, 'addon-1', 'plan-1', {signal: controller.signal}),
-      ).rejects.toThrow()
+      await expect(upgrade(ctx, 'addon-1', 'plan-1', {signal: controller.signal})).rejects.toThrow()
       expect(resolution).not.toHaveBeenCalled()
+    })
+
+    it('qualifies a bare plan name with the resolved addon_service name', async () => {
+      const resolved = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {name: 'heroku-redis'},
+        app: {id: 'app-1', name: 'my-app'},
+        id: 'addon-1',
+      })
+      const {ctx, update} = buildCtx({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+
+      await upgrade(ctx, 'redis-curved-12345', 'hobby', {appIdentity: 'my-app'})
+
+      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'heroku-redis:hobby'})
+    })
+
+    it('passes an already-qualified plan through unchanged', async () => {
+      const resolved = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {name: 'heroku-redis'},
+        app: {id: 'app-1', name: 'my-app'},
+        id: 'addon-1',
+      })
+      const {ctx, update} = buildCtx({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+
+      await upgrade(ctx, 'redis-curved-12345', 'heroku-redis:premium-2', {appIdentity: 'my-app'})
+
+      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'heroku-redis:premium-2'})
+    })
+
+    it('calls onResolved with the resolved addon before the update', async () => {
+      const resolved = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {name: 'heroku-redis'},
+        app: {id: 'app-1', name: 'my-app'},
+        id: 'addon-1',
+        plan: {name: 'premium-0'},
+      })
+      const calls: string[] = []
+      const onResolved = vi.fn(addon => {
+        calls.push(`onResolved:${addon.id}`)
+      })
+      const {ctx, update} = buildCtx({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+      update.mockImplementation(() => {
+        calls.push('update')
+        return resolved
+      })
+
+      await upgrade(ctx, 'redis-curved-12345', 'hobby', {appIdentity: 'my-app', onResolved})
+
+      expect(onResolved).toHaveBeenCalledWith(resolved)
+      expect(calls).toEqual(['onResolved:addon-1', 'update'])
     })
   })
 
@@ -390,9 +449,7 @@ describe('add-on resource', () => {
       const controller = new AbortController()
       controller.abort()
 
-      await expect(
-        resolveAddonByAttachment(ctx, 'my-app', 'DATABASE_URL', {signal: controller.signal}),
-      ).rejects.toThrow()
+      await expect(resolveAddonByAttachment(ctx, 'my-app', 'DATABASE_URL', {signal: controller.signal})).rejects.toThrow()
       expect(resolutionByAttachment).not.toHaveBeenCalled()
     })
   })
@@ -421,9 +478,9 @@ describe('add-on resource', () => {
       })
       const methods = addOnExtensions.factory(ctx)
 
-      await methods.upgrade('addon-1', 'plan-1')
+      await methods.upgrade('addon-1', 'service:plan-1')
 
-      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'plan-1'})
+      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'service:plan-1'})
     })
   })
 })

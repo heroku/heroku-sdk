@@ -1,9 +1,9 @@
-import type { HerokuApiClient } from '@heroku/heroku-fetch'
-import type { RouteDefinition } from '@heroku/types/types'
+import type {HerokuApiClient} from '@heroku/heroku-fetch'
+import type {RouteDefinition} from '@heroku/types/types'
 
 import createDebug from 'debug'
 
-import { countPlaceholders, interpolatePath } from './interpolate-path.js'
+import {countPlaceholders, interpolatePath} from './interpolate-path.js'
 
 const debug = createDebug('heroku:sdk:dispatcher')
 

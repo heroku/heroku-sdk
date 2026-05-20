@@ -1,7 +1,7 @@
-import type { HerokuApiClientOptions } from '@heroku/heroku-fetch'
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 
-import type { DataClient } from '../services/data.js'
-import type { PlatformClient } from '../services/platform.js'
+import type {DataClient} from '../services/data.js'
+import type {PlatformClient} from '../services/platform.js'
 import type {
   ApplyExtensions,
   ExtensionsFor,
@@ -10,9 +10,9 @@ import type {
   ServiceName,
 } from './extend-resource.js'
 
-import { createDataClient } from '../services/data.js'
-import { createPlatformClient } from '../services/platform.js'
-import { mergeExtensions } from './extensions-proxy.js'
+import {createDataClient} from '../services/data.js'
+import {createPlatformClient} from '../services/platform.js'
+import {mergeExtensions} from './extensions-proxy.js'
 
 export type HerokuSDKOptions<Exts extends readonly ResourceExtension[]> = {
   clientOptions?: HerokuApiClientOptions
