@@ -1,1 +1,1 @@
-export type {HerokuApiClientOptions} from '@heroku/api-client'
+export type {HerokuApiClientOptions} from '@heroku/heroku-fetch'

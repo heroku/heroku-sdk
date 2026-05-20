@@ -1,4 +1,4 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {
   DatabaseInfoResult,
   DatabasePrepareUpgradeResult,

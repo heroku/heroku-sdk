@@ -1,4 +1,4 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {App} from '@heroku/types/3.sdk'
 
 import {createPlatformClient} from '../services/platform.js'

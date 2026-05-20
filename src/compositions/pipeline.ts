@@ -1,4 +1,4 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {
   App,
   PipelineCoupling,
@@ -7,7 +7,7 @@ import type {
   PipelinePromotionTarget,
 } from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/api-client'
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 
 import {createPlatformClient} from '../services/platform.js'
 

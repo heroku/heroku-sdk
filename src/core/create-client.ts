@@ -1,8 +1,8 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 // type-only; identical structure across all services
 import type {RouteDefinition} from '@heroku/types/3.sdk/routes'
 
-import {HerokuApiClient} from '@heroku/api-client'
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
 import {dispatch} from './dispatcher.js'

@@ -1,6 +1,6 @@
 import type {PipelinePromotion, PipelinePromotionCreateOpts, PipelinePromotionTarget} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/api-client'
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
@@ -12,7 +12,7 @@ vi.mock('../services/platform.js', () => ({
   createPlatformClient: vi.fn(),
 }))
 
-vi.mock('@heroku/api-client', () => ({
+vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: vi.fn(),
 }))
 
