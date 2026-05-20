@@ -24,33 +24,55 @@ export type PgUpgradeOpts = {
   version?: string
 }
 
-/**
- * Resolve a Heroku Postgres branch reference of the form
- * `parent-app::branch-name` (or a bare `branch-name` when an
- * `appIdentity` is provided in options as a fallback).
- *
- * The reference syntax is data-specific: the part before `::` is
- * the parent app, the part after is the branch's add-on name. This
- * is *not* the same as the `service::name` credential reference
- * understood by `resolveAddon` directly. Use this function for any
- * Heroku Postgres command that accepts the `parent::branch` shape.
- *
- * Examples:
- *   resolvePgBranchAddon('parent-app::branch')
- *   resolvePgBranchAddon('branch-name', {appIdentity: 'parent-app'})
- *
- * If the reference has no `::` and no `appIdentity` is provided,
- * the reference is resolved as a bare add-on identity.
- */
-export async function resolvePgBranchAddon(
-  reference: string,
-  options: ResolveAddonOptions = {},
-): Promise<ResolvedAddOn> {
-  const {addon, app} = parseAddonReference(reference, options.appIdentity)
-  return resolveAddon(addon, {...options, appIdentity: app})
+export type ResolvePgDatabaseOptions = ResolveAddonOptions & {
+  input?: string
 }
 
-function parseAddonReference(
+/**
+ * Resolve a Heroku Postgres database add-on from any of the input
+ * shapes a Heroku Postgres CLI command accepts:
+ *
+ *   - omitted → the `DATABASE_URL` attachment on `appIdentity`.
+ *   - `DATABASE_URL`, `HEROKU_POSTGRESQL_GREEN`, etc. → that attachment
+ *     on `appIdentity`. Detected by SHOUTY_SNAKE_CASE shape.
+ *   - `parent-app::branch-name` → branch reference. The portion before
+ *     `::` is the parent app; the portion after is the branch add-on
+ *     name.
+ *   - any other string → a bare add-on identity (UUID, globally-unique
+ *     name) routed through `resolveAddon`.
+ *
+ * Throws `AddonNotFoundError` (or `AddonAmbiguousError`) from the
+ * underlying resolver. Throws if no input is given and no `appIdentity`
+ * is available to default the attachment lookup to.
+ */
+export async function resolvePgDatabase(options: ResolvePgDatabaseOptions = {}): Promise<ResolvedAddOn> {
+  const {appIdentity, input, ...rest} = options
+
+  if (!input) {
+    if (!appIdentity) {
+      throw new Error('resolvePgDatabase requires either input or appIdentity to default to DATABASE_URL.')
+    }
+
+    return resolveAddonByAttachment(appIdentity, DEFAULT_PG_ATTACHMENT, rest)
+  }
+
+  if (input.includes('::')) {
+    const {addon, app} = parseBranchReference(input, appIdentity)
+    return resolveAddon(addon, {...rest, appIdentity: app})
+  }
+
+  if (appIdentity && isAttachmentName(input)) {
+    return resolveAddonByAttachment(appIdentity, input, rest)
+  }
+
+  return resolveAddon(input, {...rest, appIdentity})
+}
+
+function isAttachmentName(input: string): boolean {
+  return /^[A-Z][A-Z0-9_]*$/.test(input)
+}
+
+function parseBranchReference(
   reference: string,
   fallbackApp?: string,
 ): {addon: string; app?: string} {
@@ -68,9 +90,9 @@ export async function describePgDatabase(
   options: PgOptions = {},
 ): Promise<DatabaseInfoResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(appIdentity, addonIdentity, options.clientOptions)
+  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
   const data = createDataClient(options.clientOptions)
-  return data.database.info(addonId)
+  return data.database.info(addon.id)
 }
 
 export async function listPgCredentials(
@@ -79,9 +101,9 @@ export async function listPgCredentials(
   options: PgOptions = {},
 ): Promise<PostgresDatabaseListCredentialsResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(appIdentity, addonIdentity, options.clientOptions)
+  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
   const data = createDataClient(options.clientOptions)
-  return data.postgresDatabase.listCredentials(addonId)
+  return data.postgresDatabase.listCredentials(addon.id)
 }
 
 export async function describePgMaintenance(
@@ -90,9 +112,9 @@ export async function describePgMaintenance(
   options: PgOptions = {},
 ): Promise<MaintenanceInfoResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(appIdentity, addonIdentity, options.clientOptions)
+  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
   const data = createDataClient(options.clientOptions)
-  return data.maintenance.info(addonId)
+  return data.maintenance.info(addon.id)
 }
 
 export async function listPgTransfers(
@@ -111,12 +133,12 @@ export async function runPgUpgrade(
   options: PgOptions = {},
 ): Promise<DatabaseRunUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(appIdentity, addonIdentity, options.clientOptions)
+  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
   const data = createDataClient(options.clientOptions)
   // Cast: routes.js declares hasRequestBody for runUpgrade but the generated
   // HerokuClient interface omits the body param (Shogun spec lacks a request schema).
   const runUpgrade = data.database.runUpgrade as (name: string, body: PgUpgradeOpts) => Promise<DatabaseRunUpgradeResult>
-  return runUpgrade(addonId, body)
+  return runUpgrade(addon.id, body)
 }
 
 export async function preparePgUpgrade(
@@ -126,22 +148,9 @@ export async function preparePgUpgrade(
   options: PgOptions = {},
 ): Promise<DatabasePrepareUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(appIdentity, addonIdentity, options.clientOptions)
+  const addon = await resolvePgDatabase({appIdentity, input: addonIdentity, ...options})
   const data = createDataClient(options.clientOptions)
   // See note on runPgUpgrade.
   const prepareUpgrade = data.database.prepareUpgrade as (name: string, body: PgUpgradeOpts) => Promise<DatabasePrepareUpgradeResult>
-  return prepareUpgrade(addonId, body)
-}
-
-async function resolveAddonId(
-  appIdentity: string,
-  addonIdentity: string | undefined,
-  clientOptions?: HerokuApiClientOptions,
-): Promise<string> {
-  const addon = await resolveAddonByAttachment(
-    appIdentity,
-    addonIdentity ?? DEFAULT_PG_ATTACHMENT,
-    {clientOptions},
-  )
-  return addon.id
+  return prepareUpgrade(addon.id, body)
 }

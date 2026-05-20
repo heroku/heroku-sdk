@@ -13,7 +13,7 @@ import {
   listPgCredentials,
   listPgTransfers,
   preparePgUpgrade,
-  resolvePgBranchAddon,
+  resolvePgDatabase,
   runPgUpgrade,
 } from './pg.js'
 
@@ -188,42 +188,55 @@ describe('pg compositions', () => {
     })
   })
 
-  describe('resolvePgBranchAddon', () => {
-    it('resolves a parent::branch reference scoped to the parsed parent app', async () => {
+  describe('resolvePgDatabase', () => {
+    it('routes a parent::branch reference through addOn.resolution with parsed parts', async () => {
       const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-9')])
       vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
 
-      const result = await resolvePgBranchAddon('parent-app::branch')
+      const result = await resolvePgDatabase({input: 'parent-app::branch'})
 
       expect(resolution).toHaveBeenCalledWith({addon: 'branch', app: 'parent-app'})
       expect(result.id).toBe('addon-9')
     })
 
-    it('falls back to options.appIdentity when the reference has no namespace', async () => {
-      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-10')])
-      vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
+    it('routes a SHOUTY_SNAKE_CASE input through addOnAttachment.resolution', async () => {
+      const resolution = vi.fn().mockResolvedValue(attachmentMatch('addon-13'))
+      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
 
-      await resolvePgBranchAddon('branch-name', {appIdentity: 'fallback-app'})
+      const result = await resolvePgDatabase({appIdentity: 'app-1', input: 'HEROKU_POSTGRESQL_GREEN'})
 
-      expect(resolution).toHaveBeenCalledWith({addon: 'branch-name', app: 'fallback-app'})
+      expect(resolution).toHaveBeenCalledWith({
+        // eslint-disable-next-line camelcase
+        addon_attachment: 'HEROKU_POSTGRESQL_GREEN',
+        app: 'app-1',
+      })
+      expect(result.id).toBe('addon-13')
     })
 
-    it('prefers the parsed namespace over options.appIdentity', async () => {
-      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-11')])
+    it('routes a kebab-case input through addOn.resolution as an add-on identity', async () => {
+      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-14')])
       vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
 
-      await resolvePgBranchAddon('parent::branch', {appIdentity: 'fallback-app'})
+      await resolvePgDatabase({appIdentity: 'app-1', input: 'postgres-curved-12345'})
 
-      expect(resolution).toHaveBeenCalledWith({addon: 'branch', app: 'parent'})
+      expect(resolution).toHaveBeenCalledWith({addon: 'postgres-curved-12345', app: 'app-1'})
     })
 
-    it('resolves globally when the reference has no namespace and no appIdentity', async () => {
-      const resolution = vi.fn().mockResolvedValue([buildBranchAddon('addon-12')])
-      vi.mocked(createPlatformClient).mockReturnValue({addOn: {resolution}} as never)
+    it('defaults to the DATABASE_URL attachment when input is omitted', async () => {
+      const resolution = vi.fn().mockResolvedValue(attachmentMatch('addon-15'))
+      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
 
-      await resolvePgBranchAddon('branch-name')
+      await resolvePgDatabase({appIdentity: 'app-1'})
 
-      expect(resolution).toHaveBeenCalledWith({addon: 'branch-name'})
+      expect(resolution).toHaveBeenCalledWith({
+        // eslint-disable-next-line camelcase
+        addon_attachment: 'DATABASE_URL',
+        app: 'app-1',
+      })
+    })
+
+    it('throws when input is omitted and no appIdentity is provided', async () => {
+      await expect(resolvePgDatabase({})).rejects.toThrow(/requires either input or appIdentity/)
     })
   })
 })

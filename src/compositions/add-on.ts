@@ -165,13 +165,11 @@ export async function describeAddon(
  *   - throws `AddonNotFoundError` if no match is found
  *   - throws `AddonAmbiguousError` if multiple matches remain after filtering
  *
- * NOTE on Heroku Postgres branch references:
- * The data CLI accepts a `parent-app::branch-name` syntax that means
- * "branch `branch-name` of the database on app `parent-app`." That
- * convention is *not* the same as the `service::name` credential
- * reference understood here. For branch references, call
- * `resolvePgBranchAddon` (in `pg.ts`) instead — it parses the data
- * convention and delegates here.
+ * NOTE on Heroku Postgres-flavored input:
+ * The data CLI accepts several input shapes — `parent-app::branch-name`,
+ * attachment names like `DATABASE_URL`, etc. — that aren't handled
+ * here. For Postgres database resolution, use `resolvePgDatabase` (in
+ * `pg.ts`); it routes any of those shapes to the right resolver.
  *
  * For attachment-based resolution (e.g. `DATABASE_URL` on a particular
  * app), use `resolveAddonByAttachment` instead.
