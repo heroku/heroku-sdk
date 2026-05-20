@@ -1,59 +1,429 @@
-import type {AddOn} from '@heroku/types/3.sdk'
+import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
+import {NotFoundError} from '@heroku/api-client'
 import {
-  describe, expect, it, vi,
+  afterEach, describe, expect, it, vi,
 } from 'vitest'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import {addOnExtensions, upgrade} from './add-on.js'
+import {
+  addOnExtensions,
+  AddonAmbiguousError,
+  AddonNotFoundError,
+  describeAddon,
+  listPlans,
+  resolveAddon,
+  resolveAddonByAttachment,
+  upgrade,
+} from './add-on.js'
 
-function ctxWithAddOnUpdate(update: ReturnType<typeof vi.fn>): ResourceCtx {
+function buildAddon(overrides: Partial<AddOn> = {}): AddOn {
   return {
-    data: {} as never,
-    platform: {addOn: {update}} as never,
+    app: {id: 'app-id', name: 'my-app'},
+    // eslint-disable-next-line camelcase
+    billed_price: {cents: 5000, contract: false},
+    id: 'addon-id',
+    name: 'my-postgres',
+    plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}},
+    ...overrides,
+  } as AddOn
+}
+
+function buildCtx({
+  attachments = [],
+  plans,
+  resolveResponses = [],
+  resolveByAttachmentResponses,
+  updateResponse,
+}: {
+  attachments?: AddOnAttachment[]
+  plans?: Plan[]
+  resolveResponses?: Array<AddOn[] | Error>
+  resolveByAttachmentResponses?: AddOnAttachment[]
+  updateResponse?: AddOn
+} = {}): {
+  ctx: ResourceCtx
+  listByAddOn: ReturnType<typeof vi.fn>
+  listByAddOnService: ReturnType<typeof vi.fn>
+  resolution: ReturnType<typeof vi.fn>
+  resolutionByAttachment: ReturnType<typeof vi.fn>
+  update: ReturnType<typeof vi.fn>
+} {
+  const resolution = vi.fn()
+  for (const response of resolveResponses) {
+    if (response instanceof Error) {
+      resolution.mockRejectedValueOnce(response)
+    } else {
+      resolution.mockResolvedValueOnce(response)
+    }
+  }
+
+  const resolutionByAttachment = vi.fn().mockResolvedValue(resolveByAttachmentResponses ?? [])
+  const listByAddOn = vi.fn().mockResolvedValue(attachments)
+  const listByAddOnService = vi.fn().mockResolvedValue(plans ?? [])
+  const update = vi.fn().mockResolvedValue(updateResponse ?? {})
+
+  return {
+    ctx: {
+      data: {} as never,
+      platform: {
+        addOn: {resolution, update},
+        addOnAttachment: {listByAddOn, resolution: resolutionByAttachment},
+        plan: {listByAddOn: listByAddOnService},
+      } as never,
+    },
+    listByAddOn,
+    listByAddOnService,
+    resolution,
+    resolutionByAttachment,
+    update,
   }
 }
 
-describe('addOnExtensions and named functions', () => {
-  it('upgrade calls platform.addOn.update with the plan', async () => {
-    const addOn = {name: 'heroku-postgresql', plan: {name: 'premium-0'}} as AddOn
-    const update = vi.fn().mockResolvedValue(addOn)
+function buildNotFound(resource = 'add_on'): NotFoundError {
+  const response = new Response(JSON.stringify({id: 'not_found', resource}), {
+    headers: {'content-type': 'application/json'},
+    status: 404,
+  })
+  return new NotFoundError(response, {id: 'not_found'})
+}
 
-    const result = await upgrade(ctxWithAddOnUpdate(update), 'my-app', 'heroku-postgresql', 'heroku-postgresql:premium-0')
-
-    expect(update).toHaveBeenCalledWith('my-app', 'heroku-postgresql', {plan: 'heroku-postgresql:premium-0'})
-    expect(result).toBe(addOn)
+describe('add-on resource', () => {
+  afterEach(() => {
+    vi.clearAllMocks()
   })
 
-  it('upgrade throws if the abort signal is already aborted', async () => {
-    const update = vi.fn()
-    const controller = new AbortController()
-    controller.abort()
+  describe('upgrade', () => {
+    it('resolves the addon then calls addOn.update with the plan', async () => {
+      const resolved = buildAddon({app: {id: 'app-1', name: 'my-app'}, id: 'addon-1', name: 'kafka-swiftly-123'})
+      const updated = buildAddon({id: 'addon-1', name: 'kafka-swiftly-123'})
+      const {ctx, resolution, update} = buildCtx({
+        resolveResponses: [[resolved]],
+        updateResponse: updated,
+      })
 
-    await expect(
-      upgrade(ctxWithAddOnUpdate(update), 'my-app', 'addon-1', 'plan-1', {signal: controller.signal}),
-    ).rejects.toThrow()
-    expect(update).not.toHaveBeenCalled()
+      const result = await upgrade(ctx, 'kafka-swiftly-123', 'heroku-kafka:hobby', {appIdentity: 'my-app'})
+
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'kafka-swiftly-123', app: 'my-app'})
+      expect(update).toHaveBeenCalledExactlyOnceWith('app-1', 'addon-1', {plan: 'heroku-kafka:hobby'})
+      expect(result).toBe(updated)
+    })
+
+    it('resolves globally when no appIdentity is provided', async () => {
+      const resolved = buildAddon({app: {id: 'app-1', name: 'my-app'}, id: 'addon-1'})
+      const {ctx, resolution, update} = buildCtx({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+
+      await upgrade(ctx, 'postgres::sushi', 'heroku-postgresql:premium-0')
+
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'postgres::sushi'})
+      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'heroku-postgresql:premium-0'})
+    })
+
+    it('throws if the abort signal is already aborted', async () => {
+      const {ctx, resolution} = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(
+        upgrade(ctx, 'addon-1', 'plan-1', {signal: controller.signal}),
+      ).rejects.toThrow()
+      expect(resolution).not.toHaveBeenCalled()
+    })
   })
 
-  it('addOnExtensions declares service: platform, resource: addOn', () => {
-    expect(addOnExtensions.service).toBe('platform')
-    expect(addOnExtensions.resource).toBe('addOn')
+  describe('listPlans', () => {
+    it('returns plans sorted ascending by price.cents', async () => {
+      const plans = [
+        {id: 'p3', name: 'premium-0', price: {cents: 5000, unit: 'month'}},
+        {id: 'p1', name: 'free', price: {cents: 0, unit: 'month'}},
+        {id: 'p2', name: 'hobby', price: {cents: 700, unit: 'month'}},
+      ] as Plan[]
+      const {ctx, listByAddOnService} = buildCtx({plans})
+
+      const result = await listPlans(ctx, 'heroku-postgresql')
+
+      expect(listByAddOnService).toHaveBeenCalledWith('heroku-postgresql')
+      expect(result.map(plan => plan.id)).toEqual(['p1', 'p2', 'p3'])
+    })
+
+    it('places plans without a price after priced plans', async () => {
+      const plans = [
+        {id: 'p3', name: 'premium-0', price: {cents: 5000}},
+        {id: 'p4', name: 'metered', price: {metered: true}},
+        {id: 'p1', name: 'free', price: {cents: 0}},
+      ] as Plan[]
+      const {ctx} = buildCtx({plans})
+
+      const result = await listPlans(ctx, 'heroku-redis')
+
+      expect(result.map(plan => plan.id)).toEqual(['p1', 'p3', 'p4'])
+    })
+
+    it('does not mutate the input list', async () => {
+      const plans = [
+        {id: 'p2', name: 'b', price: {cents: 100}},
+        {id: 'p1', name: 'a', price: {cents: 0}},
+      ] as Plan[]
+      const original = [...plans]
+      const {ctx} = buildCtx({plans})
+
+      await listPlans(ctx, 'svc')
+
+      expect(plans).toEqual(original)
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const {ctx, listByAddOnService} = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(listPlans(ctx, 'svc', {signal: controller.signal})).rejects.toThrow()
+      expect(listByAddOnService).not.toHaveBeenCalled()
+    })
   })
 
-  it('addOnExtensions factory returns an upgrade method', () => {
-    const update = vi.fn()
-    const methods = addOnExtensions.factory(ctxWithAddOnUpdate(update))
-    expect(typeof methods.upgrade).toBe('function')
+  describe('describeAddon', () => {
+    it('resolves the add-on globally when no app is given', async () => {
+      const addon = buildAddon()
+      const {ctx, listByAddOn, resolution} = buildCtx({
+        attachments: [{id: 'att-1'} as AddOnAttachment],
+        resolveResponses: [[addon]],
+      })
+
+      const result = await describeAddon(ctx, 'my-postgres')
+
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-postgres'})
+      expect(listByAddOn).toHaveBeenCalledWith(addon.id)
+      expect(result.attachments).toEqual([{id: 'att-1'}])
+    })
+
+    it('resolves scoped to an app when one is provided', async () => {
+      const addon = buildAddon()
+      const {ctx, resolution} = buildCtx({resolveResponses: [[addon]]})
+
+      await describeAddon(ctx, 'my-postgres', {appIdentity: 'my-app'})
+
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-postgres', app: 'my-app'})
+    })
+
+    it('skips the app-scoped lookup for namespaced identities', async () => {
+      const addon = buildAddon()
+      const {ctx, resolution} = buildCtx({resolveResponses: [[addon]]})
+
+      await describeAddon(ctx, 'postgres::sushi', {appIdentity: 'my-app'})
+
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'postgres::sushi'})
+    })
+
+    it('falls back to a global resolve when the app-scoped lookup is 404 add_on', async () => {
+      const addon = buildAddon()
+      const {ctx, resolution} = buildCtx({
+        resolveResponses: [buildNotFound('add_on'), [addon]],
+      })
+
+      const result = await describeAddon(ctx, 'my-postgres', {appIdentity: 'other-app'})
+
+      expect(resolution).toHaveBeenNthCalledWith(1, {addon: 'my-postgres', app: 'other-app'})
+      expect(resolution).toHaveBeenNthCalledWith(2, {addon: 'my-postgres'})
+      expect(result.id).toBe(addon.id)
+    })
+
+    it('rethrows non-add_on 404s without falling back', async () => {
+      const error = buildNotFound('app')
+      const {ctx, resolution} = buildCtx({resolveResponses: [error]})
+
+      await expect(describeAddon(ctx, 'my-postgres', {appIdentity: 'my-app'})).rejects.toBe(error)
+      expect(resolution).toHaveBeenCalledTimes(1)
+    })
+
+    it('throws AddonNotFoundError when the resolver returns no matches', async () => {
+      const {ctx} = buildCtx({resolveResponses: [[]]})
+
+      await expect(describeAddon(ctx, 'nope')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws AddonAmbiguousError when the resolver returns more than one', async () => {
+      const matches = [buildAddon({id: 'a1', name: 'one'}), buildAddon({id: 'a2', name: 'two'})]
+      const {ctx} = buildCtx({resolveResponses: [matches]})
+
+      await expect(describeAddon(ctx, 'ambig')).rejects.toBeInstanceOf(AddonAmbiguousError)
+    })
+
+    it('filters resolver matches by addonService when provided', async () => {
+      /* eslint-disable camelcase */
+      const matches = [
+        buildAddon({addon_service: {name: 'heroku-redis'}, id: 'a1', name: 'redis-app'}),
+        buildAddon({addon_service: {name: 'heroku-postgresql'}, id: 'a2', name: 'pg-app'}),
+      ]
+      /* eslint-enable camelcase */
+      const {ctx, resolution} = buildCtx({resolveResponses: [matches]})
+
+      const result = await describeAddon(ctx, 'shared-name', {addonService: 'heroku-postgresql'})
+
+      // The platform's filter would exclude alpha add-ons, so we filter client-side.
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'shared-name'})
+      expect(result.id).toBe('a2')
+    })
+
+    it('throws AddonNotFoundError when addonService filter eliminates all matches', async () => {
+      // eslint-disable-next-line camelcase
+      const matches = [buildAddon({addon_service: {name: 'heroku-redis'}, id: 'a1'})]
+      const {ctx} = buildCtx({resolveResponses: [matches]})
+
+      await expect(describeAddon(ctx, 'shared-name', {addonService: 'heroku-postgresql'})).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('replaces plan.price with grandfathered cents/contract from billed_price', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        billed_price: {cents: 0, contract: true},
+        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}},
+      })
+      const {ctx} = buildCtx({resolveResponses: [[addon]]})
+
+      const result = await describeAddon(ctx, 'my-postgres')
+
+      expect(result.plan).toMatchObject({
+        name: 'heroku-postgresql:standard-0',
+        price: {cents: 0, contract: true, unit: 'month'},
+      })
+    })
+
+    it('does not mutate the resolved add-on', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        billed_price: {cents: 0, contract: true},
+        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}},
+      })
+      const originalPriceCents = (addon.plan as {price: {cents: number}}).price.cents
+      const {ctx} = buildCtx({resolveResponses: [[addon]]})
+
+      const result = await describeAddon(ctx, 'my-postgres')
+
+      // The returned object reflects grandfathered pricing.
+      expect((result.plan as {price: {cents: number}}).price.cents).toBe(0)
+      // The input add-on is untouched.
+      expect((addon.plan as {price: {cents: number}}).price.cents).toBe(originalPriceCents)
+      // 'attachments' is not added to the input either.
+      expect((addon as Partial<{attachments: unknown}>).attachments).toBeUndefined()
+    })
+
+    it('throws if the resolver returns an add-on missing required ids', async () => {
+      const broken = {id: 'addon-id', name: 'broken'} as AddOn // no app
+      const {ctx} = buildCtx({resolveResponses: [[broken]]})
+
+      await expect(describeAddon(ctx, 'broken')).rejects.toThrow(/missing required fields/)
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const {ctx, resolution} = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(describeAddon(ctx, 'my-postgres', {signal: controller.signal})).rejects.toThrow()
+      expect(resolution).not.toHaveBeenCalled()
+    })
   })
 
-  it('addOnExtensions upgrade delegates to the named function', async () => {
-    const update = vi.fn().mockResolvedValue({} as AddOn)
-    const methods = addOnExtensions.factory(ctxWithAddOnUpdate(update))
+  describe('resolveAddon', () => {
+    it('returns the resolved add-on directly', async () => {
+      const addon = buildAddon()
+      const {ctx, resolution} = buildCtx({resolveResponses: [[addon]]})
 
-    await methods.upgrade('my-app', 'heroku-postgresql', 'heroku-postgresql:premium-0')
+      const result = await resolveAddon(ctx, 'my-postgres', {appIdentity: 'my-app'})
 
-    expect(update).toHaveBeenCalledWith('my-app', 'heroku-postgresql', {plan: 'heroku-postgresql:premium-0'})
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-postgres', app: 'my-app'})
+      expect(result.id).toBe('addon-id')
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const {ctx, resolution} = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(resolveAddon(ctx, 'my-postgres', {signal: controller.signal})).rejects.toThrow()
+      expect(resolution).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('resolveAddonByAttachment', () => {
+    it('resolves and returns the add-on from the matched attachment', async () => {
+      const {ctx, resolutionByAttachment} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}} as AddOnAttachment,
+        ],
+      })
+
+      const result = await resolveAddonByAttachment(ctx, 'my-app', 'DATABASE_URL')
+
+      expect(resolutionByAttachment).toHaveBeenCalledWith({
+        // eslint-disable-next-line camelcase
+        addon_attachment: 'DATABASE_URL',
+        app: 'my-app',
+      })
+      expect(result.id).toBe('addon-id')
+      expect(result.app.id).toBe('app-uuid')
+    })
+
+    it('throws AddonNotFoundError when no attachment matches', async () => {
+      const {ctx} = buildCtx({resolveByAttachmentResponses: []})
+
+      await expect(resolveAddonByAttachment(ctx, 'my-app', 'NONEXISTENT')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws AddonNotFoundError when the matched attachment lacks an addon id', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {name: 'my-app'}, name: 'incomplete'}} as AddOnAttachment,
+        ],
+      })
+
+      await expect(resolveAddonByAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const {ctx, resolutionByAttachment} = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(
+        resolveAddonByAttachment(ctx, 'my-app', 'DATABASE_URL', {signal: controller.signal}),
+      ).rejects.toThrow()
+      expect(resolutionByAttachment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('addOnExtensions', () => {
+    it('declares service: platform, resource: addOn', () => {
+      expect(addOnExtensions.service).toBe('platform')
+      expect(addOnExtensions.resource).toBe('addOn')
+    })
+
+    it('factory exposes describe, listPlans, resolve, resolveByAttachment, upgrade', () => {
+      const {ctx} = buildCtx()
+      const methods = addOnExtensions.factory(ctx)
+      expect(typeof methods.describe).toBe('function')
+      expect(typeof methods.listPlans).toBe('function')
+      expect(typeof methods.resolve).toBe('function')
+      expect(typeof methods.resolveByAttachment).toBe('function')
+      expect(typeof methods.upgrade).toBe('function')
+    })
+
+    it('upgrade delegates to the named function', async () => {
+      const resolved = buildAddon({app: {id: 'app-1', name: 'my-app'}, id: 'addon-1'})
+      const {ctx, update} = buildCtx({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+      const methods = addOnExtensions.factory(ctx)
+
+      await methods.upgrade('addon-1', 'plan-1')
+
+      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'plan-1'})
+    })
   })
 })

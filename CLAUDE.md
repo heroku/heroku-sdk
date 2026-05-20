@@ -35,13 +35,14 @@ src/
       add-on.ts                    # named fns + addOnExtensions
       app.ts                       # named fns + appExtensions
       dyno.ts                      # named fns + dynoExtensions
+      pipeline-coupling.ts         # named fns + pipelineCouplingExtensions
       pipeline-promotion.ts        # named fns + pipelinePromotionExtensions
     data/
       database.ts                  # named fns + databaseExtensions
       maintenance.ts               # named fns + maintenanceExtensions
       postgres-database.ts         # named fns + postgresDatabaseExtensions
       internal/
-        resolve-addon-id.ts        # shared helper
+        resolve-pg-database.ts     # shared add-on resolver for pg flows
 examples/
   basic-usage.ts                   # platform usage example
   data-usage.ts                    # data usage example

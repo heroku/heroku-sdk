@@ -1,20 +1,21 @@
-import type { AddOnAttachment } from '@heroku/types/3.sdk'
+import type {AddOnAttachment} from '@heroku/types/3.sdk'
 
 import {
   describe, expect, it, vi,
 } from 'vitest'
 
-import type { ResourceCtx } from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {
   databaseExtensions, describe as describeFn, prepareUpgrade, runUpgrade,
 } from './database.js'
 
 function buildCtx(opts: {
-  databaseInfo?: ReturnType<typeof vi.fn>;
-  prepareUpgrade?: ReturnType<typeof vi.fn>;
-  resolution?: ReturnType<typeof vi.fn>;
-  runUpgrade?: ReturnType<typeof vi.fn>;
+  databaseInfo?: ReturnType<typeof vi.fn>
+  prepareUpgrade?: ReturnType<typeof vi.fn>
+  resolutionByAttachment?: ReturnType<typeof vi.fn>
+  resolution?: ReturnType<typeof vi.fn>
+  runUpgrade?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
   return {
     data: {
@@ -25,27 +26,45 @@ function buildCtx(opts: {
       },
     } as never,
     platform: {
-      addOnAttachment: {
-        resolution: opts.resolution ?? vi.fn(),
-      },
+      addOn: {resolution: opts.resolution ?? vi.fn()},
+      addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
     } as never,
   }
 }
 
-const oneMatch = [{ addon: { id: 'addon-1' } }] as AddOnAttachment[]
+const oneAttachmentMatch = [
+  {addon: {app: {id: 'app-uuid', name: 'app-1'}, id: 'addon-1', name: 'pg-attached'}} as AddOnAttachment,
+]
 
 describe('database resource', () => {
-  it('describe resolves the addon and calls database.info', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneMatch)
-    const databaseInfo = vi.fn().mockResolvedValue({ plan: 'standard-0' })
-    const ctx = buildCtx({ databaseInfo, resolution })
+  it('describe resolves the addon by attachment and calls database.info', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
+    const databaseInfo = vi.fn().mockResolvedValue({plan: 'standard-0'})
+    const ctx = buildCtx({databaseInfo, resolutionByAttachment})
 
     const result = await describeFn(ctx, 'app-1', 'HEROKU_POSTGRESQL_BLUE')
 
-    // eslint-disable-next-line camelcase
-    expect(resolution).toHaveBeenCalledWith({ addon_attachment: 'HEROKU_POSTGRESQL_BLUE', app: 'app-1' })
+    expect(resolutionByAttachment).toHaveBeenCalledWith({
+      // eslint-disable-next-line camelcase
+      addon_attachment: 'HEROKU_POSTGRESQL_BLUE',
+      app: 'app-1',
+    })
     expect(databaseInfo).toHaveBeenCalledWith('addon-1')
-    expect(result).toEqual({ plan: 'standard-0' })
+    expect(result).toEqual({plan: 'standard-0'})
+  })
+
+  it('describe defaults to the DATABASE_URL attachment when no addonIdentity is given', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
+    const databaseInfo = vi.fn().mockResolvedValue({})
+    const ctx = buildCtx({databaseInfo, resolutionByAttachment})
+
+    await describeFn(ctx, 'app-1')
+
+    expect(resolutionByAttachment).toHaveBeenCalledWith({
+      // eslint-disable-next-line camelcase
+      addon_attachment: 'DATABASE_URL',
+      app: 'app-1',
+    })
   })
 
   it('describe throws if signal is aborted', async () => {
@@ -53,24 +72,24 @@ describe('database resource', () => {
     const controller = new AbortController()
     controller.abort()
 
-    await expect(describeFn(ctx, 'app-1', undefined, { signal: controller.signal })).rejects.toThrow()
+    await expect(describeFn(ctx, 'app-1', undefined, {signal: controller.signal})).rejects.toThrow()
   })
 
   it('runUpgrade resolves the addon and calls database.runUpgrade with the body', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneMatch)
-    const runUpgradeFn = vi.fn().mockResolvedValue({ message: 'upgrading' })
-    const ctx = buildCtx({ resolution, runUpgrade: runUpgradeFn })
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
+    const runUpgradeFn = vi.fn().mockResolvedValue({message: 'upgrading'})
+    const ctx = buildCtx({resolutionByAttachment, runUpgrade: runUpgradeFn})
 
-    const result = await runUpgrade(ctx, 'app-1', 'DATABASE_URL', { version: '17' })
+    const result = await runUpgrade(ctx, 'app-1', 'DATABASE_URL', {version: '17'})
 
-    expect(runUpgradeFn).toHaveBeenCalledWith('addon-1', { version: '17' })
-    expect(result).toEqual({ message: 'upgrading' })
+    expect(runUpgradeFn).toHaveBeenCalledWith('addon-1', {version: '17'})
+    expect(result).toEqual({message: 'upgrading'})
   })
 
   it('runUpgrade defaults to an empty body when none is provided', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const runUpgradeFn = vi.fn().mockResolvedValue({})
-    const ctx = buildCtx({ resolution, runUpgrade: runUpgradeFn })
+    const ctx = buildCtx({resolutionByAttachment, runUpgrade: runUpgradeFn})
 
     await runUpgrade(ctx, 'app-1')
 
@@ -78,14 +97,14 @@ describe('database resource', () => {
   })
 
   it('prepareUpgrade resolves the addon and calls database.prepareUpgrade', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneMatch)
-    const prepareUpgradeFn = vi.fn().mockResolvedValue({ message: 'scheduled' })
-    const ctx = buildCtx({ prepareUpgrade: prepareUpgradeFn, resolution })
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
+    const prepareUpgradeFn = vi.fn().mockResolvedValue({message: 'scheduled'})
+    const ctx = buildCtx({prepareUpgrade: prepareUpgradeFn, resolutionByAttachment})
 
-    const result = await prepareUpgrade(ctx, 'app-1', 'DATABASE_URL', { version: '17' })
+    const result = await prepareUpgrade(ctx, 'app-1', 'DATABASE_URL', {version: '17'})
 
-    expect(prepareUpgradeFn).toHaveBeenCalledWith('addon-1', { version: '17' })
-    expect(result).toEqual({ message: 'scheduled' })
+    expect(prepareUpgradeFn).toHaveBeenCalledWith('addon-1', {version: '17'})
+    expect(result).toEqual({message: 'scheduled'})
   })
 
   it('databaseExtensions declares service: data, resource: database', () => {

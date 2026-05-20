@@ -4,10 +4,10 @@ import type {
   DatabaseRunUpgradeResult,
 } from '@heroku/types/data'
 
-import type { ResourceCtx } from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import { extendResource } from '../../core/extend-resource.js'
-import { resolveAddonId } from './internal/resolve-addon-id.js'
+import {extendResource} from '../../core/extend-resource.js'
+import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 export type DatabaseOptions = {
   signal?: AbortSignal
@@ -24,8 +24,8 @@ export async function describe(
   options: DatabaseOptions = {},
 ): Promise<DatabaseInfoResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(ctx.platform, appIdentity, addonIdentity)
-  return ctx.data.database.info(addonId)
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  return ctx.data.database.info(addon.id)
 }
 
 export async function runUpgrade(
@@ -36,12 +36,12 @@ export async function runUpgrade(
   options: DatabaseOptions = {},
 ): Promise<DatabaseRunUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(ctx.platform, appIdentity, addonIdentity)
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
   // Cast: routes.js declares hasRequestBody for runUpgrade but the generated
   // HerokuClient interface omits the body param (Shogun spec lacks a request schema).
   const fn = ctx.data.database.runUpgrade as
     (name: string, body: DatabaseUpgradeBody) => Promise<DatabaseRunUpgradeResult>
-  return fn(addonId, body)
+  return fn(addon.id, body)
 }
 
 export async function prepareUpgrade(
@@ -52,11 +52,11 @@ export async function prepareUpgrade(
   options: DatabaseOptions = {},
 ): Promise<DatabasePrepareUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(ctx.platform, appIdentity, addonIdentity)
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
   // See note on runUpgrade.
   const fn = ctx.data.database.prepareUpgrade as
     (name: string, body: DatabaseUpgradeBody) => Promise<DatabasePrepareUpgradeResult>
-  return fn(addonId, body)
+  return fn(addon.id, body)
 }
 
 export const databaseExtensions = extendResource('data', 'database', ctx => ({

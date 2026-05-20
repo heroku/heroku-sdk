@@ -10,11 +10,16 @@ import {info, maintenanceExtensions} from './maintenance.js'
 
 describe('maintenance resource', () => {
   it('info resolves the addon and calls maintenance.info', async () => {
-    const resolution = vi.fn().mockResolvedValue([{addon: {id: 'addon-y'}}] as AddOnAttachment[])
+    const resolutionByAttachment = vi.fn().mockResolvedValue([
+      {addon: {app: {id: 'app-uuid', name: 'app-1'}, id: 'addon-y', name: 'pg-attached'}} as AddOnAttachment,
+    ])
     const maintenanceInfo = vi.fn().mockResolvedValue({state: 'scheduled'})
     const ctx: ResourceCtx = {
       data: {maintenance: {info: maintenanceInfo}} as never,
-      platform: {addOnAttachment: {resolution}} as never,
+      platform: {
+        addOn: {resolution: vi.fn()},
+        addOnAttachment: {resolution: resolutionByAttachment},
+      } as never,
     }
 
     const result = await info(ctx, 'app-1', 'DATABASE_URL')

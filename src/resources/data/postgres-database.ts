@@ -3,7 +3,7 @@ import type {PostgresDatabaseListCredentialsResult} from '@heroku/types/data'
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
-import {resolveAddonId} from './internal/resolve-addon-id.js'
+import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 export type ListCredentialsOptions = {
   signal?: AbortSignal
@@ -16,8 +16,8 @@ export async function listCredentials(
   options: ListCredentialsOptions = {},
 ): Promise<PostgresDatabaseListCredentialsResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(ctx.platform, appIdentity, addonIdentity)
-  return ctx.data.postgresDatabase.listCredentials(addonId)
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  return ctx.data.postgresDatabase.listCredentials(addon.id)
 }
 
 export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', ctx => ({

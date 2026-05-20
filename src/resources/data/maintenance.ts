@@ -3,7 +3,7 @@ import type {MaintenanceInfoResult} from '@heroku/types/data'
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
-import {resolveAddonId} from './internal/resolve-addon-id.js'
+import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 export type MaintenanceInfoOptions = {
   signal?: AbortSignal
@@ -16,8 +16,8 @@ export async function info(
   options: MaintenanceInfoOptions = {},
 ): Promise<MaintenanceInfoResult> {
   options.signal?.throwIfAborted()
-  const addonId = await resolveAddonId(ctx.platform, appIdentity, addonIdentity)
-  return ctx.data.maintenance.info(addonId)
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  return ctx.data.maintenance.info(addon.id)
 }
 
 export const maintenanceExtensions = extendResource('data', 'maintenance', ctx => ({
