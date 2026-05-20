@@ -1,11 +1,11 @@
 import createDebug from 'debug'
 
-import type {ResourceCtx, ResourceExtension, ResourceMethods} from './extend-resource.js'
+import type { ResourceCtx, ResourceExtension, ResourceMethods } from './extend-resource.js'
 
 const debug = createDebug('heroku:sdk:extensions')
 
 export function mergeExtensions<T extends object>(
-  routesProxy: T,
+  client: T,
   extensions: readonly ResourceExtension[],
   ctx: ResourceCtx,
 ): T {
@@ -18,7 +18,7 @@ export function mergeExtensions<T extends object>(
   }
 
   for (const [resource, methods] of methodsByResource) {
-    const routeResource = (routesProxy as Record<string, unknown>)[resource]
+    const routeResource = (client as Record<string, unknown>)[resource]
     if (routeResource && typeof routeResource === 'object') {
       for (const methodName of Object.keys(methods)) {
         if (methodName in routeResource) {
@@ -28,7 +28,7 @@ export function mergeExtensions<T extends object>(
     }
   }
 
-  return new Proxy(routesProxy, {
+  return new Proxy(client, {
     get(target, resourceKey: string, receiver) {
       const extMethods = methodsByResource.get(resourceKey)
       const routeResource = Reflect.get(target, resourceKey, receiver)
