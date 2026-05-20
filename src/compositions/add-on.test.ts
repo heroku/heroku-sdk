@@ -187,6 +187,20 @@ describe('add-on compositions', () => {
       expect(result.attachments).toEqual([{id: 'att-1'}])
     })
 
+    it('requests the 3.sdk accept variant with addon_service,plan expansion', async () => {
+      const addon = buildAddon()
+      buildAddOnClient({resolveResponses: [[addon]]})
+
+      await describeAddon('my-postgres')
+
+      expect(createPlatformClient).toHaveBeenCalledWith(expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/vnd.heroku+json; version=3.sdk',
+          'Accept-Expansion': 'addon_service,plan',
+        }),
+      }))
+    })
+
     it('resolves scoped to an app when one is provided', async () => {
       const addon = buildAddon()
       const {resolution} = buildAddOnClient({resolveResponses: [[addon]]})
