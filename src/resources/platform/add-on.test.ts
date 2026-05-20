@@ -86,7 +86,7 @@ function buildNotFound(resource = 'add_on'): NotFoundError {
     headers: {'content-type': 'application/json'},
     status: 404,
   })
-  return new NotFoundError(response, {id: 'not_found'})
+  return new NotFoundError(response, {id: 'not_found', resource})
 }
 
 describe('add-on resource', () => {

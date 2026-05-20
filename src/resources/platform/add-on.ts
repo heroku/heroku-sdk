@@ -231,7 +231,7 @@ async function resolveAddonInternal(
   try {
     return await resolveBy(appIdentity)
   } catch (error) {
-    if (await isAddOnNotFound(error)) {
+    if (isAddOnNotFound(error)) {
       return resolveBy()
     }
 
@@ -239,17 +239,8 @@ async function resolveAddonInternal(
   }
 }
 
-async function isAddOnNotFound(error: unknown): Promise<boolean> {
-  if (!(error instanceof NotFoundError) || !error.response) {
-    return false
-  }
-
-  try {
-    const body = await error.response.clone().json() as {resource?: string}
-    return body.resource === 'add_on'
-  } catch {
-    return false
-  }
+function isAddOnNotFound(error: unknown): boolean {
+  return error instanceof NotFoundError && error.resource === 'add_on'
 }
 
 function singularize(matches: AddOn[]): ResolvedAddOn {
