@@ -6,6 +6,7 @@ import {
 
 import {createDataClient} from '../services/data.js'
 import {createPlatformClient} from '../services/platform.js'
+import {AddonNotFoundError} from './add-on.js'
 import {
   describePgDatabase,
   describePgMaintenance,
@@ -25,7 +26,7 @@ vi.mock('../services/data.js', () => ({
 }))
 
 function attachmentMatch(addonId: string): AddOnAttachment[] {
-  return [{addon: {app: {name: 'app-1'}, id: addonId, name: 'postgresql-addon'}}]
+  return [{addon: {app: {id: 'app-uuid-1', name: 'app-1'}, id: addonId, name: 'postgresql-addon'}}]
 }
 
 describe('pg compositions', () => {
@@ -65,7 +66,7 @@ describe('pg compositions', () => {
       vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
       vi.mocked(createDataClient).mockReturnValue({database: {info: vi.fn()}} as never)
 
-      await expect(describePgDatabase('app-1', 'NOPE')).rejects.toThrow(/Could not resolve add-on/)
+      await expect(describePgDatabase('app-1', 'NOPE')).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
     it('throws if the abort signal is already aborted', async () => {

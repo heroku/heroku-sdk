@@ -1,5 +1,4 @@
 import type {HerokuApiClientOptions} from '@heroku/api-client'
-import type {AddOnAttachment} from '@heroku/types/3.sdk'
 import type {
   DatabaseInfoResult,
   DatabasePrepareUpgradeResult,
@@ -10,7 +9,9 @@ import type {
 } from '@heroku/types/data'
 
 import {createDataClient} from '../services/data.js'
-import {createPlatformClient} from '../services/platform.js'
+import {resolveAddonByAttachment} from './add-on.js'
+
+const DEFAULT_PG_ATTACHMENT = 'DATABASE_URL'
 
 export type PgOptions = {
   clientOptions?: HerokuApiClientOptions
@@ -119,18 +120,10 @@ async function resolveAddonId(
   addonIdentity: string | undefined,
   clientOptions?: HerokuApiClientOptions,
 ): Promise<string> {
-  const platform = createPlatformClient(clientOptions)
-  const matches = await platform.addOnAttachment.resolution({
-    // eslint-disable-next-line camelcase
-    addon_attachment: addonIdentity ?? 'DATABASE_URL',
-    app: appIdentity,
-  })
-
-  const attachment: AddOnAttachment | undefined = matches[0]
-  const addonId = attachment?.addon?.id
-  if (!addonId) {
-    throw new Error(`Could not resolve add-on for ${appIdentity}${addonIdentity ? `::${addonIdentity}` : ''}`)
-  }
-
-  return addonId
+  const addon = await resolveAddonByAttachment(
+    appIdentity,
+    addonIdentity ?? DEFAULT_PG_ATTACHMENT,
+    {clientOptions},
+  )
+  return addon.id
 }

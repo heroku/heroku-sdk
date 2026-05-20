@@ -7,7 +7,8 @@ import {
 
 import {createPlatformClient} from '../services/platform.js'
 import {
-  AddonAmbiguousError, AddonNotFoundError, describeAddon, listPlans, upgrade,
+  AddonAmbiguousError, AddonNotFoundError, describeAddon, listPlans,
+  resolveAddon, resolveAddonByAttachment, upgrade,
 } from './add-on.js'
 
 vi.mock('../services/platform.js', () => ({
@@ -309,6 +310,67 @@ describe('add-on compositions', () => {
       controller.abort()
 
       await expect(describeAddon('my-postgres', {signal: controller.signal})).rejects.toThrow()
+      expect(createPlatformClient).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('resolveAddon', () => {
+    it('returns the resolved add-on directly', async () => {
+      const addon = buildAddon()
+      const {resolution} = buildAddOnClient({resolveResponses: [[addon]]})
+
+      const result = await resolveAddon('my-postgres', {appIdentity: 'my-app'})
+
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-postgres', app: 'my-app'})
+      expect(result.id).toBe('addon-id')
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(resolveAddon('my-postgres', {signal: controller.signal})).rejects.toThrow()
+      expect(createPlatformClient).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('resolveAddonByAttachment', () => {
+    it('resolves and returns the add-on from the matched attachment', async () => {
+      const resolution = vi.fn().mockResolvedValue([
+        {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}},
+      ])
+      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
+
+      const result = await resolveAddonByAttachment('my-app', 'DATABASE_URL')
+
+      expect(resolution).toHaveBeenCalledWith({
+        // eslint-disable-next-line camelcase
+        addon_attachment: 'DATABASE_URL',
+        app: 'my-app',
+      })
+      expect(result.id).toBe('addon-id')
+      expect(result.app.id).toBe('app-uuid')
+    })
+
+    it('throws AddonNotFoundError when no attachment matches', async () => {
+      const resolution = vi.fn().mockResolvedValue([])
+      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
+
+      await expect(resolveAddonByAttachment('my-app', 'NONEXISTENT')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws AddonNotFoundError when the matched attachment lacks an addon id', async () => {
+      const resolution = vi.fn().mockResolvedValue([{addon: {app: {name: 'my-app'}, name: 'incomplete'}}])
+      vi.mocked(createPlatformClient).mockReturnValue({addOnAttachment: {resolution}} as never)
+
+      await expect(resolveAddonByAttachment('my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(resolveAddonByAttachment('my-app', 'DATABASE_URL', {signal: controller.signal})).rejects.toThrow()
       expect(createPlatformClient).not.toHaveBeenCalled()
     })
   })

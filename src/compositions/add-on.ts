@@ -76,7 +76,7 @@ export async function upgrade(
   options.signal?.throwIfAborted()
   const client = createPlatformClient(options.clientOptions)
 
-  const addon = await resolveAddon(client, addonIdentity, {
+  const addon = await resolveAddonInternal(client, addonIdentity, {
     addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
@@ -128,7 +128,7 @@ export async function describeAddon(
   options.signal?.throwIfAborted()
   const client = createPlatformClient(options.clientOptions)
 
-  const addon = await resolveAddon(client, addonIdentity, {
+  const addon = await resolveAddonInternal(client, addonIdentity, {
     addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
@@ -172,8 +172,52 @@ export async function describeAddon(
  * reference understood here. If you have a branch reference, parse it
  * first with `parseAddonReference` (in `pg.ts`) and pass `addon` /
  * `app` separately to this resolver.
+ *
+ * For attachment-based resolution (e.g. `DATABASE_URL` on a particular
+ * app), use `resolveAddonByAttachment` instead.
  */
-async function resolveAddon(
+export async function resolveAddon(
+  addonIdentity: string,
+  options: ResolveAddonOptions = {},
+): Promise<ResolvedAddOn> {
+  options.signal?.throwIfAborted()
+  const client = createPlatformClient(options.clientOptions)
+  return resolveAddonInternal(client, addonIdentity, options)
+}
+
+/**
+ * Resolve a Platform add-on via one of its attachments on a given app.
+ *
+ * Use this when you have an attachment name (e.g. `DATABASE_URL`,
+ * `HEROKU_POSTGRESQL_GREEN`) on a known app, rather than an add-on
+ * identity. Calls `addOnAttachment.resolution` and returns the add-on
+ * the matched attachment points to.
+ *
+ * For resolving by add-on identity, use `resolveAddon`.
+ */
+export async function resolveAddonByAttachment(
+  appIdentity: string,
+  attachmentName: string,
+  options: AddOnOptions = {},
+): Promise<ResolvedAddOn> {
+  options.signal?.throwIfAborted()
+  const client = createPlatformClient(options.clientOptions)
+  const matches = await client.addOnAttachment.resolution({
+    // eslint-disable-next-line camelcase
+    addon_attachment: attachmentName,
+    app: appIdentity,
+  })
+
+  const attachment = matches[0]
+  const addon = attachment?.addon
+  if (!addon?.id || !addon.app?.id) {
+    throw new AddonNotFoundError()
+  }
+
+  return addon as ResolvedAddOn
+}
+
+async function resolveAddonInternal(
   client: PlatformClient,
   addonIdentity: string,
   options: {addonService?: string; appIdentity?: string} = {},
