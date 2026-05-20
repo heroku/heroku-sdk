@@ -17,7 +17,18 @@ export type ResolveAddonOptions = AddOnOptions & {
   appIdentity?: string
 }
 
-export type DescribedAddOn = AddOn & {
+/**
+ * An add-on whose `app.id` and `id` are guaranteed non-null. This is what
+ * the Platform's resolver returns for a successful match, but the schema
+ * types both as optional. `singularize` enforces it at runtime so callers
+ * can rely on the narrower type.
+ */
+export type ResolvedAddOn = AddOn & {
+  app: AddOn['app'] & {id: string}
+  id: string
+}
+
+export type DescribedAddOn = ResolvedAddOn & {
   attachments: AddOnAttachment[]
 }
 
@@ -71,7 +82,7 @@ export async function upgrade(
   })
 
   options.signal?.throwIfAborted()
-  return client.addOn.update(addon.app!.id!, addon.id, {plan})
+  return client.addOn.update(addon.app.id, addon.id, {plan})
 }
 
 /**
@@ -126,12 +137,11 @@ export async function describeAddon(
   const attachments = await client.addOnAttachment.listByAddOn(addon.id)
 
   const plan = addon.plan as Plan | undefined
-  if (plan) {
-    plan.price = grandfatheredPrice(addon)
-    addon.plan = plan
+  return {
+    ...addon,
+    ...(plan && {plan: {...plan, price: grandfatheredPrice(addon)}}),
+    attachments,
   }
-
-  return Object.assign(addon, {attachments})
 }
 
 /**
@@ -167,14 +177,14 @@ async function resolveAddon(
   client: PlatformClient,
   addonIdentity: string,
   options: {addonService?: string; appIdentity?: string} = {},
-): Promise<AddOn> {
+): Promise<ResolvedAddOn> {
   const {addonService, appIdentity} = options
 
-  const resolveBy = async (app?: string): Promise<AddOn> => {
+  const resolveBy = async (app?: string): Promise<ResolvedAddOn> => {
     const body = app ? {addon: addonIdentity, app} : {addon: addonIdentity}
     const matches = await client.addOn.resolution(body)
     const filtered = addonService
-      ? matches.filter(addon => (addon.addon_service as undefined | {name?: string})?.name === addonService)
+      ? matches.filter(addon => addon.addon_service?.name === addonService)
       : matches
     return singularize(filtered)
   }
@@ -207,16 +217,21 @@ async function isAddOnNotFound(error: unknown): Promise<boolean> {
   }
 }
 
-function singularize(matches: AddOn[]): AddOn {
+function singularize(matches: AddOn[]): ResolvedAddOn {
   if (matches.length === 0) {
     throw new AddonNotFoundError()
   }
 
-  if (matches.length === 1) {
-    return matches[0]
+  if (matches.length > 1) {
+    throw new AddonAmbiguousError(matches)
   }
 
-  throw new AddonAmbiguousError(matches)
+  const match = matches[0]
+  if (!match.id || !match.app?.id) {
+    throw new Error(`Resolved add-on is missing required fields (id=${match.id}, app.id=${match.app?.id})`)
+  }
+
+  return match as ResolvedAddOn
 }
 
 function grandfatheredPrice(addon: AddOn): Plan['price'] {

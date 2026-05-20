@@ -16,6 +16,7 @@ vi.mock('../services/platform.js', () => ({
 
 function buildAddon(overrides: Partial<AddOn> = {}): AddOn {
   return {
+    app: {id: 'app-id', name: 'my-app'},
     // eslint-disable-next-line camelcase
     billed_price: {cents: 5000, contract: false},
     id: 'addon-id',
@@ -275,6 +276,32 @@ describe('add-on compositions', () => {
         name: 'heroku-postgresql:standard-0',
         price: {cents: 0, contract: true, unit: 'month'},
       })
+    })
+
+    it('does not mutate the resolved add-on', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        billed_price: {cents: 0, contract: true},
+        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}},
+      })
+      const originalPriceCents = (addon.plan as {price: {cents: number}}).price.cents
+      buildAddOnClient({resolveResponses: [[addon]]})
+
+      const result = await describeAddon('my-postgres')
+
+      // The returned object reflects grandfathered pricing.
+      expect((result.plan as {price: {cents: number}}).price.cents).toBe(0)
+      // The input add-on is untouched.
+      expect((addon.plan as {price: {cents: number}}).price.cents).toBe(originalPriceCents)
+      // 'attachments' is not added to the input either.
+      expect((addon as Partial<{attachments: unknown}>).attachments).toBeUndefined()
+    })
+
+    it('throws if the resolver returns an add-on missing required ids', async () => {
+      const broken = {id: 'addon-id', name: 'broken'} as AddOn // no app
+      buildAddOnClient({resolveResponses: [[broken]]})
+
+      await expect(describeAddon('broken')).rejects.toThrow(/missing required fields/)
     })
 
     it('throws if the signal is already aborted', async () => {
