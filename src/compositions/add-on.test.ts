@@ -117,6 +117,67 @@ describe('add-on compositions', () => {
       await expect(upgrade('addon-1', 'plan-1', {signal: controller.signal})).rejects.toThrow()
       expect(createPlatformClient).not.toHaveBeenCalled()
     })
+
+    it('qualifies a bare plan name with the resolved addon_service name', async () => {
+      const resolved = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {name: 'heroku-redis'},
+        app: {id: 'app-1', name: 'my-app'},
+        id: 'addon-1',
+      })
+      const {update} = buildAddOnClient({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+
+      await upgrade('redis-curved-12345', 'hobby', {appIdentity: 'my-app'})
+
+      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'heroku-redis:hobby'})
+    })
+
+    it('passes an already-qualified plan through unchanged', async () => {
+      const resolved = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {name: 'heroku-redis'},
+        app: {id: 'app-1', name: 'my-app'},
+        id: 'addon-1',
+      })
+      const {update} = buildAddOnClient({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+
+      await upgrade('redis-curved-12345', 'heroku-redis:premium-2', {appIdentity: 'my-app'})
+
+      expect(update).toHaveBeenCalledWith('app-1', 'addon-1', {plan: 'heroku-redis:premium-2'})
+    })
+
+    it('calls onResolved with the resolved addon before the update', async () => {
+      const resolved = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {name: 'heroku-redis'},
+        app: {id: 'app-1', name: 'my-app'},
+        id: 'addon-1',
+        plan: {name: 'premium-0'},
+      })
+      const calls: string[] = []
+      const onResolved = vi.fn(addon => {
+        calls.push(`onResolved:${addon.id}`)
+      })
+      const {update} = buildAddOnClient({
+        resolveResponses: [[resolved]],
+        updateResponse: resolved,
+      })
+      update.mockImplementation(() => {
+        calls.push('update')
+        return resolved
+      })
+
+      await upgrade('redis-curved-12345', 'hobby', {appIdentity: 'my-app', onResolved})
+
+      expect(onResolved).toHaveBeenCalledWith(resolved)
+      expect(calls).toEqual(['onResolved:addon-1', 'update'])
+    })
   })
 
   describe('listPlans', () => {
