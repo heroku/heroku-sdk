@@ -5,8 +5,7 @@
 ### Breaking changes
 
 - Removed the `./compositions/*` subpath export and the `src/compositions/`
-  directory entirely. Every export had been marked `@deprecated` since
-  `0.2.0`; that guidance is now mandatory.
+  directory entirely.
 
 ### Migration
 
