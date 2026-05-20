@@ -5,7 +5,7 @@ import {
 const platformConstructorSpy = vi.fn()
 const dataConstructorSpy = vi.fn()
 
-vi.mock('@heroku/api-client', () => ({
+vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: class {
     constructor(options: unknown) {
       // The same constructor is used for platform and data; spies are

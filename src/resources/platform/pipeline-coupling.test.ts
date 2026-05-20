@@ -1,4 +1,4 @@
-import {HerokuApiClient} from '@heroku/api-client'
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest'
@@ -7,7 +7,7 @@ import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {listPipelineApps, pipelineCouplingExtensions} from './pipeline-coupling.js'
 
-vi.mock('@heroku/api-client', () => ({
+vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: vi.fn(),
 }))
 

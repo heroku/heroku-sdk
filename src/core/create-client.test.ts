@@ -12,7 +12,7 @@ function mockResponse(body: unknown, status = 200): Response {
   } as unknown as Response
 }
 
-vi.mock('@heroku/api-client', () => ({
+vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: class {
     delete = vi.fn().mockResolvedValue(mockResponse({id: '1'}))
     get = vi.fn().mockResolvedValue(mockResponse([{id: '1', name: 'my-app'}]))

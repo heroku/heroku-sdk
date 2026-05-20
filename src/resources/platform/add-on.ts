@@ -3,7 +3,7 @@ import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../core/extend-resource.js'
 import type {PlatformClient} from '../../services/platform.js'
 
-import {NotFoundError} from '@heroku/api-client'
+import {NotFoundError} from '@heroku/heroku-fetch'
 
 import {extendResource} from '../../core/extend-resource.js'
 

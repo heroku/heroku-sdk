@@ -1,6 +1,6 @@
 import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
-import {NotFoundError} from '@heroku/api-client'
+import {NotFoundError} from '@heroku/heroku-fetch'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'

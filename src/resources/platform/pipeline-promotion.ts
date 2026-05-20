@@ -6,7 +6,7 @@ import type {
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import {HerokuApiClient} from '@heroku/api-client'
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 
 import {extendResource} from '../../core/extend-resource.js'
 

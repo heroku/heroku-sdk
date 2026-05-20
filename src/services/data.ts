@@ -1,4 +1,4 @@
-import type {HerokuApiClientOptions} from '@heroku/api-client'
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {HerokuClient as DataClient} from '@heroku/types/data'
 
 import * as routes from '@heroku/types/data/routes'

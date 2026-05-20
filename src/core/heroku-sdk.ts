@@ -1,4 +1,4 @@
-import type { HerokuApiClientOptions } from '@heroku/api-client'
+import type { HerokuApiClientOptions } from '@heroku/heroku-fetch'
 
 import type { DataClient } from '../services/data.js'
 import type { PlatformClient } from '../services/platform.js'

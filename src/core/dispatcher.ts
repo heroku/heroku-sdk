@@ -1,4 +1,4 @@
-import type { HerokuApiClient } from '@heroku/api-client'
+import type { HerokuApiClient } from '@heroku/heroku-fetch'
 import type { RouteDefinition } from '@heroku/types/types'
 
 import createDebug from 'debug'
