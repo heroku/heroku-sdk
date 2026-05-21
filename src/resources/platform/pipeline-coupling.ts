@@ -1,6 +1,4 @@
-import type {App, PipelineCoupling} from '@heroku/types/3.sdk'
-
-import {HerokuApiClient, type HerokuApiClientOptions} from '@heroku/heroku-fetch'
+import type {PipelineCoupling, TeamApp} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
@@ -13,12 +11,11 @@ export type PipelineWarning = {
 }
 
 export type ListPipelineAppsOptions = {
-  clientOptions?: HerokuApiClientOptions
   onWarning?: (warning: PipelineWarning) => void
   signal?: AbortSignal
 }
 
-export type AppWithPipelineCoupling = App & {
+export type AppWithPipelineCoupling = TeamApp & {
   pipelineCoupling: PipelineCoupling
 }
 
@@ -58,21 +55,10 @@ export async function listPipelineApps(
   }
 
   options.signal?.throwIfAborted()
-  // /filters/apps is a Platform bulk endpoint that's not in the SDK route
-  // registry, so call it through a raw HerokuApiClient. It accepts the
-  // standard platform Accept header but uses a different `.filters` suffix.
-  const apiClient = new HerokuApiClient({
-    ...options.clientOptions,
-    service: 'platform',
-  })
   const ids = couplingsToResolve.map(coupling => coupling.app!.id!)
-  const response = await apiClient.post('/filters/apps', {in: {id: ids}}, {
-    headers: {
-      Accept: 'application/vnd.heroku+json; version=3.filters',
-      Range: `id ..; max=${APPS_FILTER_LIMIT};`,
-    },
-  })
-  const apps = (await response.json()) as App[]
+  const apps = await ctx.platform
+    .withHeaders({Range: `id ..; max=${APPS_FILTER_LIMIT};`})
+    .filterApps.apps({in: {id: ids}})
 
   const couplingByAppId = new Map<string, PipelineCoupling>()
   for (const coupling of couplingsToResolve) {

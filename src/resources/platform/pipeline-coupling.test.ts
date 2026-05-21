@@ -1,4 +1,3 @@
-import {HerokuApiClient} from '@heroku/heroku-fetch'
 import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest'
@@ -7,16 +6,30 @@ import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {listPipelineApps, pipelineCouplingExtensions} from './pipeline-coupling.js'
 
-vi.mock('@heroku/heroku-fetch', () => ({
-  HerokuApiClient: vi.fn(),
-}))
+type PlatformMock = {
+  filterAppsApps: ReturnType<typeof vi.fn>
+  withHeaders: ReturnType<typeof vi.fn>
+}
 
-function ctxWithListByPipeline(listByPipeline: ReturnType<typeof vi.fn>): ResourceCtx {
+function buildPlatformMock(filterAppsApps: ReturnType<typeof vi.fn>): PlatformMock {
+  const withHeaders = vi.fn()
+  withHeaders.mockReturnValue({filterApps: {apps: filterAppsApps}})
+  return {filterAppsApps, withHeaders}
+}
+
+function ctxWith(
+  listByPipeline: ReturnType<typeof vi.fn>,
+  platform: PlatformMock = buildPlatformMock(vi.fn()),
+): {ctx: ResourceCtx; platform: PlatformMock} {
   return {
-    data: {} as never,
-    platform: {
-      pipelineCoupling: {listByPipeline},
-    } as never,
+    ctx: {
+      data: {} as never,
+      platform: {
+        pipelineCoupling: {listByPipeline},
+        withHeaders: platform.withHeaders,
+      } as never,
+    },
+    platform,
   }
 }
 
@@ -36,29 +49,14 @@ describe('pipeline-coupling resource', () => {
     ]
 
     const listByPipeline = vi.fn().mockResolvedValue(couplings)
-    const ctx = ctxWithListByPipeline(listByPipeline)
+    const filterAppsApps = vi.fn().mockResolvedValue(apps)
+    const {ctx, platform} = ctxWith(listByPipeline, buildPlatformMock(filterAppsApps))
 
-    const post = vi.fn().mockResolvedValue(new Response(JSON.stringify(apps), {
-      headers: {'content-type': 'application/json'},
-      status: 200,
-    }))
-    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
-      this.post = post
-    } as never)
-
-    const result = await listPipelineApps(ctx, 'pipeline-1', {clientOptions: {token: 'abc'}})
+    const result = await listPipelineApps(ctx, 'pipeline-1')
 
     expect(listByPipeline).toHaveBeenCalledWith('pipeline-1')
-    expect(post).toHaveBeenCalledWith(
-      '/filters/apps',
-      {in: {id: ['app-1', 'app-2']}},
-      {
-        headers: {
-          Accept: 'application/vnd.heroku+json; version=3.filters',
-          Range: 'id ..; max=1000;',
-        },
-      },
-    )
+    expect(platform.withHeaders).toHaveBeenCalledWith({Range: 'id ..; max=1000;'})
+    expect(filterAppsApps).toHaveBeenCalledWith({in: {id: ['app-1', 'app-2']}})
     expect(result).toEqual([
       {id: 'app-1', name: 'staging-app', pipelineCoupling: couplings[0]},
       {id: 'app-2', name: 'prod-app', pipelineCoupling: couplings[1]},
@@ -67,16 +65,14 @@ describe('pipeline-coupling resource', () => {
 
   it('listPipelineApps returns an empty array when the pipeline has no couplings', async () => {
     const listByPipeline = vi.fn().mockResolvedValue([])
-    const ctx = ctxWithListByPipeline(listByPipeline)
-    const post = vi.fn()
-    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
-      this.post = post
-    } as never)
+    const filterAppsApps = vi.fn()
+    const {ctx, platform} = ctxWith(listByPipeline, buildPlatformMock(filterAppsApps))
 
     const result = await listPipelineApps(ctx, 'pipeline-empty')
 
     expect(result).toEqual([])
-    expect(post).not.toHaveBeenCalled()
+    expect(platform.withHeaders).not.toHaveBeenCalled()
+    expect(filterAppsApps).not.toHaveBeenCalled()
   })
 
   it('listPipelineApps honors an aborted signal before any work runs', async () => {
@@ -84,7 +80,7 @@ describe('pipeline-coupling resource', () => {
     controller.abort()
 
     const listByPipeline = vi.fn()
-    const ctx = ctxWithListByPipeline(listByPipeline)
+    const {ctx} = ctxWith(listByPipeline)
 
     await expect(listPipelineApps(ctx, 'pipeline-1', {signal: controller.signal})).rejects.toThrow()
     expect(listByPipeline).not.toHaveBeenCalled()
@@ -99,23 +95,12 @@ describe('pipeline-coupling resource', () => {
     const apps = [{id: 'app-1', name: 'app-one'}]
 
     const listByPipeline = vi.fn().mockResolvedValue(couplings)
-    const ctx = ctxWithListByPipeline(listByPipeline)
-
-    const post = vi.fn().mockResolvedValue(new Response(JSON.stringify(apps), {
-      headers: {'content-type': 'application/json'},
-      status: 200,
-    }))
-    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
-      this.post = post
-    } as never)
+    const filterAppsApps = vi.fn().mockResolvedValue(apps)
+    const {ctx} = ctxWith(listByPipeline, buildPlatformMock(filterAppsApps))
 
     const result = await listPipelineApps(ctx, 'pipeline-1')
 
-    expect(post).toHaveBeenCalledWith(
-      '/filters/apps',
-      {in: {id: ['app-1']}},
-      expect.anything(),
-    )
+    expect(filterAppsApps).toHaveBeenCalledWith({in: {id: ['app-1']}})
     expect(result).toEqual([{id: 'app-1', name: 'app-one', pipelineCoupling: couplings[0]}])
   })
 
@@ -126,14 +111,11 @@ describe('pipeline-coupling resource', () => {
     }))
 
     const listByPipeline = vi.fn().mockResolvedValue(couplings)
-    const ctx = ctxWithListByPipeline(listByPipeline)
-    const post = vi.fn()
-    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
-      this.post = post
-    } as never)
+    const filterAppsApps = vi.fn()
+    const {ctx} = ctxWith(listByPipeline, buildPlatformMock(filterAppsApps))
 
     await expect(listPipelineApps(ctx, 'pipeline-big')).rejects.toThrow(/more than 1000 apps/)
-    expect(post).not.toHaveBeenCalled()
+    expect(filterAppsApps).not.toHaveBeenCalled()
   })
 
   it('listPipelineApps truncates results and notifies onWarning when over the limit', async () => {
@@ -144,15 +126,8 @@ describe('pipeline-coupling resource', () => {
     const apps = Array.from({length: 1000}, (_, i) => ({id: `app-${i}`, name: `name-${i}`}))
 
     const listByPipeline = vi.fn().mockResolvedValue(couplings)
-    const ctx = ctxWithListByPipeline(listByPipeline)
-
-    const post = vi.fn().mockResolvedValue(new Response(JSON.stringify(apps), {
-      headers: {'content-type': 'application/json'},
-      status: 200,
-    }))
-    vi.mocked(HerokuApiClient).mockImplementation(function (this: {post: typeof post}) {
-      this.post = post
-    } as never)
+    const filterAppsApps = vi.fn().mockResolvedValue(apps)
+    const {ctx} = ctxWith(listByPipeline, buildPlatformMock(filterAppsApps))
 
     const onWarning = vi.fn()
     const result = await listPipelineApps(ctx, 'pipeline-big', {onWarning})
@@ -162,8 +137,8 @@ describe('pipeline-coupling resource', () => {
       pipelineId: 'pipeline-big',
       type: 'apps_truncated',
     })
-    const postCall = post.mock.calls[0]
-    expect(postCall[1].in.id).toHaveLength(1000)
+    const filterCall = filterAppsApps.mock.calls[0]
+    expect(filterCall[0].in.id).toHaveLength(1000)
     expect(result).toHaveLength(1000)
   })
 
