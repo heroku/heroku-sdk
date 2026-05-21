@@ -5,7 +5,7 @@ import type {
 } from '@heroku/types/3.sdk'
 import type {Mock} from 'vitest'
 
-import {HerokuApiClient} from '@heroku/api-client'
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
@@ -14,7 +14,7 @@ import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {pipelinePromotionExtensions, promotePipeline} from './pipeline-promotion.js'
 
-vi.mock('@heroku/api-client', () => ({
+vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: vi.fn(),
 }))
 

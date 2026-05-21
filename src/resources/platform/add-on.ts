@@ -1,9 +1,9 @@
 import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
+import {NotFoundError} from '@heroku/heroku-fetch'
+
 import type {ResourceCtx} from '../../core/extend-resource.js'
 import type {PlatformClient} from '../../services/platform.js'
-
-import {NotFoundError} from '@heroku/api-client'
 
 import {extendResource} from '../../core/extend-resource.js'
 
@@ -66,12 +66,23 @@ export class AddonAmbiguousError extends Error {
  * (UUID, globally unique name, or namespaced `service::name`). When
  * `appIdentity` is provided, the resolve is scoped to that app and
  * falls back to a global resolve if the platform returns 404 add_on.
+ *
+ * If `plan` is unqualified (no `:`), it's prefixed with the resolved
+ * add-on's `addon_service.name` — so callers can pass `hobby` rather
+ * than `heroku-redis:hobby` if they don't already know the service.
+ *
+ * `options.onResolved` fires after the resolve and before the update,
+ * receiving the resolved add-on. Useful for surfacing pre-update
+ * state (the add-on's current plan, app, etc.) without an extra
+ * round-trip.
  */
 export async function upgrade(
   ctx: Pick<ResourceCtx, 'platform'>,
   addonIdentity: string,
   plan: string,
-  options: ResolveAddonOptions = {},
+  options: ResolveAddonOptions & {
+    onResolved?: (addon: ResolvedAddOn) => Promise<void> | void
+  } = {},
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
 
@@ -80,8 +91,13 @@ export async function upgrade(
     appIdentity: options.appIdentity,
   })
 
+  await options.onResolved?.(addon)
+
   options.signal?.throwIfAborted()
-  return ctx.platform.addOn.update(addon.app.id, addon.id, {plan})
+  const qualifiedPlan = plan.includes(':')
+    ? plan
+    : `${(addon.addon_service as undefined | {name?: string})?.name}:${plan}`
+  return ctx.platform.addOn.update(addon.app.id, addon.id, {plan: qualifiedPlan})
 }
 
 /**
@@ -113,12 +129,17 @@ function sortableCents(plan: Plan): number {
  *
  * - Resolves the add-on by identity (optionally scoped to an app).
  * - Loads the add-on's attachments.
- * - Mutates `plan.price` so it reflects any grandfathered/billed pricing.
+ * - Returns a copy with `plan.price` set from `billed_price` (so the
+ *   value reflects any grandfathered/contract pricing).
  *
  * If `appIdentity` is provided and the platform returns 404 (resource
  * `add_on`), the resolve falls back to a global lookup. This handles
  * the case where the add-on belongs to a different app than the one
  * supplied.
+ *
+ * Requests the `version=3.sdk` accept variant with `addon_service,plan`
+ * expansion so the resolved add-on includes the full `Plan` shape
+ * (`price.unit`, etc.) needed to render pricing.
  */
 export async function describeAddon(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -127,13 +148,18 @@ export async function describeAddon(
 ): Promise<DescribedAddOn> {
   options.signal?.throwIfAborted()
 
-  const addon = await resolveAddonInternal(ctx.platform, addonIdentity, {
+  const platform = ctx.platform.withHeaders({
+    Accept: 'application/vnd.heroku+json; version=3.sdk',
+    'Accept-Expansion': 'addon_service,plan',
+  })
+
+  const addon = await resolveAddonInternal(platform, addonIdentity, {
     addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
 
   options.signal?.throwIfAborted()
-  const attachments = await ctx.platform.addOnAttachment.listByAddOn(addon.id)
+  const attachments = await platform.addOnAttachment.listByAddOn(addon.id)
 
   const plan = addon.plan as Plan | undefined
   return {
@@ -231,7 +257,7 @@ async function resolveAddonInternal(
   try {
     return await resolveBy(appIdentity)
   } catch (error) {
-    if (await isAddOnNotFound(error)) {
+    if (isAddOnNotFound(error)) {
       return resolveBy()
     }
 
@@ -239,17 +265,8 @@ async function resolveAddonInternal(
   }
 }
 
-async function isAddOnNotFound(error: unknown): Promise<boolean> {
-  if (!(error instanceof NotFoundError) || !error.response) {
-    return false
-  }
-
-  try {
-    const body = await error.response.clone().json() as {resource?: string}
-    return body.resource === 'add_on'
-  } catch {
-    return false
-  }
+function isAddOnNotFound(error: unknown): boolean {
+  return error instanceof NotFoundError && error.resource === 'add_on'
 }
 
 function singularize(matches: AddOn[]): ResolvedAddOn {

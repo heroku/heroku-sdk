@@ -1,6 +1,6 @@
 import createDebug from 'debug'
 
-import type { ResourceCtx, ResourceExtension, ResourceMethods } from './extend-resource.js'
+import type {ResourceCtx, ResourceExtension, ResourceMethods} from './extend-resource.js'
 
 const debug = createDebug('heroku:sdk:extensions')
 

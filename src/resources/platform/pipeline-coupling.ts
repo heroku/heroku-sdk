@@ -1,8 +1,8 @@
 import type {App, PipelineCoupling} from '@heroku/types/3.sdk'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import {HerokuApiClient, type HerokuApiClientOptions} from '@heroku/heroku-fetch'
 
-import {HerokuApiClient, type HerokuApiClientOptions} from '@heroku/api-client'
+import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
 

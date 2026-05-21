@@ -4,9 +4,9 @@ import type {
   PipelinePromotionTarget,
 } from '@heroku/types/3.sdk'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 
-import {HerokuApiClient} from '@heroku/api-client'
+import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
 

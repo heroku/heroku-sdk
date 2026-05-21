@@ -4,7 +4,7 @@ import {
 
 const constructorSpy = vi.fn()
 
-vi.mock('@heroku/api-client', () => ({
+vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: class {
     constructor(options: unknown) {
       constructorSpy(options)
