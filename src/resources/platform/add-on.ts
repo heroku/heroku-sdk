@@ -1,6 +1,8 @@
-import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
+import type {
+  AddOn, AddOnAttachment, AddOnCreateOpts, Plan,
+} from '@heroku/types/3.sdk'
 
-import {NotFoundError} from '@heroku/heroku-fetch'
+import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
@@ -67,6 +69,43 @@ export class AddonAmbiguousError extends Error {
 }
 
 /**
+ * Thrown by `createAndWait` when the Platform returns 423
+ * `confirmation_required`. Callers that want to prompt the user should
+ * catch this, gather a confirmation value, and retry the call with
+ * `body.confirm` set.
+ */
+export class AddonConfirmationRequiredError extends Error {
+  public readonly id = 'confirmation_required'
+  public readonly statusCode = 423
+
+  constructor(public readonly platformMessage: string) {
+    super(platformMessage)
+    this.name = 'AddonConfirmationRequiredError'
+  }
+
+  public get body() {
+    return {id: this.id, message: this.message}
+  }
+}
+
+/**
+ * Thrown by `createAndWait` when the Platform reports the add-on
+ * settled into a non-provisioned terminal state (e.g. `deprovisioned`).
+ */
+export class AddonProvisioningFailedError extends Error {
+  public readonly id = 'provisioning_failed'
+
+  constructor(public readonly addon: AddOn) {
+    super(`The add-on was unable to be created, with status ${addon.state}.`)
+    this.name = 'AddonProvisioningFailedError'
+  }
+
+  public get body() {
+    return {id: this.id, message: this.message}
+  }
+}
+
+/**
  * Change the plan of an add-on.
  *
  * Resolves the add-on first so the caller can pass any identifier
@@ -108,6 +147,130 @@ export async function upgrade(
 
   debug('upgrade addon=%s app=%s plan=%s', addon.id, addon.app.id, qualifiedPlan)
   return ctx.platform.addOn.update(addon.app.id, addon.id, {plan: qualifiedPlan})
+}
+
+export type CreateAndWaitOptions = {
+  /**
+   * Fires once after the initial create returns and the add-on is
+   * still provisioning, before the first poll. Receives the create
+   * response. Useful for surfacing two-phase UX: e.g. "Creating
+   * <plan>... <price>" followed by "Waiting for <addonName>...".
+   *
+   * Only invoked when `wait: true` and the create response state is
+   * `provisioning`.
+   */
+  onProvisioning?: (addon: AddOn) => Promise<void> | void
+  /**
+   * If true, poll until the add-on leaves the `provisioning` state. If
+   * the final state is anything other than `provisioned`/`provisioning`
+   * (e.g. `deprovisioned`), throws `AddonProvisioningFailedError`.
+   *
+   * If false (the default), returns immediately after the create call —
+   * even if the add-on is still provisioning.
+   */
+  wait?: boolean
+  /** Polling interval in milliseconds. Defaults to 5000. */
+  waitIntervalMs?: number
+} & AddOnOptions
+
+const DEFAULT_CREATE_WAIT_INTERVAL_MS = 5000
+
+/**
+ * Create an add-on and optionally wait for provisioning to complete.
+ *
+ * Wraps `addOn.create` with three pieces of orchestration:
+ *
+ *   - 423 `confirmation_required` from the platform is converted to a
+ *     typed `AddonConfirmationRequiredError`. Callers should catch
+ *     this, prompt the user for confirmation, and retry the call with
+ *     `body.confirm` set.
+ *   - When `wait: true` is set, polls `addOn.infoByApp` on a
+ *     `waitIntervalMs` cadence until the add-on's `state` is no longer
+ *     `provisioning`. Throws `AddonProvisioningFailedError` if the
+ *     terminal state is `deprovisioned`.
+ *   - `options.onProvisioning` fires once after the create response
+ *     when polling is about to begin, letting callers surface a
+ *     two-phase status display ("Created" → "Waiting").
+ *
+ * Both the create and poll calls are issued with `Accept-Expansion:
+ * addon_service,plan` so the response includes the full plan shape
+ * (price, unit, etc.). The create call additionally sets
+ * `X-Heroku-Legacy-Provider-Messages: true` to opt into
+ * provider-supplied `provision_message` text on the response — without
+ * it the platform silently omits that field.
+ */
+export async function createAndWait(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  body: AddOnCreateOpts,
+  options: CreateAndWaitOptions = {},
+): Promise<AddOn> {
+  options.signal?.throwIfAborted()
+
+  const platform = ctx.platform.withHeaders({'Accept-Expansion': 'addon_service,plan'})
+
+  let addon: AddOn
+  try {
+    addon = await platform
+      .withHeaders({'X-Heroku-Legacy-Provider-Messages': 'true'})
+      .addOn.create(appIdentity, body)
+  } catch (error) {
+    if (error instanceof HerokuApiError && error.id === 'confirmation_required') {
+      throw new AddonConfirmationRequiredError(error.message)
+    }
+
+    throw error
+  }
+
+  if (!options.wait || addon.state !== 'provisioning') {
+    if (addon.state === 'deprovisioned') {
+      throw new AddonProvisioningFailedError(addon)
+    }
+
+    return addon
+  }
+
+  await options.onProvisioning?.(addon)
+
+  const intervalMs = options.waitIntervalMs ?? DEFAULT_CREATE_WAIT_INTERVAL_MS
+
+  while (addon.state === 'provisioning') {
+    options.signal?.throwIfAborted()
+    // eslint-disable-next-line no-await-in-loop
+    await wait(intervalMs, options.signal)
+    // eslint-disable-next-line no-await-in-loop
+    addon = await platform.addOn.infoByApp(appIdentity, addon.name!)
+  }
+
+  if (addon.state === 'deprovisioned') {
+    throw new AddonProvisioningFailedError(addon)
+  }
+
+  return addon
+}
+
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    function onAbort() {
+      clearTimeout(timer)
+      reject(signal!.reason ?? new Error('Aborted'))
+    }
+
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+
+    if (signal) {
+      if (signal.aborted) {
+        clearTimeout(timer)
+        reject(signal.reason ?? new Error('Aborted'))
+        return
+      }
+
+      signal.addEventListener('abort', onAbort, {once: true})
+    }
+  })
 }
 
 /**
@@ -158,18 +321,22 @@ export async function describeAddon(
 ): Promise<DescribedAddOn> {
   options.signal?.throwIfAborted()
 
-  const platform = ctx.platform.withHeaders({
+  // Accept-Expansion is scoped to the resolve call (addOn.resolution
+  // serializer accepts addon_service + plan expansions). The
+  // /addons/:id/addon-attachments endpoint uses Accept-Inclusion, not
+  // Accept-Expansion, and rejects an unknown expansion header.
+  const resolvingPlatform = ctx.platform.withHeaders({
     Accept: 'application/vnd.heroku+json; version=3.sdk',
     'Accept-Expansion': 'addon_service,plan',
   })
 
-  const addon = await resolveAddonInternal(platform, addonIdentity, {
+  const addon = await resolveAddonInternal(resolvingPlatform, addonIdentity, {
     addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
 
   options.signal?.throwIfAborted()
-  const attachments = await platform.addOnAttachment.listByAddOn(addon.id)
+  const attachments = await ctx.platform.addOnAttachment.listByAddOn(addon.id)
 
   const plan = addon.plan as Plan | undefined
   return {
@@ -315,6 +482,8 @@ function grandfatheredPrice(addon: AddOn): Plan['price'] {
 }
 
 export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
+  createAndWait: (appIdentity: string, body: AddOnCreateOpts, options?: CreateAndWaitOptions) =>
+    createAndWait(ctx, appIdentity, body, options),
   describe: (addonIdentity: string, options?: ResolveAddonOptions) =>
     describeAddon(ctx, addonIdentity, options),
   listPlans: (serviceIdentity: string, options?: AddOnOptions) =>
