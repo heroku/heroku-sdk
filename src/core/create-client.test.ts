@@ -129,4 +129,59 @@ describe('createClient', () => {
       })
     })
   })
+
+  describe('withSearchParams', () => {
+    it('returns a same-shaped client without mutating the original', () => {
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const scoped = client.withSearchParams({'eq[name]': 'foo'})
+
+      expect(scoped).not.toBe(client)
+      expect(typeof scoped.app.list).toBe('function')
+      expect(typeof scoped.withSearchParams).toBe('function')
+    })
+
+    it('forwards the searchParams as RequestOptions on each call', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const scoped = client.withSearchParams({'eq[name]': 'foo'})
+
+      await scoped.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {
+        searchParams: {'eq[name]': 'foo'},
+      })
+    })
+
+    it('layers searchParams on subsequent withSearchParams calls', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const layered = client
+        .withSearchParams({a: '1', b: '2'})
+        .withSearchParams({b: 'override', c: '3'})
+
+      await layered.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {
+        searchParams: {a: '1', b: 'override', c: '3'},
+      })
+    })
+
+    it('combines withHeaders and withSearchParams in a single RequestOptions', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const scoped = client
+        .withHeaders({Accept: 'application/vnd.heroku+json; version=3.sdk'})
+        .withSearchParams({'eq[name]': 'foo'})
+
+      await scoped.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {
+        headers: {Accept: 'application/vnd.heroku+json; version=3.sdk'},
+        searchParams: {'eq[name]': 'foo'},
+      })
+    })
+  })
 })

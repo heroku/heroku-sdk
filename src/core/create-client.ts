@@ -10,6 +10,8 @@ const debug = createDebug('heroku:sdk:client')
 
 type RoutesModule = Record<string, Record<string, RouteDefinition>>
 
+type SearchParams = NonNullable<RequestOptions['searchParams']>
+
 /**
  * Methods available on every routes-generated client in addition to
  * the resources/methods generated from the routes registry.
@@ -25,17 +27,32 @@ export type RoutesClientExtras<T> = {
    * different from what the rest of the client uses.
    */
   withHeaders(headers: Record<string, string>): RoutesClientExtras<T> & T
+  /**
+   * Returns a same-shaped client where each route call applies the
+   * provided URL search params. Subsequent `withSearchParams` calls
+   * layer on top (later keys win).
+   *
+   * The original client is not mutated. Use this for endpoints that
+   * accept platform filters like `eq[name]=foo` without baking the
+   * params into the route registry.
+   */
+  withSearchParams(searchParams: SearchParams): RoutesClientExtras<T> & T
+}
+
+type ProxyContext = {
+  inheritedHeaders?: Record<string, string>
+  inheritedSearchParams?: SearchParams
 }
 
 export function createClient<T>(routes: RoutesModule, options: HerokuApiClientOptions = {}): RoutesClientExtras<T> & T {
   const httpClient = new HerokuApiClient(options)
-  return buildClientProxy<T>(httpClient, routes)
+  return buildClientProxy<T>(httpClient, routes, {})
 }
 
 function buildClientProxy<T>(
   httpClient: HerokuApiClient,
   routes: RoutesModule,
-  inheritedHeaders?: Record<string, string>,
+  ctx: ProxyContext,
 ): RoutesClientExtras<T> & T {
   return new Proxy({}, {
     get(_target, resourceKey: string) {
@@ -43,7 +60,15 @@ function buildClientProxy<T>(
         return (headers: Record<string, string>) => buildClientProxy<T>(
           httpClient,
           routes,
-          {...inheritedHeaders, ...headers},
+          {...ctx, inheritedHeaders: {...ctx.inheritedHeaders, ...headers}},
+        )
+      }
+
+      if (resourceKey === 'withSearchParams') {
+        return (searchParams: SearchParams) => buildClientProxy<T>(
+          httpClient,
+          routes,
+          {...ctx, inheritedSearchParams: {...ctx.inheritedSearchParams, ...searchParams}},
         )
       }
 
@@ -63,13 +88,18 @@ function buildClientProxy<T>(
           }
 
           return (...args: unknown[]) => {
-            const requestOptions: RequestOptions | undefined = inheritedHeaders
-              ? {headers: inheritedHeaders}
-              : undefined
+            const requestOptions = buildRequestOptions(ctx)
             return dispatch(httpClient, route, args, `${resourceKey}.${methodKey}`, requestOptions)
           }
         },
       })
     },
   }) as RoutesClientExtras<T> & T
+}
+
+function buildRequestOptions(ctx: ProxyContext): RequestOptions | undefined {
+  const options: RequestOptions = {}
+  if (ctx.inheritedHeaders) options.headers = ctx.inheritedHeaders
+  if (ctx.inheritedSearchParams) options.searchParams = ctx.inheritedSearchParams
+  return Object.keys(options).length > 0 ? options : undefined
 }
