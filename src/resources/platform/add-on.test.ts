@@ -559,6 +559,44 @@ describe('add-on resource', () => {
       expect(result).toBe(provisioned)
     })
 
+    it('fires onProvisioning once after the create response, before polling', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const calls: string[] = []
+      const onProvisioning = vi.fn(addon => {
+        calls.push(`onProvisioning:${addon.id}`)
+      })
+      const {ctx} = buildCreateCtx({
+        createResponses: [provisioning],
+        infoByAppResponses: [provisioned],
+      })
+
+      await createAndWait(
+        ctx,
+        'my-app',
+        {plan: 'heroku-redis:hobby'},
+        {onProvisioning, wait: true, waitIntervalMs: 1},
+      )
+
+      expect(onProvisioning).toHaveBeenCalledExactlyOnceWith(provisioning)
+      expect(calls).toEqual([`onProvisioning:${provisioning.id}`])
+    })
+
+    it('does not fire onProvisioning when the create response is already terminal', async () => {
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const onProvisioning = vi.fn()
+      const {ctx} = buildCreateCtx({createResponses: [provisioned]})
+
+      await createAndWait(
+        ctx,
+        'my-app',
+        {plan: 'heroku-redis:hobby'},
+        {onProvisioning, wait: true},
+      )
+
+      expect(onProvisioning).not.toHaveBeenCalled()
+    })
+
     it('throws AddonProvisioningFailedError when the wait terminates in deprovisioned', async () => {
       const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
       const failed = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)

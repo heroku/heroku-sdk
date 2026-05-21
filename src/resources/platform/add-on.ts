@@ -151,6 +151,16 @@ export async function upgrade(
 
 export type CreateAndWaitOptions = {
   /**
+   * Fires once after the initial create returns and the add-on is
+   * still provisioning, before the first poll. Receives the create
+   * response. Useful for surfacing two-phase UX: e.g. "Creating
+   * <plan>... <price>" followed by "Waiting for <addonName>...".
+   *
+   * Only invoked when `wait: true` and the create response state is
+   * `provisioning`.
+   */
+  onProvisioning?: (addon: AddOn) => Promise<void> | void
+  /**
    * If true, poll until the add-on leaves the `provisioning` state. If
    * the final state is anything other than `provisioned`/`provisioning`
    * (e.g. `deprovisioned`), throws `AddonProvisioningFailedError`.
@@ -168,7 +178,7 @@ const DEFAULT_CREATE_WAIT_INTERVAL_MS = 5000
 /**
  * Create an add-on and optionally wait for provisioning to complete.
  *
- * Wraps `addOn.create` with two pieces of orchestration:
+ * Wraps `addOn.create` with three pieces of orchestration:
  *
  *   - 423 `confirmation_required` from the platform is converted to a
  *     typed `AddonConfirmationRequiredError`. Callers should catch
@@ -178,6 +188,9 @@ const DEFAULT_CREATE_WAIT_INTERVAL_MS = 5000
  *     `waitIntervalMs` cadence until the add-on's `state` is no longer
  *     `provisioning`. Throws `AddonProvisioningFailedError` if the
  *     terminal state is `deprovisioned`.
+ *   - `options.onProvisioning` fires once after the create response
+ *     when polling is about to begin, letting callers surface a
+ *     two-phase status display ("Created" → "Waiting").
  */
 export async function createAndWait(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -205,6 +218,8 @@ export async function createAndWait(
 
     return addon
   }
+
+  await options.onProvisioning?.(addon)
 
   const intervalMs = options.waitIntervalMs ?? DEFAULT_CREATE_WAIT_INTERVAL_MS
   const platform = ctx.platform.withHeaders({'Accept-Expansion': 'addon_service,plan'})
