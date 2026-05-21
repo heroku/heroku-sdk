@@ -1,6 +1,6 @@
 {
   "name": "@heroku/sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Heroku SDK",
   "author": "Heroku",
   "type": "module",
@@ -9,7 +9,6 @@
     ".": "./dist/index.js",
     "./platform": "./dist/services/platform.js",
     "./data": "./dist/services/data.js",
-    "./sdk": "./dist/core/heroku-sdk.js",
     "./extensions/platform": "./dist/resources/extensions/platform.js",
     "./extensions/data": "./dist/resources/extensions/data.js",
     "./resources/*": "./dist/resources/*.js"

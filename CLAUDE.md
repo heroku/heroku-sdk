@@ -59,7 +59,7 @@ This is the Heroku SDK (`@heroku/sdk`). It generates fully-typed clients at runt
 - `@heroku/sdk/data` → `createDataClient`, `DataClient`
 - `@heroku/sdk` (root) → `HerokuApiClientOptions` (shared types only)
 
-**SDK class (`@heroku/sdk/sdk` → `HerokuSDK`):** Combines per-service clients with hand-written resource extensions. Lazy per-service getters return Proxy-merged views: `sdk.platform.app.enableMaintenance()` is a hand-written method, `sdk.platform.app.info()` is the upstream route, both available on the same namespace. Extension bundles are imported by name from `@heroku/sdk/extensions/<service>` and passed at construction.
+**SDK class (`@heroku/sdk` → `HerokuSDK`):** Combines per-service clients with hand-written resource extensions. Lazy per-service getters return Proxy-merged views: `sdk.platform.app.enableMaintenance()` is a hand-written method, `sdk.platform.app.info()` is the upstream route, both available on the same namespace. Extension bundles are imported by name from `@heroku/sdk/extensions/<service>` and passed at construction.
 
 **Resource modules (`src/resources/<service>/<resource>.ts`):** Each resource module exports both tree-shakable named functions (callable with explicit `ctx`) and an `*Extensions` bundle produced by `extendResource`. The bundle is mechanical delegation — every method delegates one-line into the corresponding named function. Cross-service helpers (e.g., the pg flow that needs both platform and data clients) destructure both services from `ctx`.
 

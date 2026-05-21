@@ -1,6 +1,6 @@
 # Heroku SDK
 
-A TypeScript SDK for the [Heroku Platform API](https://devcenter.heroku.com/articles/platform-api-reference). It provides a fully-typed client.
+A TypeScript SDK for the [Heroku Platform API](https://devcenter.heroku.com/articles/platform-api-reference) and [Heroku Data API](https://devcenter.heroku.com/articles/heroku-postgres-api-reference). It generates fully-typed clients at runtime from route definitions — no hand-written method per endpoint.
 
 ## Installation
 
@@ -10,30 +10,52 @@ npm install @heroku/sdk
 
 ## Usage
 
+The simplest entry point is the `HerokuSDK` class. It exposes both the Platform and Data clients on a single object, plus an extension mechanism for hand-written helpers.
+
 ```ts
-import { createHerokuClient } from '@heroku/sdk'
+import { HerokuSDK } from '@heroku/sdk'
+import { appExtensions } from '@heroku/sdk/extensions/platform'
 
 // Reads token from HEROKU_API_KEY or ~/.netrc
-const heroku = createHerokuClient()
+const sdk = new HerokuSDK({ extensions: [appExtensions] })
 
-// List all apps
-const apps = await heroku.app.list()
+// Upstream route (auto-generated from the API spec)
+const apps = await sdk.platform.app.list()
+const app  = await sdk.platform.app.info('my-app')
 
-// Get a specific app
-const app = await heroku.app.info('my-app')
-
-// Create an app
-const newApp = await heroku.app.create({ name: 'my-new-app' })
-
-// Delete an app
-await heroku.app.delete('my-app')
+// Hand-written extension method (provided by appExtensions)
+await sdk.platform.app.enableMaintenance('my-app')
 ```
 
 You can also pass options directly:
 
 ```ts
-const heroku = createHerokuClient({ token: 'your-api-token' })
+const sdk = new HerokuSDK({ clientOptions: { token: 'your-api-token' } })
 ```
+
+### Per-service clients
+
+If you only need one service (and want the smallest possible bundle), import the factory directly. These return the same typed client the SDK class wraps internally.
+
+```ts
+import { createPlatformClient } from '@heroku/sdk/platform'
+import { createDataClient }     from '@heroku/sdk/data'
+
+const platform = createPlatformClient()
+const data     = createDataClient()
+
+const apps = await platform.app.list()
+```
+
+### Imports
+
+| Symbol                                   | Import from                       |
+| ---------------------------------------- | --------------------------------- |
+| `HerokuSDK`, `extendResource`, types     | `@heroku/sdk`                     |
+| `createPlatformClient`, `PlatformClient` | `@heroku/sdk/platform`            |
+| `createDataClient`, `DataClient`         | `@heroku/sdk/data`                |
+| `appExtensions`, `dynoExtensions`, …     | `@heroku/sdk/extensions/platform` |
+| `databaseExtensions`, …                  | `@heroku/sdk/extensions/data`     |
 
 ## Development
 

@@ -2,7 +2,7 @@
 // Requires: HEROKU_API_KEY in env or a valid .netrc entry for api.heroku.com.
 //          APP=<app-name> in env.
 
-import {HerokuSDK} from '../src/core/heroku-sdk.js'
+import {HerokuSDK} from '../src/index.js'
 import {dynoExtensions} from '../src/resources/extensions/platform.js'
 
 const sdk = new HerokuSDK({extensions: [dynoExtensions]})
