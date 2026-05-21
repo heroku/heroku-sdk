@@ -1,10 +1,13 @@
 import type {Pipeline} from '@heroku/types/3.sdk'
 
+import {HerokuApiClient, type HerokuApiClientOptions} from '@heroku/heroku-fetch'
+
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
 
 export type ResolvePipelineOptions = {
+  clientOptions?: HerokuApiClientOptions
   signal?: AbortSignal
 }
 
@@ -47,6 +50,11 @@ const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i
  *     names are not unique platform-wide, so a name lookup may return
  *     zero, one, or many matches.
  *
+ * The name path uses a raw `HerokuApiClient` because the route
+ * registry's `pipeline.list` doesn't accept query params, and we don't
+ * want to bake those params into the routes-generated client (where
+ * they would leak across unrelated calls).
+ *
  * Errors:
  *   - throws `PipelineNotFoundError` when no pipeline matches the name.
  *   - throws `PipelineAmbiguousError` when more than one does. Callers
@@ -64,9 +72,14 @@ export async function resolvePipeline(
     return ctx.platform.pipeline.info(identity)
   }
 
-  const matches = await ctx.platform
-    .withSearchParams({'eq[name]': identity})
-    .pipeline.list()
+  const apiClient = new HerokuApiClient({
+    ...options.clientOptions,
+    service: 'platform',
+  })
+  const response = await apiClient.get('/pipelines', {
+    searchParams: {'eq[name]': identity},
+  })
+  const matches = (await response.json()) as Pipeline[]
 
   if (matches.length === 0) {
     throw new PipelineNotFoundError(identity)
