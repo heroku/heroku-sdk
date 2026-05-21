@@ -321,18 +321,22 @@ export async function describeAddon(
 ): Promise<DescribedAddOn> {
   options.signal?.throwIfAborted()
 
-  const platform = ctx.platform.withHeaders({
+  // Accept-Expansion is scoped to the resolve call (addOn.resolution
+  // serializer accepts addon_service + plan expansions). The
+  // /addons/:id/addon-attachments endpoint uses Accept-Inclusion, not
+  // Accept-Expansion, and rejects an unknown expansion header.
+  const resolvingPlatform = ctx.platform.withHeaders({
     Accept: 'application/vnd.heroku+json; version=3.sdk',
     'Accept-Expansion': 'addon_service,plan',
   })
 
-  const addon = await resolveAddonInternal(platform, addonIdentity, {
+  const addon = await resolveAddonInternal(resolvingPlatform, addonIdentity, {
     addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
 
   options.signal?.throwIfAborted()
-  const attachments = await platform.addOnAttachment.listByAddOn(addon.id)
+  const attachments = await ctx.platform.addOnAttachment.listByAddOn(addon.id)
 
   const plan = addon.plan as Plan | undefined
   return {
