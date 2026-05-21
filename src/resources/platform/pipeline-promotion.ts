@@ -50,8 +50,9 @@ export async function promotePipeline(
   }
 
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
-
-  let streamHandled = false
+  const streamRunner = onReleaseStream
+    ? createReleaseStreamRunner(ctx, onReleaseStream, releaseStreamMaxAttempts, intervalMs, signal)
+    : undefined
 
   while (true) {
     signal?.throwIfAborted()
@@ -62,30 +63,8 @@ export async function promotePipeline(
       return {promotion, targets}
     }
 
-    if (
-      onReleaseStream
-      && !streamHandled
-      && targets.length === 1
-      && targets[0].release?.id
-      && targets[0].app?.id
-    ) {
-      streamHandled = true
-      const target = targets[0]
-      // eslint-disable-next-line no-await-in-loop
-      const release = await ctx.platform.release.info(target.app!.id!, target.release!.id!)
-
-      if (release.output_stream_url) {
-        // eslint-disable-next-line no-await-in-loop
-        const stream = await fetchReleaseOutput(
-          release.output_stream_url,
-          releaseStreamMaxAttempts,
-          intervalMs,
-          signal,
-        )
-        // eslint-disable-next-line no-await-in-loop
-        await onReleaseStream({stream, target})
-      }
-    }
+    // eslint-disable-next-line no-await-in-loop
+    await streamRunner?.(targets)
 
     if (deadline !== undefined && Date.now() >= deadline) {
       throw new Error(`Pipeline promotion ${promotion.id} did not reach a terminal state within ${timeoutMs}ms`)
@@ -93,6 +72,39 @@ export async function promotePipeline(
 
     // eslint-disable-next-line no-await-in-loop
     await wait(intervalMs, signal)
+  }
+}
+
+/**
+ * Returns a function that, on first call where `targets` is a single
+ * promotion target with `release.id` and `app.id`, fetches the release's
+ * output stream and hands it to `onReleaseStream`. Subsequent calls are
+ * no-ops; the stream is one-shot per promotion.
+ */
+function createReleaseStreamRunner(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  onReleaseStream: NonNullable<PromotePipelineOptions['onReleaseStream']>,
+  releaseStreamMaxAttempts: number,
+  intervalMs: number,
+  signal: AbortSignal | undefined,
+): (targets: PipelinePromotionTarget[]) => Promise<void> {
+  let handled = false
+  return async targets => {
+    if (handled || targets.length !== 1) return
+    const target = targets[0]
+    if (!target.release?.id || !target.app?.id) return
+
+    handled = true
+    const release = await ctx.platform.release.info(target.app.id, target.release.id)
+    if (!release.output_stream_url) return
+
+    const stream = await fetchReleaseOutput(
+      release.output_stream_url,
+      releaseStreamMaxAttempts,
+      intervalMs,
+      signal,
+    )
+    await onReleaseStream({stream, target})
   }
 }
 
