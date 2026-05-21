@@ -1,7 +1,7 @@
 // Run: npm run example -- examples/sdk-usage.ts
 // Requires: HEROKU_API_KEY in env or a valid .netrc entry for api.heroku.com.
 
-import {HerokuSDK} from '../src/core/heroku-sdk.js'
+import {HerokuSDK} from '../src/index.js'
 import {databaseExtensions} from '../src/resources/extensions/data.js'
 import {appExtensions, dynoExtensions} from '../src/resources/extensions/platform.js'
 

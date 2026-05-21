@@ -4,7 +4,7 @@
 //          APP=<app-name>, CONFIRM=<app-name> (must match), MODE=prepare|run.
 //          ADDON, PG_VERSION optional.
 
-import {HerokuSDK} from '../src/core/heroku-sdk.js'
+import {HerokuSDK} from '../src/index.js'
 import {databaseExtensions} from '../src/resources/extensions/data.js'
 
 const sdk = new HerokuSDK({extensions: [databaseExtensions]})
