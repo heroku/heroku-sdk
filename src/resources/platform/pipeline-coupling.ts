@@ -1,8 +1,12 @@
 import type {PipelineCoupling, TeamApp} from '@heroku/types/3.sdk'
 
+import createDebug from 'debug'
+
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+
+const debug = createDebug('heroku:sdk:resources:pipeline-coupling')
 
 export type PipelineWarning = {
   limit: number
@@ -39,6 +43,11 @@ export async function listPipelineApps(
   const allCouplings = await ctx.platform.pipelineCoupling.listByPipeline(pipelineId)
   // Drop malformed couplings (no app id) before issuing the bulk filter call.
   const couplings = allCouplings.filter(coupling => coupling.app?.id)
+  const skipped = allCouplings.length - couplings.length
+  if (skipped > 0) {
+    debug('listPipelineApps pipeline=%s skipped=%d couplings without app.id', pipelineId, skipped)
+  }
+
   if (couplings.length === 0) {
     return []
   }
@@ -50,6 +59,7 @@ export async function listPipelineApps(
         + 'Pass an onWarning handler to opt into a truncated result.')
     }
 
+    debug('listPipelineApps pipeline=%s truncating couplings=%d limit=%d', pipelineId, couplings.length, APPS_FILTER_LIMIT)
     options.onWarning({limit: APPS_FILTER_LIMIT, pipelineId, type: 'apps_truncated'})
     couplingsToResolve = couplings.slice(0, APPS_FILTER_LIMIT)
   }
@@ -59,6 +69,9 @@ export async function listPipelineApps(
   const apps = await ctx.platform
     .withHeaders({Range: `id ..; max=${APPS_FILTER_LIMIT};`})
     .filterApps.apps({in: {id: ids}})
+  if (apps.length !== ids.length) {
+    debug('listPipelineApps pipeline=%s requested=%d returned=%d', pipelineId, ids.length, apps.length)
+  }
 
   const couplingByAppId = new Map<string, PipelineCoupling>()
   for (const coupling of couplingsToResolve) {

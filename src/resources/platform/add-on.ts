@@ -1,11 +1,14 @@
 import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
 import {NotFoundError} from '@heroku/heroku-fetch'
+import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 import type {PlatformClient} from '../../services/platform.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+
+const debug = createDebug('heroku:sdk:resources:add-on')
 
 export type AddOnOptions = {
   signal?: AbortSignal
@@ -97,6 +100,11 @@ export async function upgrade(
   const qualifiedPlan = plan.includes(':')
     ? plan
     : `${(addon.addon_service as undefined | {name?: string})?.name}:${plan}`
+  if (qualifiedPlan !== plan) {
+    debug('upgrade plan qualified plan=%s qualified=%s', plan, qualifiedPlan)
+  }
+
+  debug('upgrade addon=%s app=%s plan=%s', addon.id, addon.app.id, qualifiedPlan)
   return ctx.platform.addOn.update(addon.app.id, addon.id, {plan: qualifiedPlan})
 }
 
@@ -219,6 +227,7 @@ export async function resolveAddonByAttachment(
   options: AddOnOptions = {},
 ): Promise<ResolvedAddOn> {
   options.signal?.throwIfAborted()
+  debug('resolveByAttachment app=%s attachment=%s', appIdentity, attachmentName)
   const matches = await ctx.platform.addOnAttachment.resolution({
     // eslint-disable-next-line camelcase
     addon_attachment: attachmentName,
@@ -228,9 +237,11 @@ export async function resolveAddonByAttachment(
   const attachment = matches[0]
   const addon = attachment?.addon
   if (!addon?.id || !addon.app?.id) {
+    debug('resolveByAttachment matches=%d (no usable add-on returned)', matches.length)
     throw new AddonNotFoundError()
   }
 
+  debug('resolveByAttachment resolved addon=%s app=%s', addon.id, addon.app.id)
   return addon as ResolvedAddOn
 }
 
@@ -243,14 +254,19 @@ async function resolveAddonInternal(
 
   const resolveBy = async (app?: string): Promise<ResolvedAddOn> => {
     const body = app ? {addon: addonIdentity, app} : {addon: addonIdentity}
+    debug('resolve addon=%s app=%s service=%s', addonIdentity, app ?? '<global>', addonService ?? '<any>')
     const matches = await platform.addOn.resolution(body)
     const filtered = addonService
       ? matches.filter(addon => addon.addon_service?.name === addonService)
       : matches
-    return singularize(filtered)
+    debug('resolve matches=%d filtered=%d (service=%s)', matches.length, filtered.length, addonService ?? '<any>')
+    const resolvedAddon = singularize(filtered)
+    debug('resolve resolved addon=%s app=%s', resolvedAddon.id, resolvedAddon.app.id)
+    return resolvedAddon
   }
 
   if (!appIdentity || addonIdentity.includes('::')) {
+    debug('resolve scope=global reason=%s', appIdentity ? 'namespaced-identity' : 'no-app')
     return resolveBy()
   }
 
@@ -258,6 +274,7 @@ async function resolveAddonInternal(
     return await resolveBy(appIdentity)
   } catch (error) {
     if (isAddOnNotFound(error)) {
+      debug('resolve app-scope 404 add_on, falling back to global addon=%s', addonIdentity)
       return resolveBy()
     }
 
