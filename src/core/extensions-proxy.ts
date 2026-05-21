@@ -12,8 +12,10 @@ export function mergeExtensions<T extends object>(
   const methodsByResource = new Map<string, ResourceMethods>()
 
   for (const ext of extensions) {
+    const factoryMethods = ext.factory(ctx)
+    debug('loaded extension service=%s resource=%s methods=%o', ext.service, ext.resource, Object.keys(factoryMethods))
     const merged = methodsByResource.get(ext.resource) ?? {}
-    Object.assign(merged, ext.factory(ctx))
+    Object.assign(merged, factoryMethods)
     methodsByResource.set(ext.resource, merged)
   }
 

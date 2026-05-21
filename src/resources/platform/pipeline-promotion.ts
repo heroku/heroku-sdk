@@ -5,10 +5,13 @@ import type {
 } from '@heroku/types/3.sdk'
 
 import {HerokuApiClient} from '@heroku/heroku-fetch'
+import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+
+const debug = createDebug('heroku:sdk:resources:pipeline-promotion')
 
 export type ReleaseStreamContext = {
   stream: ReadableStream<Uint8Array>
@@ -44,22 +47,29 @@ export async function promotePipeline(
     timeoutMs,
   } = options
 
+  debug('promote source=%s targets=%d', body.source?.app?.id ?? '<unknown>', body.targets?.length ?? 0)
   const promotion = await ctx.platform.pipelinePromotion.create(body)
   if (!promotion.id) {
     throw new Error('Pipeline promotion response did not include an id')
   }
+
+  debug('promote created promotion=%s intervalMs=%d timeoutMs=%s', promotion.id, intervalMs, timeoutMs ?? '<none>')
 
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
   const streamRunner = onReleaseStream
     ? createReleaseStreamRunner(ctx, onReleaseStream, releaseStreamMaxAttempts, intervalMs, signal)
     : undefined
 
+  let poll = 0
   while (true) {
     signal?.throwIfAborted()
+    poll++
 
     // eslint-disable-next-line no-await-in-loop
     const targets = await ctx.platform.pipelinePromotionTarget.list(promotion.id)
+    debug('promote poll=%d promotion=%s statuses=%o', poll, promotion.id, targets.map(target => target.status))
     if (targets.every(target => target.status !== 'pending')) {
+      debug('promote terminal promotion=%s polls=%d', promotion.id, poll)
       return {promotion, targets}
     }
 
@@ -95,9 +105,14 @@ function createReleaseStreamRunner(
     if (!target.release?.id || !target.app?.id) return
 
     handled = true
+    debug('promote release-stream lookup app=%s release=%s', target.app.id, target.release.id)
     const release = await ctx.platform.release.info(target.app.id, target.release.id)
-    if (!release.output_stream_url) return
+    if (!release.output_stream_url) {
+      debug('promote release-stream skipped reason=no-output-stream-url')
+      return
+    }
 
+    debug('promote release-stream fetching url=%s maxAttempts=%d', release.output_stream_url, releaseStreamMaxAttempts)
     const stream = await fetchReleaseOutput(
       release.output_stream_url,
       releaseStreamMaxAttempts,
@@ -144,8 +159,11 @@ async function fetchReleaseOutput(
     }
 
     if (response?.ok && response.body) {
+      debug('release-stream attempt=%d status=%d ok stream=true', attempt, response.status)
       return response.body
     }
+
+    debug('release-stream attempt=%d status=%s ok=false', attempt, response?.status ?? '<error>')
 
     if (response?.body) {
       // Drain so the connection can be reused.

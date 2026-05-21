@@ -1,7 +1,11 @@
+import createDebug from 'debug'
+
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolveAddonOptions, ResolvedAddOn} from '../../platform/add-on.js'
 
 import {resolveAddon, resolveAddonByAttachment} from '../../platform/add-on.js'
+
+const debug = createDebug('heroku:sdk:resources:database')
 
 const DEFAULT_PG_ATTACHMENT = 'DATABASE_URL'
 
@@ -37,18 +41,22 @@ export async function resolvePgDatabase(
       throw new Error('resolvePgDatabase requires either input or appIdentity to default to DATABASE_URL.')
     }
 
+    debug('resolve branch=default-attachment app=%s attachment=%s', appIdentity, DEFAULT_PG_ATTACHMENT)
     return resolveAddonByAttachment(ctx, appIdentity, DEFAULT_PG_ATTACHMENT, rest)
   }
 
   if (input.includes('::')) {
     const {addon, app} = parseBranchReference(input, appIdentity)
+    debug('resolve branch=branch-reference input=%s addon=%s app=%s', input, addon, app ?? '<global>')
     return resolveAddon(ctx, addon, {...rest, appIdentity: app})
   }
 
   if (appIdentity && isAttachmentName(input)) {
+    debug('resolve branch=attachment-name app=%s attachment=%s', appIdentity, input)
     return resolveAddonByAttachment(ctx, appIdentity, input, rest)
   }
 
+  debug('resolve branch=bare-identity input=%s app=%s', input, appIdentity ?? '<global>')
   return resolveAddon(ctx, input, {...rest, appIdentity})
 }
 
