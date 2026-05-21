@@ -34,6 +34,10 @@ export type DescribedAddOn = ResolvedAddOn & {
   attachments: AddOnAttachment[]
 }
 
+export type UpgradeAddOnOptions = ResolveAddonOptions & {
+  onResolved?: (addon: ResolvedAddOn) => Promise<void> | void
+}
+
 export class AddonNotFoundError extends Error {
   public readonly id = 'not_found'
   public readonly statusCode = 404
@@ -83,9 +87,7 @@ export async function upgrade(
   ctx: Pick<ResourceCtx, 'platform'>,
   addonIdentity: string,
   plan: string,
-  options: ResolveAddonOptions & {
-    onResolved?: (addon: ResolvedAddOn) => Promise<void> | void
-  } = {},
+  options: UpgradeAddOnOptions = {},
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
 
@@ -321,6 +323,6 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
     resolveAddon(ctx, addonIdentity, options),
   resolveByAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
     resolveAddonByAttachment(ctx, appIdentity, attachmentName, options),
-  upgrade: (addonIdentity: string, plan: string, options?: ResolveAddonOptions) =>
+  upgrade: (addonIdentity: string, plan: string, options?: UpgradeAddOnOptions) =>
     upgrade(ctx, addonIdentity, plan, options),
 }))
