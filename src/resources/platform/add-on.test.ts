@@ -554,6 +554,7 @@ describe('add-on resource', () => {
       )
 
       expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'addon_service,plan'})
+      expect(withHeaders).toHaveBeenCalledWith({'X-Heroku-Legacy-Provider-Messages': 'true'})
       expect(infoByApp).toHaveBeenCalledTimes(2)
       expect(infoByApp).toHaveBeenLastCalledWith('my-app', provisioning.name)
       expect(result).toBe(provisioned)

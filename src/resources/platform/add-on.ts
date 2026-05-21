@@ -191,6 +191,13 @@ const DEFAULT_CREATE_WAIT_INTERVAL_MS = 5000
  *   - `options.onProvisioning` fires once after the create response
  *     when polling is about to begin, letting callers surface a
  *     two-phase status display ("Created" → "Waiting").
+ *
+ * Both the create and poll calls are issued with `Accept-Expansion:
+ * addon_service,plan` so the response includes the full plan shape
+ * (price, unit, etc.). The create call additionally sets
+ * `X-Heroku-Legacy-Provider-Messages: true` to opt into
+ * provider-supplied `provision_message` text on the response — without
+ * it the platform silently omits that field.
  */
 export async function createAndWait(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -200,9 +207,13 @@ export async function createAndWait(
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
 
+  const platform = ctx.platform.withHeaders({'Accept-Expansion': 'addon_service,plan'})
+
   let addon: AddOn
   try {
-    addon = await ctx.platform.addOn.create(appIdentity, body)
+    addon = await platform
+      .withHeaders({'X-Heroku-Legacy-Provider-Messages': 'true'})
+      .addOn.create(appIdentity, body)
   } catch (error) {
     if (error instanceof HerokuApiError && error.id === 'confirmation_required') {
       throw new AddonConfirmationRequiredError(error.message)
@@ -222,7 +233,6 @@ export async function createAndWait(
   await options.onProvisioning?.(addon)
 
   const intervalMs = options.waitIntervalMs ?? DEFAULT_CREATE_WAIT_INTERVAL_MS
-  const platform = ctx.platform.withHeaders({'Accept-Expansion': 'addon_service,plan'})
 
   while (addon.state === 'provisioning') {
     options.signal?.throwIfAborted()
