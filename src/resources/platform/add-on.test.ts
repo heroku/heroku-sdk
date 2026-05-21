@@ -1,6 +1,6 @@
 import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
-import {NotFoundError} from '@heroku/heroku-fetch'
+import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -9,8 +9,11 @@ import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {
   AddonAmbiguousError,
+  AddonConfirmationRequiredError,
   addOnExtensions,
   AddonNotFoundError,
+  AddonProvisioningFailedError,
+  createAndWait,
   describeAddon,
   listPlans,
   resolveAddon,
@@ -94,6 +97,46 @@ function buildNotFound(resource = 'add_on'): NotFoundError {
     status: 404,
   })
   return new NotFoundError(response, {id: 'not_found', resource})
+}
+
+function buildCreateCtx({
+  createResponses,
+  infoByAppResponses = [],
+}: {
+  createResponses: Array<AddOn | Error>
+  infoByAppResponses?: AddOn[]
+}): {
+  create: ReturnType<typeof vi.fn>
+  ctx: ResourceCtx
+  infoByApp: ReturnType<typeof vi.fn>
+  withHeaders: ReturnType<typeof vi.fn>
+} {
+  const create = vi.fn()
+  for (const response of createResponses) {
+    if (response instanceof Error) {
+      create.mockRejectedValueOnce(response)
+    } else {
+      create.mockResolvedValueOnce(response)
+    }
+  }
+
+  const infoByApp = vi.fn()
+  for (const response of infoByAppResponses) {
+    infoByApp.mockResolvedValueOnce(response)
+  }
+
+  const platform = {
+    addOn: {create, infoByApp},
+    withHeaders: vi.fn(),
+  }
+  platform.withHeaders.mockReturnValue(platform)
+
+  return {
+    create,
+    ctx: {data: {} as never, platform: platform as never},
+    infoByApp,
+    withHeaders: platform.withHeaders,
+  }
 }
 
 describe('add-on resource', () => {
@@ -473,15 +516,119 @@ describe('add-on resource', () => {
     })
   })
 
+  describe('createAndWait', () => {
+    it('returns the created add-on when wait is not requested', async () => {
+      const created = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const {create, ctx, infoByApp} = buildCreateCtx({createResponses: [created]})
+
+      const result = await createAndWait(ctx, 'my-app', {plan: 'heroku-redis:hobby'})
+
+      expect(create).toHaveBeenCalledExactlyOnceWith('my-app', {plan: 'heroku-redis:hobby'})
+      expect(infoByApp).not.toHaveBeenCalled()
+      expect(result).toBe(created)
+    })
+
+    it('returns immediately when the create response is already terminal', async () => {
+      const created = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const {ctx, infoByApp} = buildCreateCtx({createResponses: [created]})
+
+      const result = await createAndWait(ctx, 'my-app', {plan: 'heroku-redis:hobby'}, {wait: true})
+
+      expect(infoByApp).not.toHaveBeenCalled()
+      expect(result).toBe(created)
+    })
+
+    it('polls infoByApp until the add-on leaves provisioning', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const {ctx, infoByApp, withHeaders} = buildCreateCtx({
+        createResponses: [provisioning],
+        infoByAppResponses: [provisioning, provisioned],
+      })
+
+      const result = await createAndWait(
+        ctx,
+        'my-app',
+        {plan: 'heroku-redis:hobby'},
+        {wait: true, waitIntervalMs: 1},
+      )
+
+      expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'addon_service,plan'})
+      expect(infoByApp).toHaveBeenCalledTimes(2)
+      expect(infoByApp).toHaveBeenLastCalledWith('my-app', provisioning.name)
+      expect(result).toBe(provisioned)
+    })
+
+    it('throws AddonProvisioningFailedError when the wait terminates in deprovisioned', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const failed = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {ctx} = buildCreateCtx({
+        createResponses: [provisioning],
+        infoByAppResponses: [failed],
+      })
+
+      await expect(createAndWait(
+        ctx,
+        'my-app',
+        {plan: 'heroku-redis:hobby'},
+        {wait: true, waitIntervalMs: 1},
+      )).rejects.toBeInstanceOf(AddonProvisioningFailedError)
+    })
+
+    it('throws AddonProvisioningFailedError when create itself returns deprovisioned', async () => {
+      const failed = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {ctx} = buildCreateCtx({createResponses: [failed]})
+
+      await expect(createAndWait(ctx, 'my-app', {plan: 'heroku-redis:hobby'}))
+        .rejects.toBeInstanceOf(AddonProvisioningFailedError)
+    })
+
+    it('converts a 423 confirmation_required platform error into AddonConfirmationRequiredError', async () => {
+      const platformError = new HerokuApiError(
+        'Please confirm by typing the application name.',
+        423,
+        new Response(),
+        {id: 'confirmation_required', message: 'Please confirm by typing the application name.'},
+      )
+      const {ctx} = buildCreateCtx({createResponses: [platformError]})
+
+      const error = await createAndWait(ctx, 'my-app', {plan: 'heroku-redis:hobby'}).catch(error_ => error_)
+      expect(error).toBeInstanceOf(AddonConfirmationRequiredError)
+      expect((error as AddonConfirmationRequiredError).platformMessage).toBe('Please confirm by typing the application name.')
+    })
+
+    it('rethrows non-confirmation errors unchanged', async () => {
+      const error = new Error('boom')
+      const {ctx} = buildCreateCtx({createResponses: [error]})
+
+      await expect(createAndWait(ctx, 'my-app', {plan: 'heroku-redis:hobby'})).rejects.toBe(error)
+    })
+
+    it('throws if the abort signal is already aborted', async () => {
+      const {create, ctx} = buildCreateCtx({createResponses: [buildAddon()]})
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(createAndWait(
+        ctx,
+        'my-app',
+        {plan: 'heroku-redis:hobby'},
+        {signal: controller.signal},
+      )).rejects.toThrow()
+      expect(create).not.toHaveBeenCalled()
+    })
+  })
+
   describe('addOnExtensions', () => {
     it('declares service: platform, resource: addOn', () => {
       expect(addOnExtensions.service).toBe('platform')
       expect(addOnExtensions.resource).toBe('addOn')
     })
 
-    it('factory exposes describe, listPlans, resolve, resolveByAttachment, upgrade', () => {
+    it('factory exposes createAndWait, describe, listPlans, resolve, resolveByAttachment, upgrade', () => {
       const {ctx} = buildCtx()
       const methods = addOnExtensions.factory(ctx)
+      expect(typeof methods.createAndWait).toBe('function')
       expect(typeof methods.describe).toBe('function')
       expect(typeof methods.listPlans).toBe('function')
       expect(typeof methods.resolve).toBe('function')
