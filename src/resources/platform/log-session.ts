@@ -4,6 +4,7 @@ import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
+import {buildDefaultFetch} from '../../core/default-fetch.js'
 import {extendResource} from '../../core/extend-resource.js'
 import {getGeneration} from './app.js'
 
@@ -98,7 +99,6 @@ export async function * streamLogs(
 ): AsyncGenerator<string, void, unknown> {
   const {
     dyno,
-    fetch: fetchFn = fetch,
     lines,
     sessionTimeoutMs = DEFAULT_FIR_SESSION_TIMEOUT_MS,
     signal,
@@ -108,6 +108,10 @@ export async function * streamLogs(
   } = options
 
   signal?.throwIfAborted()
+
+  // Default to a Node-aware fetch (UA + env-var proxy via undici);
+  // browsers and non-Node runtimes get the native fetch.
+  const fetchFn = options.fetch ?? await buildDefaultFetch()
 
   const generation = await getGeneration(ctx, appIdentity, {signal})
   const isFir = generation === 'fir'
