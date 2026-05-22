@@ -26,6 +26,15 @@ export type StreamLogsOptions = {
    */
   lines?: number
   /**
+   * Fires once per session creation, before the SDK opens the
+   * `logplex_url` stream. Receives the resolved generation so the
+   * caller can surface generation-specific UX (e.g. "Fetching
+   * logs..." for Fir, where provisioning the stream takes a moment).
+   *
+   * Fires on every recreate when tailing.
+   */
+  onSessionCreated?: (info: {generation: 'cedar' | 'fir' | undefined; isRecreate: boolean}) => Promise<void> | void
+  /**
    * When `tail` is true, watch for the platform's idle timeout and
    * recreate the log session to keep streaming. Defaults to true.
    * Set to false if you want a single bounded stream and surface the
@@ -113,12 +122,16 @@ export async function * streamLogs(
   // The recreate loop is inherently sequential: each session must
   // close before we ask for the next one.
   /* eslint-disable no-await-in-loop */
+  let isRecreate = false
   while (true) {
     debug('streamLogs creating session app=%s generation=%s tail=%s', appIdentity, generation ?? '<unknown>', effectiveTail)
     const session: LogSession = await ctx.platform.logSession.create(appIdentity, createOpts)
     if (!session.logplex_url) {
       throw new Error('Log session response did not include a logplex_url.')
     }
+
+    await options.onSessionCreated?.({generation, isRecreate})
+    isRecreate = true
 
     debug('streamLogs session=%s opening stream', session.id)
     let timedOut = false

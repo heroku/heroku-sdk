@@ -223,6 +223,29 @@ describe('log-session resource', () => {
       })
     })
 
+    it('fires onSessionCreated once per session create with isRecreate flag', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      const fetchFn = vi.fn()
+        .mockResolvedValueOnce(new Response(streamThatTimesOut()))
+        .mockResolvedValue(new Response(streamFromChunks(['line\n'])))
+      const onSessionCreated = vi.fn()
+
+      const iter = streamLogs(ctx, 'my-app', {
+        fetch: fetchFn as never,
+        onSessionCreated,
+        recreateSession: true,
+        sessionTimeoutMs: 5,
+        tail: true,
+      })
+      // Collect just the first line, then break the iterator.
+      await iter.next()
+      await iter.return()
+
+      expect(onSessionCreated).toHaveBeenCalledTimes(2)
+      expect(onSessionCreated.mock.calls[0][0]).toEqual({generation: 'cedar', isRecreate: false})
+      expect(onSessionCreated.mock.calls[1][0]).toEqual({generation: 'cedar', isRecreate: true})
+    })
+
     it('collapses dyno+type into a single dyno field for cedar-generation apps', async () => {
       const {create, ctx} = buildCtx(() => ({...SESSION_BASE}), 'cedar')
       const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks([])))
