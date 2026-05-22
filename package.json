@@ -47,7 +47,7 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
-    "@heroku/heroku-fetch": "github:heroku/heroku-fetch#main",
+    "@heroku/heroku-fetch": "github:heroku/heroku-fetch#eb/fix/dispatcher-only-when-proxy",
     "@heroku/types": "github:heroku/heroku-types",
     "debug": "^4.4.0"
   }
