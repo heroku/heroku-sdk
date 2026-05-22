@@ -1,10 +1,10 @@
 import type {LogSession, LogSessionCreateOpts} from '@heroku/types/3.sdk'
 
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import {buildDefaultFetch} from '../../core/default-fetch.js'
 import {extendResource} from '../../core/extend-resource.js'
 import {getGeneration} from './app.js'
 
@@ -16,11 +16,6 @@ const FIR_TIMEOUT_ERROR_MESSAGE = 'Fir log stream timeout'
 export type StreamLogsOptions = {
   /** Limit output to a single dyno (e.g. `web.1` on Cedar, `web-abc-123` on Fir). */
   dyno?: string
-  /**
-   * Optional fetch override. Useful in Node for injecting User-Agent
-   * or proxy support. Defaults to the global fetch.
-   */
-  fetch?: typeof fetch
   /**
    * Number of recent lines to fetch before tailing. Cedar-generation
    * apps only — silently ignored on Fir.
@@ -109,10 +104,6 @@ export async function * streamLogs(
 
   signal?.throwIfAborted()
 
-  // Default to a Node-aware fetch (UA + env-var proxy via undici);
-  // browsers and non-Node runtimes get the native fetch.
-  const fetchFn = options.fetch ?? await buildDefaultFetch()
-
   const generation = await getGeneration(ctx, appIdentity, {signal})
   const isFir = generation === 'fir'
   // Fir doesn't support a bounded session; the platform always streams.
@@ -142,11 +133,18 @@ export async function * streamLogs(
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined
 
     try {
-      const response = await fetchFn(session.logplex_url, {signal})
-      if (!response.ok) {
-        throw new Error(`Logplex stream returned HTTP ${response.status}`)
-      }
-
+      // Logplex URLs hit a region-specific stream host (e.g.
+      // virginia.sessions.logs.heroku.com). The token is embedded in
+      // the URL, so we use a custom-service client with no auth and
+      // a per-call baseUrl; this also picks up heroku-fetch's
+      // env-var proxy support.
+      const parsed = new URL(session.logplex_url)
+      const logplexClient = new HerokuApiClient({
+        baseUrl: parsed.origin,
+        service: 'custom',
+        token: '',
+      })
+      const response = await logplexClient.stream(`${parsed.pathname}${parsed.search}`)
       if (!response.body) {
         throw new Error('Logplex stream returned no body.')
       }

@@ -1,3 +1,4 @@
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -5,6 +6,10 @@ import {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {logSessionExtensions, streamLogs} from './log-session.js'
+
+vi.mock('@heroku/heroku-fetch', () => ({
+  HerokuApiClient: vi.fn(),
+}))
 
 const SESSION_BASE = {
   id: 'session-1',
@@ -58,6 +63,24 @@ function streamThatTimesOut(): ReadableStream<Uint8Array> {
   })
 }
 
+/**
+ * Wire HerokuApiClient's mock so that constructing one and calling
+ * .stream() returns the next response from the supplied list. Each
+ * call yields a fresh response; if the list is exhausted, falls back
+ * to the last value.
+ */
+function mockStream(...responses: Response[]): ReturnType<typeof vi.fn> {
+  const stream = vi.fn()
+  for (const response of responses) {
+    stream.mockResolvedValueOnce(response)
+  }
+
+  vi.mocked(HerokuApiClient).mockImplementation(function (this: {stream: typeof stream}) {
+    this.stream = stream
+  } as never)
+  return stream
+}
+
 async function collect<T>(iter: AsyncIterable<T>, max: number = Infinity): Promise<T[]> {
   const out: T[] = []
   for await (const value of iter) {
@@ -76,12 +99,12 @@ describe('log-session resource', () => {
   describe('streamLogs', () => {
     it('yields newline-delimited lines from a non-tail stream', async () => {
       const {ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks([
+      mockStream(new Response(streamFromChunks([
         '2026-05-22T00:00:00Z app[web.1]: line one\n',
         '2026-05-22T00:00:01Z app[web.1]: line two\n',
       ])))
 
-      const lines = await collect(streamLogs(ctx, 'my-app', {fetch: fetchFn as never}))
+      const lines = await collect(streamLogs(ctx, 'my-app'))
 
       expect(lines).toEqual([
         '2026-05-22T00:00:00Z app[web.1]: line one',
@@ -91,34 +114,33 @@ describe('log-session resource', () => {
 
     it('handles a line split across two chunks', async () => {
       const {ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks([
+      mockStream(new Response(streamFromChunks([
         'first half',
         ' second half\nnext\n',
       ])))
 
-      const lines = await collect(streamLogs(ctx, 'my-app', {fetch: fetchFn as never}))
+      const lines = await collect(streamLogs(ctx, 'my-app'))
 
       expect(lines).toEqual(['first half second half', 'next'])
     })
 
     it('emits a trailing line that does not end with a newline', async () => {
       const {ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks([
+      mockStream(new Response(streamFromChunks([
         'final line without newline',
       ])))
 
-      const lines = await collect(streamLogs(ctx, 'my-app', {fetch: fetchFn as never}))
+      const lines = await collect(streamLogs(ctx, 'my-app'))
 
       expect(lines).toEqual(['final line without newline'])
     })
 
     it('forwards options to logSession.create', async () => {
       const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks([])))
+      mockStream(new Response(streamFromChunks([])))
 
       await collect(streamLogs(ctx, 'my-app', {
         dyno: 'web.1',
-        fetch: fetchFn as never,
         lines: 100,
         source: 'app',
         tail: false,
@@ -134,25 +156,16 @@ describe('log-session resource', () => {
 
     it('throws when the create response has no logplex_url', async () => {
       const {ctx} = buildCtx(() => ({id: 'session-1'}))
-      const fetchFn = vi.fn()
 
-      const iter = streamLogs(ctx, 'my-app', {fetch: fetchFn as never})
+      const iter = streamLogs(ctx, 'my-app')
       await expect(iter.next()).rejects.toThrow(/did not include a logplex_url/)
-    })
-
-    it('throws when the logplex stream returns a non-2xx status', async () => {
-      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const fetchFn = vi.fn().mockResolvedValue(new Response('bad', {status: 500}))
-
-      const iter = streamLogs(ctx, 'my-app', {fetch: fetchFn as never})
-      await expect(iter.next()).rejects.toThrow(/HTTP 500/)
     })
 
     it('returns immediately for non-tail streams when remote closes', async () => {
       const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks(['only line\n'])))
+      mockStream(new Response(streamFromChunks(['only line\n'])))
 
-      const lines = await collect(streamLogs(ctx, 'my-app', {fetch: fetchFn as never}))
+      const lines = await collect(streamLogs(ctx, 'my-app'))
 
       expect(create).toHaveBeenCalledTimes(1)
       expect(lines).toEqual(['only line'])
@@ -160,15 +173,15 @@ describe('log-session resource', () => {
 
     it('recreates the session when tailing and the stream stalls past sessionTimeoutMs', async () => {
       const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
-      // First fetch: never emits. Second: emits one line then closes.
-      // After that the loop would try to recreate again — we break the
-      // iterator with .return() once we've seen the line we expect.
-      const fetchFn = vi.fn()
+      const stream = vi.fn()
         .mockResolvedValueOnce(new Response(streamThatTimesOut()))
         .mockResolvedValue(new Response(streamFromChunks(['after recreate\n'])))
+      vi.mocked(HerokuApiClient).mockImplementation(function (this: {stream: typeof stream}) {
+        this.stream = stream
+      } as never)
 
       const iter = streamLogs(ctx, 'my-app', {
-        fetch: fetchFn as never, recreateSession: true, sessionTimeoutMs: 5, tail: true,
+        recreateSession: true, sessionTimeoutMs: 5, tail: true,
       })
       const lines: string[] = []
       for await (const line of iter) {
@@ -177,15 +190,15 @@ describe('log-session resource', () => {
       }
 
       expect(create).toHaveBeenCalledTimes(2)
-      expect(fetchFn).toHaveBeenCalledTimes(2)
+      expect(stream).toHaveBeenCalledTimes(2)
       expect(lines).toEqual(['after recreate'])
     })
 
     it('does not recreate when recreateSession is false (single tail iteration)', async () => {
       const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks(['one line\n'])))
+      mockStream(new Response(streamFromChunks(['one line\n'])))
 
-      const lines = await collect(streamLogs(ctx, 'my-app', {fetch: fetchFn as never, recreateSession: false, tail: true}))
+      const lines = await collect(streamLogs(ctx, 'my-app', {recreateSession: false, tail: true}))
 
       expect(create).toHaveBeenCalledTimes(1)
       expect(lines).toEqual(['one line'])
@@ -193,21 +206,20 @@ describe('log-session resource', () => {
 
     it('throws AbortError when the signal is already aborted', async () => {
       const {ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const fetchFn = vi.fn()
       const controller = new AbortController()
       controller.abort()
 
-      const iter = streamLogs(ctx, 'my-app', {fetch: fetchFn as never, signal: controller.signal})
+      const iter = streamLogs(ctx, 'my-app', {signal: controller.signal})
       await expect(iter.next()).rejects.toThrow()
-      expect(fetchFn).not.toHaveBeenCalled()
+      expect(HerokuApiClient).not.toHaveBeenCalled()
     })
 
     it('forces tail=true and uses dyno+type separately for fir-generation apps', async () => {
       const {create, ctx} = buildCtx(() => ({...SESSION_BASE}), 'fir')
-      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks(['line\n'])))
+      mockStream(new Response(streamFromChunks(['line\n'])))
 
       const iter = streamLogs(ctx, 'my-app', {
-        dyno: 'web-abc-123', fetch: fetchFn as never, lines: 100, recreateSession: false, source: 'app', tail: false, type: 'web',
+        dyno: 'web-abc-123', lines: 100, recreateSession: false, source: 'app', tail: false, type: 'web',
       })
       const lines: string[] = []
       for await (const line of iter) {
@@ -225,13 +237,15 @@ describe('log-session resource', () => {
 
     it('fires onSessionCreated once per session create with isRecreate flag', async () => {
       const {ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const fetchFn = vi.fn()
+      const stream = vi.fn()
         .mockResolvedValueOnce(new Response(streamThatTimesOut()))
         .mockResolvedValue(new Response(streamFromChunks(['line\n'])))
+      vi.mocked(HerokuApiClient).mockImplementation(function (this: {stream: typeof stream}) {
+        this.stream = stream
+      } as never)
       const onSessionCreated = vi.fn()
 
       const iter = streamLogs(ctx, 'my-app', {
-        fetch: fetchFn as never,
         onSessionCreated,
         recreateSession: true,
         sessionTimeoutMs: 5,
@@ -248,12 +262,10 @@ describe('log-session resource', () => {
 
     it('collapses dyno+type into a single dyno field for cedar-generation apps', async () => {
       const {create, ctx} = buildCtx(() => ({...SESSION_BASE}), 'cedar')
-      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks([])))
+      mockStream(new Response(streamFromChunks([])))
 
       // Caller passes only `type`; Cedar expects it in the `dyno` slot.
-      await collect(streamLogs(ctx, 'my-app', {
-        fetch: fetchFn as never, lines: 50, source: 'app', type: 'worker',
-      }))
+      await collect(streamLogs(ctx, 'my-app', {lines: 50, source: 'app', type: 'worker'}))
 
       expect(create).toHaveBeenCalledExactlyOnceWith('my-app', {
         dyno: 'worker',
