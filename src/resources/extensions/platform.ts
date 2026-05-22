@@ -1,6 +1,7 @@
 export {addOnExtensions} from '../platform/add-on.js'
 export {appExtensions} from '../platform/app.js'
 export {dynoExtensions} from '../platform/dyno.js'
+export {logSessionExtensions} from '../platform/log-session.js'
 export {pipelineCouplingExtensions} from '../platform/pipeline-coupling.js'
 export {pipelinePromotionExtensions} from '../platform/pipeline-promotion.js'
 export {pipelineExtensions} from '../platform/pipeline.js'

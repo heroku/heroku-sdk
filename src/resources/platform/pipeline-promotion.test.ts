@@ -224,7 +224,7 @@ describe('pipeline-promotion resource', () => {
       service: 'custom',
       token: '',
     })
-    expect(stream).toHaveBeenCalledWith('/release?token=abc', {headers: {Accept: '*/*'}})
+    expect(stream).toHaveBeenCalledWith('/release?token=abc')
     expect(result.targets).toEqual(done)
   })
 

@@ -152,7 +152,7 @@ async function fetchReleaseOutput(
     let response: Response | undefined
     try {
       // eslint-disable-next-line no-await-in-loop
-      response = await buslClient.stream(path, {headers: {Accept: '*/*'}})
+      response = await buslClient.stream(path)
     } catch {
       // Treat HTTP errors thrown by the api-client as a retryable miss.
       response = undefined
