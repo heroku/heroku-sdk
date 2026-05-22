@@ -12,19 +12,33 @@ const SESSION_BASE = {
   logplex_url: 'https://logs.example.com/stream?token=abc',
 }
 
-function buildCtx(createImpl: (...args: unknown[]) => unknown): {
+function buildCtx(
+  createImpl: (...args: unknown[]) => unknown,
+  generation: 'cedar' | 'fir' | undefined = 'cedar',
+): {
+  appInfo: ReturnType<typeof vi.fn>
   create: ReturnType<typeof vi.fn>
   ctx: ResourceCtx
+  withHeaders: ReturnType<typeof vi.fn>
 } {
   const create = vi.fn(createImpl as never)
+  const appInfo = vi.fn().mockResolvedValue({generation, id: 'app-id', name: 'my-app'})
+  const platform = {
+    app: {info: appInfo},
+    logSession: {create},
+    withHeaders: vi.fn(),
+  }
+  // withHeaders returns a same-shaped client; the mock is self-referential.
+  platform.withHeaders.mockReturnValue(platform)
+
   return {
+    appInfo,
     create,
     ctx: {
       data: {} as never,
-      platform: {
-        logSession: {create},
-      } as never,
+      platform: platform as never,
     },
+    withHeaders: platform.withHeaders,
   }
 }
 
@@ -186,6 +200,44 @@ describe('log-session resource', () => {
       const iter = streamLogs(ctx, 'my-app', {fetch: fetchFn as never, signal: controller.signal})
       await expect(iter.next()).rejects.toThrow()
       expect(fetchFn).not.toHaveBeenCalled()
+    })
+
+    it('forces tail=true and uses dyno+type separately for fir-generation apps', async () => {
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}), 'fir')
+      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks(['line\n'])))
+
+      const iter = streamLogs(ctx, 'my-app', {
+        dyno: 'web-abc-123', fetch: fetchFn as never, lines: 100, recreateSession: false, source: 'app', tail: false, type: 'web',
+      })
+      const lines: string[] = []
+      for await (const line of iter) {
+        lines.push(line)
+        await iter.return()
+      }
+
+      // No `lines`, no `tail` — Fir doesn't accept those; dyno + type are sent separately.
+      expect(create).toHaveBeenCalledWith('my-app', {
+        dyno: 'web-abc-123',
+        source: 'app',
+        type: 'web',
+      })
+    })
+
+    it('collapses dyno+type into a single dyno field for cedar-generation apps', async () => {
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}), 'cedar')
+      const fetchFn = vi.fn().mockResolvedValue(new Response(streamFromChunks([])))
+
+      // Caller passes only `type`; Cedar expects it in the `dyno` slot.
+      await collect(streamLogs(ctx, 'my-app', {
+        fetch: fetchFn as never, lines: 50, source: 'app', type: 'worker',
+      }))
+
+      expect(create).toHaveBeenCalledExactlyOnceWith('my-app', {
+        dyno: 'worker',
+        lines: 50,
+        source: 'app',
+        tail: false,
+      })
     })
   })
 

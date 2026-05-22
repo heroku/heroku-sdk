@@ -5,18 +5,26 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+import {getGeneration} from './app.js'
 
 const debug = createDebug('heroku:sdk:resources:log-session')
 
 const DEFAULT_FIR_SESSION_TIMEOUT_MS = 15 * 60 * 1000
 const FIR_TIMEOUT_ERROR_MESSAGE = 'Fir log stream timeout'
 
-export type StreamLogsOptions = LogSessionCreateOpts & {
+export type StreamLogsOptions = {
+  /** Limit output to a single dyno (e.g. `web.1` on Cedar, `web-abc-123` on Fir). */
+  dyno?: string
   /**
    * Optional fetch override. Useful in Node for injecting User-Agent
    * or proxy support. Defaults to the global fetch.
    */
   fetch?: typeof fetch
+  /**
+   * Number of recent lines to fetch before tailing. Cedar-generation
+   * apps only — silently ignored on Fir.
+   */
+  lines?: number
   /**
    * When `tail` is true, watch for the platform's idle timeout and
    * recreate the log session to keep streaming. Defaults to true.
@@ -31,6 +39,8 @@ export type StreamLogsOptions = LogSessionCreateOpts & {
    */
   sessionTimeoutMs?: number
   signal?: AbortSignal
+  /** Limit output to a single source (e.g. `app`, `heroku`). */
+  source?: string
   /**
    * If true, the platform keeps the stream open and pushes lines as
    * they arrive. The platform may close the connection on its own
@@ -38,9 +48,18 @@ export type StreamLogsOptions = LogSessionCreateOpts & {
    * `recreateSession` is also true, the SDK transparently opens a
    * new session and continues yielding lines.
    *
-   * Defaults to false.
+   * Defaults to false. Note: Fir-generation apps always tail (the
+   * platform doesn't support a bounded log session there), so the
+   * SDK forces `tail: true` for Fir regardless of what the caller
+   * asked for.
    */
   tail?: boolean
+  /**
+   * Limit output to a process type (e.g. `web`, `worker`). On Cedar
+   * the underlying API combines `dyno` and `type` into a single
+   * field; the SDK handles that translation for you.
+   */
+  type?: string
 }
 
 /**
@@ -69,20 +88,33 @@ export async function * streamLogs(
   options: StreamLogsOptions = {},
 ): AsyncGenerator<string, void, unknown> {
   const {
+    dyno,
     fetch: fetchFn = fetch,
-    recreateSession = options.tail ?? false,
+    lines,
     sessionTimeoutMs = DEFAULT_FIR_SESSION_TIMEOUT_MS,
     signal,
-    ...createOpts
+    source,
+    tail = false,
+    type,
   } = options
 
   signal?.throwIfAborted()
+
+  const generation = await getGeneration(ctx, appIdentity, {signal})
+  const isFir = generation === 'fir'
+  // Fir doesn't support a bounded session; the platform always streams.
+  const effectiveTail = isFir ? true : tail
+  const recreateSession = options.recreateSession ?? effectiveTail
+
+  const createOpts = buildCreateOpts({
+    dyno, isFir, lines, source, tail: effectiveTail, type,
+  })
 
   // The recreate loop is inherently sequential: each session must
   // close before we ask for the next one.
   /* eslint-disable no-await-in-loop */
   while (true) {
-    debug('streamLogs creating session app=%s tail=%s', appIdentity, createOpts.tail ?? false)
+    debug('streamLogs creating session app=%s generation=%s tail=%s', appIdentity, generation ?? '<unknown>', effectiveTail)
     const session: LogSession = await ctx.platform.logSession.create(appIdentity, createOpts)
     if (!session.logplex_url) {
       throw new Error('Log session response did not include a logplex_url.')
@@ -168,6 +200,37 @@ export async function * streamLogs(
     }
   }
   /* eslint-enable no-await-in-loop */
+}
+
+/**
+ * Translate the SDK's consumer-facing options into the shape the
+ * platform's `log-sessions` endpoint expects per generation:
+ *   - Cedar's session takes a single `dyno` field that historically
+ *     accepted either a process type or a specific dyno; we collapse
+ *     `dyno || type` for the caller. `lines` and `tail` are honored.
+ *   - Fir's session takes `dyno` and `type` separately and ignores
+ *     `lines`; the stream always tails.
+ */
+function buildCreateOpts(options: {
+  dyno?: string
+  isFir: boolean
+  lines?: number
+  source?: string
+  tail: boolean
+  type?: string
+}): LogSessionCreateOpts {
+  const createOpts: LogSessionCreateOpts = {source: options.source}
+  if (options.isFir) {
+    if (options.dyno) createOpts.dyno = options.dyno
+    if (options.type) createOpts.type = options.type
+  } else {
+    const cedarDyno = options.dyno ?? options.type
+    if (cedarDyno) createOpts.dyno = cedarDyno
+    if (options.lines !== undefined) createOpts.lines = options.lines
+    createOpts.tail = options.tail
+  }
+
+  return createOpts
 }
 
 export const logSessionExtensions = extendResource('platform', 'logSession', ctx => ({
