@@ -2,13 +2,13 @@ import type {
   AddOn, AddOnAttachment, AddOnCreateOpts, Plan,
 } from '@heroku/types/3.sdk'
 
-import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
+import { HerokuApiError, NotFoundError } from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
-import type {PlatformClient} from '../../services/platform.js'
+import type { ResourceCtx } from '../../core/extend-resource.js'
+import type { PlatformClient } from '../../services/platform.js'
 
-import {extendResource} from '../../core/extend-resource.js'
+import { extendResource } from '../../core/extend-resource.js'
 
 const debug = createDebug('heroku:sdk:resources:add-on')
 
@@ -28,7 +28,7 @@ export type ResolveAddonOptions = AddOnOptions & {
  * can rely on the narrower type.
  */
 export type ResolvedAddOn = AddOn & {
-  app: AddOn['app'] & {id: string}
+  app: AddOn['app'] & { id: string }
   id: string
 }
 
@@ -50,7 +50,7 @@ export class AddonNotFoundError extends Error {
   }
 
   public get body() {
-    return {id: this.id, message: this.message, resource: this.resource}
+    return { id: this.id, message: this.message, resource: this.resource }
   }
 }
 
@@ -64,7 +64,7 @@ export class AddonAmbiguousError extends Error {
   }
 
   public get body() {
-    return {id: this.id, message: this.message}
+    return { id: this.id, message: this.message }
   }
 }
 
@@ -84,7 +84,7 @@ export class AddonConfirmationRequiredError extends Error {
   }
 
   public get body() {
-    return {id: this.id, message: this.message}
+    return { id: this.id, message: this.message }
   }
 }
 
@@ -101,7 +101,7 @@ export class AddonProvisioningFailedError extends Error {
   }
 
   public get body() {
-    return {id: this.id, message: this.message}
+    return { id: this.id, message: this.message }
   }
 }
 
@@ -140,13 +140,13 @@ export async function upgrade(
   options.signal?.throwIfAborted()
   const qualifiedPlan = plan.includes(':')
     ? plan
-    : `${(addon.addon_service as undefined | {name?: string})?.name}:${plan}`
+    : `${(addon.addon_service as undefined | { name?: string })?.name}:${plan}`
   if (qualifiedPlan !== plan) {
     debug('upgrade plan qualified plan=%s qualified=%s', plan, qualifiedPlan)
   }
 
   debug('upgrade addon=%s app=%s plan=%s', addon.id, addon.app.id, qualifiedPlan)
-  return ctx.platform.addOn.update(addon.app.id, addon.id, {plan: qualifiedPlan})
+  return ctx.platform.addOn.update(addon.app.id, addon.id, { plan: qualifiedPlan })
 }
 
 export type CreateAndWaitOptions = {
@@ -207,12 +207,12 @@ export async function createAndWait(
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
 
-  const platform = ctx.platform.withHeaders({'Accept-Expansion': 'addon_service,plan'})
+  const platform = ctx.platform.withHeaders({ 'Accept-Expansion': 'addon_service,plan' })
 
   let addon: AddOn
   try {
     addon = await platform
-      .withHeaders({'X-Heroku-Legacy-Provider-Messages': 'true'})
+      .withHeaders({ 'X-Heroku-Legacy-Provider-Messages': 'true' })
       .addOn.create(appIdentity, body)
   } catch (error) {
     if (error instanceof HerokuApiError && error.id === 'confirmation_required') {
@@ -268,7 +268,7 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
         return
       }
 
-      signal.addEventListener('abort', onAbort, {once: true})
+      signal.addEventListener('abort', onAbort, { once: true })
     }
   })
 }
@@ -341,7 +341,7 @@ export async function describeAddon(
   const plan = addon.plan as Plan | undefined
   return {
     ...addon,
-    ...(plan && {plan: {...plan, price: grandfatheredPrice(addon)} as AddOn['plan']}),
+    ...(plan && { plan: { ...plan, price: grandfatheredPrice(addon) } as AddOn['plan'] }),
     attachments,
   }
 }
@@ -417,12 +417,12 @@ export async function resolveAddonByAttachment(
 async function resolveAddonInternal(
   platform: PlatformClient,
   addonIdentity: string,
-  options: {addonService?: string; appIdentity?: string} = {},
+  options: { addonService?: string; appIdentity?: string } = {},
 ): Promise<ResolvedAddOn> {
-  const {addonService, appIdentity} = options
+  const { addonService, appIdentity } = options
 
   const resolveBy = async (app?: string): Promise<ResolvedAddOn> => {
-    const body = app ? {addon: addonIdentity, app} : {addon: addonIdentity}
+    const body = app ? { addon: addonIdentity, app } : { addon: addonIdentity }
     debug('resolve addon=%s app=%s service=%s', addonIdentity, app ?? '<global>', addonService ?? '<any>')
     const matches = await platform.addOn.resolution(body)
     const filtered = addonService
@@ -476,9 +476,11 @@ function grandfatheredPrice(addon: AddOn): Plan['price'] {
   const price = (addon.plan as Plan | undefined)?.price
   return {
     ...price,
-    cents: addon.billed_price?.cents,
-    contract: addon.billed_price?.contract,
-  }
+    ...(addon.billed_price && {
+      cents: addon.billed_price.cents,
+      contract: addon.billed_price.contract,
+    }),
+  } as Plan['price']
 }
 
 export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({

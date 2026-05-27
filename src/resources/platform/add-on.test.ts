@@ -414,6 +414,37 @@ describe('add-on resource', () => {
       })
     })
 
+    it('preserves the original plan.price when billed_price is missing', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        billed_price: undefined,
+        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, contract: false, unit: 'month'}},
+      })
+      const {ctx} = buildCtx({resolveResponses: [[addon]]})
+
+      const result = await describeAddon(ctx, 'my-postgres')
+
+      // Without billed_price, the original cents/contract must survive — the
+      // previous implementation overwrote both with `undefined`.
+      expect(result.plan).toMatchObject({
+        name: 'heroku-postgresql:standard-0',
+        price: {cents: 5000, contract: false, unit: 'month'},
+      })
+    })
+
+    it('returns a price object even when neither plan.price nor billed_price exist', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        billed_price: undefined,
+        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0'},
+      })
+      const {ctx} = buildCtx({resolveResponses: [[addon]]})
+
+      const result = await describeAddon(ctx, 'my-postgres')
+
+      expect(result.plan).toMatchObject({name: 'heroku-postgresql:standard-0', price: {}})
+    })
+
     it('does not mutate the resolved add-on', async () => {
       const addon = buildAddon({
         // eslint-disable-next-line camelcase
