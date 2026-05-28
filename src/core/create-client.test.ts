@@ -129,4 +129,102 @@ describe('createClient', () => {
       })
     })
   })
+
+  describe('withOptions', () => {
+    it('returns a same-shaped client without mutating the original', () => {
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const scoped = client.withOptions({timeout: 5000})
+
+      expect(scoped).not.toBe(client)
+      expect(typeof scoped.app.list).toBe('function')
+      expect(typeof scoped.withOptions).toBe('function')
+      expect(typeof scoped.withHeaders).toBe('function')
+    })
+
+    it('forwards a signal as RequestOptions on each call', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const controller = new AbortController()
+      const scoped = client.withOptions({signal: controller.signal})
+
+      await scoped.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {signal: controller.signal})
+    })
+
+    it('forwards headers, signal, and timeout together', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const controller = new AbortController()
+      const scoped = client.withOptions({
+        headers: {Accept: 'application/vnd.heroku+json; version=3.sdk'},
+        signal: controller.signal,
+        timeout: 5000,
+      })
+
+      await scoped.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {
+        headers: {Accept: 'application/vnd.heroku+json; version=3.sdk'},
+        signal: controller.signal,
+        timeout: 5000,
+      })
+    })
+
+    it('layers headers and replaces signal/timeout across chained calls', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const firstSignal = new AbortController().signal
+      const secondSignal = new AbortController().signal
+      const layered = client
+        .withOptions({headers: {Accept: 'a', 'X-A': '1'}, signal: firstSignal, timeout: 1000})
+        .withOptions({headers: {Accept: 'b', 'X-B': '2'}, signal: secondSignal, timeout: 2000})
+
+      await layered.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {
+        headers: {Accept: 'b', 'X-A': '1', 'X-B': '2'},
+        signal: secondSignal,
+        timeout: 2000,
+      })
+    })
+
+    it('preserves earlier signal/timeout when subsequent withOptions does not set them', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const controller = new AbortController()
+      const layered = client
+        .withOptions({signal: controller.signal, timeout: 1000})
+        .withOptions({headers: {Accept: 'b'}})
+
+      await layered.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {
+        headers: {Accept: 'b'},
+        signal: controller.signal,
+        timeout: 1000,
+      })
+    })
+
+    it('composes withOptions and withHeaders', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const controller = new AbortController()
+      const composed = client
+        .withOptions({signal: controller.signal})
+        .withHeaders({Accept: 'application/vnd.heroku+json; version=3.sdk'})
+
+      await composed.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {
+        headers: {Accept: 'application/vnd.heroku+json; version=3.sdk'},
+        signal: controller.signal,
+      })
+    })
+  })
 })

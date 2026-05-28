@@ -11,20 +11,33 @@ const debug = createDebug('heroku:sdk:client')
 type RoutesModule = Record<string, Record<string, RouteDefinition>>
 
 /**
+ * Subset of `RequestOptions` that makes sense to apply across every
+ * call on a derived client. Per-call concerns like `searchParams`
+ * and `stream` are deliberately excluded — those belong on the
+ * individual route call, not on the client wrapper.
+ */
+export type StickyRouteOptions = Pick<RequestOptions, 'headers' | 'signal' | 'timeout'>
+
+/**
  * Methods available on every routes-generated client in addition to
  * the resources/methods generated from the routes registry.
  */
 export type RoutesClientExtras<T> = {
   /**
-   * Returns a same-shaped client where each route call applies the
-   * provided headers. Caller-supplied headers override the api-client's
-   * defaults; subsequent `withHeaders` calls layer on top.
-   *
-   * The original client is not mutated. Use this when a single
-   * resource/method needs an Accept variant (e.g. `version=3.sdk`)
-   * different from what the rest of the client uses.
+   * Convenience wrapper around `withOptions({headers})`. Kept for
+   * backward compatibility; new code should prefer `withOptions`.
    */
   withHeaders(headers: Record<string, string>): RoutesClientExtras<T> & T
+
+  /**
+   * Returns a same-shaped client where each route call applies the
+   * provided options. Caller-supplied headers override the api-client's
+   * defaults; subsequent `withOptions` calls layer headers and replace
+   * signal / timeout.
+   *
+   * The original client is not mutated.
+   */
+  withOptions(options: StickyRouteOptions): RoutesClientExtras<T> & T
 }
 
 export function createClient<T>(routes: RoutesModule, options: HerokuApiClientOptions = {}): RoutesClientExtras<T> & T {
@@ -32,18 +45,42 @@ export function createClient<T>(routes: RoutesModule, options: HerokuApiClientOp
   return buildClientProxy<T>(httpClient, routes)
 }
 
+function mergeStickyOptions(
+  base: StickyRouteOptions | undefined,
+  next: StickyRouteOptions,
+): StickyRouteOptions {
+  const merged: StickyRouteOptions = {...base}
+  if (next.headers || base?.headers) {
+    merged.headers = {...base?.headers, ...next.headers}
+  }
+
+  // signal and timeout are not additive — last wins, but only if the
+  // caller actually set them. Otherwise the previous value persists.
+  if (next.signal !== undefined) merged.signal = next.signal
+  if (next.timeout !== undefined) merged.timeout = next.timeout
+  return merged
+}
+
 function buildClientProxy<T>(
   httpClient: HerokuApiClient,
   routes: RoutesModule,
-  inheritedHeaders?: Record<string, string>,
+  inheritedOptions?: StickyRouteOptions,
 ): RoutesClientExtras<T> & T {
   return new Proxy({}, {
     get(_target, resourceKey: string) {
+      if (resourceKey === 'withOptions') {
+        return (options: StickyRouteOptions) => buildClientProxy<T>(
+          httpClient,
+          routes,
+          mergeStickyOptions(inheritedOptions, options),
+        )
+      }
+
       if (resourceKey === 'withHeaders') {
         return (headers: Record<string, string>) => buildClientProxy<T>(
           httpClient,
           routes,
-          {...inheritedHeaders, ...headers},
+          mergeStickyOptions(inheritedOptions, {headers}),
         )
       }
 
@@ -62,12 +99,13 @@ function buildClientProxy<T>(
             return
           }
 
-          return (...args: unknown[]) => {
-            const requestOptions: RequestOptions | undefined = inheritedHeaders
-              ? {headers: inheritedHeaders}
-              : undefined
-            return dispatch(httpClient, route, args, `${resourceKey}.${methodKey}`, requestOptions)
-          }
+          return (...args: unknown[]) => dispatch(
+            httpClient,
+            route,
+            args,
+            `${resourceKey}.${methodKey}`,
+            inheritedOptions,
+          )
         },
       })
     },
