@@ -47,7 +47,7 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
-    "@heroku/heroku-fetch": "github:heroku/heroku-fetch#eb/W-22624536/request-options-signal",
+    "@heroku/heroku-fetch": "github:heroku/heroku-fetch#main",
     "@heroku/types": "github:heroku/heroku-types",
     "debug": "^4.4.0"
   }
