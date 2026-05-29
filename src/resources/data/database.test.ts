@@ -7,22 +7,26 @@ import {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {
-  databaseExtensions, describe as describeFn, prepareUpgrade, runUpgrade,
+  databaseExtensions, describe as describeFn, dryRunUpgrade, prepareUpgrade, runUpgrade, upgradeWaitStatus,
 } from './database.js'
 
 function buildCtx(opts: {
   databaseInfo?: ReturnType<typeof vi.fn>
+  dryRunUpgrade?: ReturnType<typeof vi.fn>
   prepareUpgrade?: ReturnType<typeof vi.fn>
   resolution?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
   runUpgrade?: ReturnType<typeof vi.fn>
+  upgradeWaitStatus?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
   return {
     data: {
       database: {
+        dryRunUpgrade: opts.dryRunUpgrade ?? vi.fn(),
         info: opts.databaseInfo ?? vi.fn(),
         prepareUpgrade: opts.prepareUpgrade ?? vi.fn(),
         runUpgrade: opts.runUpgrade ?? vi.fn(),
+        upgradeWaitStatus: opts.upgradeWaitStatus ?? vi.fn(),
       },
     } as never,
     platform: {
@@ -107,15 +111,43 @@ describe('database resource', () => {
     expect(result).toEqual({message: 'scheduled'})
   })
 
+  it('dryRunUpgrade resolves the addon and calls database.dryRunUpgrade', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
+    const dryRunUpgradeFn = vi.fn().mockResolvedValue({message: 'dry run complete'})
+    const ctx = buildCtx({dryRunUpgrade: dryRunUpgradeFn, resolutionByAttachment})
+
+    const result = await dryRunUpgrade(ctx, 'app-1', 'DATABASE_URL', {version: '17'})
+
+    expect(dryRunUpgradeFn).toHaveBeenCalledWith('addon-1', {version: '17'})
+    expect(result).toEqual({message: 'dry run complete'})
+  })
+
+  it('upgradeWaitStatus resolves the addon and calls database.upgradeWaitStatus', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
+    const upgradeWaitStatusFn = vi.fn().mockResolvedValue({
+      'error?': false, message: 'upgrading', step: 'wait_for_data_sync', 'waiting?': true,
+    })
+    const ctx = buildCtx({resolutionByAttachment, upgradeWaitStatus: upgradeWaitStatusFn})
+
+    const result = await upgradeWaitStatus(ctx, 'app-1', 'DATABASE_URL')
+
+    expect(upgradeWaitStatusFn).toHaveBeenCalledWith('addon-1')
+    expect(result).toEqual({
+      'error?': false, message: 'upgrading', step: 'wait_for_data_sync', 'waiting?': true,
+    })
+  })
+
   it('databaseExtensions declares service: data, resource: database', () => {
     expect(databaseExtensions.service).toBe('data')
     expect(databaseExtensions.resource).toBe('database')
   })
 
-  it('databaseExtensions factory exposes describe, runUpgrade, prepareUpgrade', () => {
+  it('databaseExtensions factory exposes all methods', () => {
     const methods = databaseExtensions.factory(buildCtx({}))
     expect(typeof methods.describe).toBe('function')
-    expect(typeof methods.runUpgrade).toBe('function')
+    expect(typeof methods.dryRunUpgrade).toBe('function')
     expect(typeof methods.prepareUpgrade).toBe('function')
+    expect(typeof methods.runUpgrade).toBe('function')
+    expect(typeof methods.upgradeWaitStatus).toBe('function')
   })
 })
