@@ -71,7 +71,7 @@ function parseGeneration(value: string | undefined): GenerationKind | undefined 
 
 type AppInfoResult = App & {
   process_tier?: string
-  space?: {shield?: boolean}
+  space?: {shield?: boolean} | null
 }
 
 type AppInfoPlatform = {
