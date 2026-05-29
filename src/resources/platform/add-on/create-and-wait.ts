@@ -5,6 +5,7 @@ import {HerokuApiError} from '@heroku/heroku-fetch'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {CreateAndWaitOptions} from './types.js'
 
+import {wait} from '../../../utils/wait.js'
 import {AddonConfirmationRequiredError, AddonProvisioningFailedError} from './errors.js'
 
 const DEFAULT_CREATE_WAIT_INTERVAL_MS = 5000
@@ -83,26 +84,3 @@ export async function createAndWait(
   return addon
 }
 
-function wait(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    function onAbort() {
-      clearTimeout(timer)
-      reject(signal!.reason ?? new Error('Aborted'))
-    }
-
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-
-    if (signal) {
-      if (signal.aborted) {
-        clearTimeout(timer)
-        reject(signal.reason ?? new Error('Aborted'))
-        return
-      }
-
-      signal.addEventListener('abort', onAbort, {once: true})
-    }
-  })
-}

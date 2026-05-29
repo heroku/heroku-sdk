@@ -10,6 +10,7 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {wait} from '../../../utils/wait.js'
 
 const debug = createDebug('heroku:sdk:resources:pipeline-promotion')
 
@@ -178,28 +179,4 @@ async function fetchReleaseOutput(
     // eslint-disable-next-line no-await-in-loop
     await wait(intervalMs, signal)
   }
-}
-
-function wait(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    function onAbort() {
-      clearTimeout(timer)
-      reject(signal!.reason ?? new Error('Aborted'))
-    }
-
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-
-    if (signal) {
-      if (signal.aborted) {
-        clearTimeout(timer)
-        reject(signal.reason ?? new Error('Aborted'))
-        return
-      }
-
-      signal.addEventListener('abort', onAbort, {once: true})
-    }
-  })
 }
