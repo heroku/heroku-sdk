@@ -1,10 +1,7 @@
-import type {
-  Formation,
-  FormationBatchUpdateOpts,
-  FormationUpdateOpts,
-} from '@heroku/types/3.sdk'
+import type {Formation} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {StickyRouteOptions} from '../../core/create-client.js'
 
 import {extendResource} from '../../core/extend-resource.js'
 
@@ -12,7 +9,10 @@ export type DynoOptions = {
   signal?: AbortSignal
 }
 
-export type ScaleDynosUpdate = FormationUpdateOpts & {
+export type ScaleDynosUpdate = {
+  dyno_size?: {id?: string; name?: string}
+  quantity?: number | string
+  size?: string
   type: string
 }
 
@@ -20,32 +20,43 @@ export type RestartDynosTarget
   = | {dyno: string}
   | {type: string}
 
+type FormationClient = {
+  batchUpdate(appIdentity: string, body: {updates: ScaleDynosUpdate[]}): Promise<Formation[]>
+  update(appIdentity: string, type: string, body: Omit<ScaleDynosUpdate, 'type'>): Promise<Formation>
+}
+
+type ScalePlatform = {
+  formation: FormationClient
+  withOptions(opts: StickyRouteOptions): ScalePlatform
+}
+
 export function scaleDynos(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: {platform: ScalePlatform},
   appIdentity: string,
   updates: ScaleDynosUpdate,
   options?: DynoOptions,
 ): Promise<Formation>
 export function scaleDynos(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: {platform: ScalePlatform},
   appIdentity: string,
-  updates: FormationBatchUpdateOpts['updates'],
+  updates: ScaleDynosUpdate[],
   options?: DynoOptions,
 ): Promise<Formation[]>
 export async function scaleDynos(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: {platform: ScalePlatform},
   appIdentity: string,
-  updates: FormationBatchUpdateOpts['updates'] | ScaleDynosUpdate,
+  updates: ScaleDynosUpdate[] | ScaleDynosUpdate,
   options: DynoOptions = {},
 ): Promise<Formation | Formation[]> {
   options.signal?.throwIfAborted()
+  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
 
   if (Array.isArray(updates)) {
-    return ctx.platform.formation.batchUpdate(appIdentity, {updates})
+    return platform.formation.batchUpdate(appIdentity, {updates})
   }
 
   const {type, ...body} = updates
-  return ctx.platform.formation.update(appIdentity, type, body)
+  return platform.formation.update(appIdentity, type, body)
 }
 
 export async function restartDynos(
@@ -77,6 +88,6 @@ export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
   scale: ((appIdentity: string, updates: never, options?: DynoOptions) =>
     scaleDynos(ctx, appIdentity, updates, options)) as {
     (appIdentity: string, updates: ScaleDynosUpdate, options?: DynoOptions): Promise<Formation>
-    (appIdentity: string, updates: FormationBatchUpdateOpts['updates'], options?: DynoOptions): Promise<Formation[]>
+    (appIdentity: string, updates: ScaleDynosUpdate[], options?: DynoOptions): Promise<Formation[]>
   },
 }))

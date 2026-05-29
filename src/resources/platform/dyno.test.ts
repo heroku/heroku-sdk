@@ -9,7 +9,9 @@ import type {ResourceCtx} from '../../core/extend-resource.js'
 import {dynoExtensions, restartDynos, scaleDynos} from './dyno.js'
 
 function platformCtx(platform: Record<string, unknown>): ResourceCtx {
-  return {data: {} as never, platform: platform as never}
+  const p: Record<string, unknown> = {...platform}
+  p.withOptions = vi.fn().mockReturnValue(p)
+  return {data: {} as never, platform: p as never}
 }
 
 describe('dyno resource', () => {
@@ -38,6 +40,26 @@ describe('dyno resource', () => {
     expect(batchUpdate).toHaveBeenCalledWith('app-1', {updates})
     expect(update).not.toHaveBeenCalled()
     expect(result).toBe(formations)
+  })
+
+  it('scaleDynos accepts string quantity for relative scaling', async () => {
+    const formation = {quantity: 3, type: 'web'} as Formation
+    const batchUpdate = vi.fn().mockResolvedValue([formation])
+    const ctx = platformCtx({formation: {batchUpdate}})
+
+    await scaleDynos(ctx, 'app-1', [{quantity: '+1', type: 'web'}])
+
+    expect(batchUpdate).toHaveBeenCalledWith('app-1', {updates: [{quantity: '+1', type: 'web'}]})
+  })
+
+  it('scaleDynos accepts flat size string', async () => {
+    const formation = {quantity: 2, size: 'Standard-1X', type: 'web'} as Formation
+    const update = vi.fn().mockResolvedValue(formation)
+    const ctx = platformCtx({formation: {update}})
+
+    await scaleDynos(ctx, 'app-1', {quantity: 2, size: 'Standard-1X', type: 'web'})
+
+    expect(update).toHaveBeenCalledWith('app-1', 'web', {quantity: 2, size: 'Standard-1X'})
   })
 
   it('scaleDynos throws if the signal is already aborted', async () => {

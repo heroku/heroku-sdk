@@ -7,7 +7,7 @@ import {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {
-  appExtensions, disableMaintenance, enableMaintenance, getGeneration,
+  appExtensions, disableMaintenance, enableMaintenance, getGeneration, isShielded,
 } from './app.js'
 
 function ctxWithAppUpdate(update: ReturnType<typeof vi.fn>): ResourceCtx {
@@ -129,6 +129,53 @@ describe('appExtensions and named functions', () => {
       const {ctx} = ctxWithAppInfo(info)
       const methods = appExtensions.factory(ctx)
       expect(typeof methods.getGeneration).toBe('function')
+    })
+  })
+
+  describe('isShielded', () => {
+    function ctxWithDirectAppInfo(info: ReturnType<typeof vi.fn>): ResourceCtx {
+      const platform: Record<string, unknown> = {app: {info}}
+      platform.withOptions = vi.fn().mockReturnValue(platform)
+      return {data: {} as never, platform: platform as never}
+    }
+
+    it('returns true when app is in a shielded space', async () => {
+      const info = vi.fn().mockResolvedValue({space: {shield: true}})
+      const ctx = ctxWithDirectAppInfo(info)
+
+      expect(await isShielded(ctx, 'my-app')).toBe(true)
+      expect(info).toHaveBeenCalledWith('my-app')
+    })
+
+    it('returns false when app space is not shielded', async () => {
+      const info = vi.fn().mockResolvedValue({space: {shield: false}})
+      const ctx = ctxWithDirectAppInfo(info)
+
+      expect(await isShielded(ctx, 'my-app')).toBe(false)
+    })
+
+    it('returns false when app has no space', async () => {
+      const info = vi.fn().mockResolvedValue({})
+      const ctx = ctxWithDirectAppInfo(info)
+
+      expect(await isShielded(ctx, 'my-app')).toBe(false)
+    })
+
+    it('throws if the abort signal is already aborted', async () => {
+      const info = vi.fn()
+      const ctx = ctxWithDirectAppInfo(info)
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(isShielded(ctx, 'my-app', {signal: controller.signal})).rejects.toThrow()
+      expect(info).not.toHaveBeenCalled()
+    })
+
+    it('exposed on appExtensions.factory', () => {
+      const info = vi.fn()
+      const ctx = ctxWithDirectAppInfo(info)
+      const methods = appExtensions.factory(ctx)
+      expect(typeof methods.isShielded).toBe('function')
     })
   })
 })
