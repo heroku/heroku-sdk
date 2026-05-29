@@ -12,7 +12,10 @@ export type DynoOptions = {
   signal?: AbortSignal
 }
 
-export type ScaleDynosUpdate = FormationUpdateOpts & {
+export type ScaleDynosUpdate = {
+  dyno_size?: {id?: string; name?: string}
+  quantity?: number | string
+  size?: string
   type: string
 }
 
@@ -29,23 +32,26 @@ export function scaleDynos(
 export function scaleDynos(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
-  updates: FormationBatchUpdateOpts['updates'],
+  updates: ScaleDynosUpdate[],
   options?: DynoOptions,
 ): Promise<Formation[]>
 export async function scaleDynos(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
-  updates: FormationBatchUpdateOpts['updates'] | ScaleDynosUpdate,
+  updates: ScaleDynosUpdate[] | ScaleDynosUpdate,
   options: DynoOptions = {},
 ): Promise<Formation | Formation[]> {
   options.signal?.throwIfAborted()
 
   if (Array.isArray(updates)) {
-    return ctx.platform.formation.batchUpdate(appIdentity, {updates})
+    return ctx.platform.formation.batchUpdate(
+      appIdentity,
+      {updates} as unknown as FormationBatchUpdateOpts,
+    )
   }
 
   const {type, ...body} = updates
-  return ctx.platform.formation.update(appIdentity, type, body)
+  return ctx.platform.formation.update(appIdentity, type, body as unknown as FormationUpdateOpts)
 }
 
 export async function restartDynos(
@@ -77,6 +83,6 @@ export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
   scale: ((appIdentity: string, updates: never, options?: DynoOptions) =>
     scaleDynos(ctx, appIdentity, updates, options)) as {
     (appIdentity: string, updates: ScaleDynosUpdate, options?: DynoOptions): Promise<Formation>
-    (appIdentity: string, updates: FormationBatchUpdateOpts['updates'], options?: DynoOptions): Promise<Formation[]>
+    (appIdentity: string, updates: ScaleDynosUpdate[], options?: DynoOptions): Promise<Formation[]>
   },
 }))

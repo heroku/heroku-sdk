@@ -14,6 +14,10 @@ export type GetGenerationOptions = {
   signal?: AbortSignal
 }
 
+export type IsShieldedOptions = {
+  signal?: AbortSignal
+}
+
 export async function enableMaintenance(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
@@ -59,6 +63,16 @@ function parseGeneration(value: string | undefined): GenerationKind | undefined 
   return undefined
 }
 
+export async function isShielded(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  options: IsShieldedOptions = {},
+): Promise<boolean> {
+  options.signal?.throwIfAborted()
+  const app = await ctx.platform.app.info(appIdentity)
+  return Boolean((app.space as {shield?: boolean} | undefined)?.shield)
+}
+
 export const appExtensions = extendResource('platform', 'app', ctx => ({
   disableMaintenance: (appIdentity: string, options?: AppMaintenanceOptions) =>
     disableMaintenance(ctx, appIdentity, options),
@@ -66,4 +80,6 @@ export const appExtensions = extendResource('platform', 'app', ctx => ({
     enableMaintenance(ctx, appIdentity, options),
   getGeneration: (appIdentity: string, options?: GetGenerationOptions) =>
     getGeneration(ctx, appIdentity, options),
+  isShielded: (appIdentity: string, options?: IsShieldedOptions) =>
+    isShielded(ctx, appIdentity, options),
 }))
