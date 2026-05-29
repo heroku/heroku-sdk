@@ -5,7 +5,7 @@ import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {
   AddonAmbiguousError,
@@ -19,7 +19,7 @@ import {
   resolveAddon,
   resolveAddonByAttachment,
   upgrade,
-} from './add-on.js'
+} from './index.js'
 
 function buildAddon(overrides: Partial<AddOn> = {}): AddOn {
   return {

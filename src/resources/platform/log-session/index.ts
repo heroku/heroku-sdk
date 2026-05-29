@@ -3,10 +3,10 @@ import type {LogSession, LogSessionCreateOpts} from '@heroku/types/3.sdk'
 import {HerokuApiClient} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../core/extend-resource.js'
-import {getGeneration} from './app.js'
+import {extendResource} from '../../../core/extend-resource.js'
+import {getGeneration} from '../app/index.js'
 
 const debug = createDebug('heroku:sdk:resources:log-session')
 

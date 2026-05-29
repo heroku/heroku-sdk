@@ -12,10 +12,24 @@ const currentDir = dirname(currentFile)
 const PLATFORM_DIR = join(currentDir, '..', 'platform')
 
 async function findExtensionExports(): Promise<Map<string, ResourceExtension>> {
-  const entries = await readdir(PLATFORM_DIR, {withFileTypes: true})
-  const sourceFiles = entries
-    .filter(entry => entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts'))
-    .map(entry => entry.name)
+  // Each platform resource is a folder with at least an index.ts (and
+  // possibly other .ts files for sub-concepts). Walk one level deep
+  // to pick up every non-test .ts file.
+  const sourceFiles: string[] = []
+  const topLevel = await readdir(PLATFORM_DIR, {withFileTypes: true})
+  for (const entry of topLevel) {
+    if (entry.isDirectory()) {
+      // eslint-disable-next-line no-await-in-loop
+      const inner = await readdir(join(PLATFORM_DIR, entry.name), {withFileTypes: true})
+      for (const file of inner) {
+        if (file.isFile() && file.name.endsWith('.ts') && !file.name.endsWith('.test.ts')) {
+          sourceFiles.push(join(entry.name, file.name))
+        }
+      }
+    } else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+      sourceFiles.push(entry.name)
+    }
+  }
 
   const exports = new Map<string, ResourceExtension>()
   for (const file of sourceFiles) {

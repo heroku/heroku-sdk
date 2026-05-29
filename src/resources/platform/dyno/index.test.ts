@@ -4,9 +4,9 @@ import {
   describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {dynoExtensions, restartDynos, scaleDynos} from './dyno.js'
+import {dynoExtensions, restartDynos, scaleDynos} from './index.js'
 
 function platformCtx(platform: Record<string, unknown>): ResourceCtx {
   const p: Record<string, unknown> = {...platform}

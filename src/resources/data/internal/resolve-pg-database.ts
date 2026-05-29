@@ -1,9 +1,9 @@
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {ResolveAddonOptions, ResolvedAddOn} from '../../platform/add-on.js'
+import type {ResolveAddonOptions, ResolvedAddOn} from '../../platform/add-on/index.js'
 
-import {resolveAddon, resolveAddonByAttachment} from '../../platform/add-on.js'
+import {resolveAddon, resolveAddonByAttachment} from '../../platform/add-on/index.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 

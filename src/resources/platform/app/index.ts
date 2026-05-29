@@ -1,8 +1,8 @@
 import type {App} from '@heroku/types/3.sdk'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../core/extend-resource.js'
+import {extendResource} from '../../../core/extend-resource.js'
 
 export type AppMaintenanceOptions = {
   signal?: AbortSignal
@@ -22,7 +22,7 @@ export type GetProcessTierOptions = {
   signal?: AbortSignal
 }
 
-export type ProcessTier = 'eco' | 'basic' | 'standard' | 'performance' | 'private' | 'shield' | (string & {})
+export type ProcessTier = 'basic' | 'eco' | 'performance' | 'private' | 'shield' | 'standard' | (string & {})
 
 export async function enableMaintenance(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -71,7 +71,11 @@ function parseGeneration(value: string | undefined): GenerationKind | undefined 
 
 type AppInfoResult = App & {
   process_tier?: string
-  space?: {shield?: boolean}
+  // The SDK's `App.space` is `{...} | null`, not `{...} | undefined`,
+  // so the override has to allow null (or omit `space` entirely and
+  // inherit from `App`). Keeping the override here documents that
+  // we use `space.shield` and lets future fields land in one place.
+  space?: null | {shield?: boolean}
 }
 
 type AppInfoPlatform = {

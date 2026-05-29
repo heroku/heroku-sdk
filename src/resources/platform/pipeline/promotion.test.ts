@@ -10,9 +10,9 @@ import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {pipelinePromotionExtensions, promotePipeline} from './pipeline-promotion.js'
+import {pipelinePromotionExtensions, promotePipeline} from './promotion.js'
 
 vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: vi.fn(),

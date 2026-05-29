@@ -4,11 +4,11 @@ import {
   describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {
   appExtensions, disableMaintenance, enableMaintenance, getGeneration, getProcessTier, isShielded,
-} from './app.js'
+} from './index.js'
 
 function ctxWithAppUpdate(update: ReturnType<typeof vi.fn>): ResourceCtx {
   return {
