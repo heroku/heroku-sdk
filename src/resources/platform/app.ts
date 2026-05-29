@@ -18,6 +18,12 @@ export type IsShieldedOptions = {
   signal?: AbortSignal
 }
 
+export type GetProcessTierOptions = {
+  signal?: AbortSignal
+}
+
+export type ProcessTier = 'eco' | 'basic' | 'standard' | 'performance' | 'private' | 'shield'
+
 export async function enableMaintenance(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
@@ -74,6 +80,26 @@ export async function isShielded(
   return Boolean((app.space as {shield?: boolean} | undefined)?.shield)
 }
 
+type AppInfoWithProcessTier = {
+  info(appIdentity: string): Promise<App & {process_tier?: string}>
+}
+
+type ProcessTierPlatform = {
+  app: AppInfoWithProcessTier
+  withOptions(opts: {signal: AbortSignal}): ProcessTierPlatform
+}
+
+export async function getProcessTier(
+  ctx: {platform: ProcessTierPlatform},
+  appIdentity: string,
+  options: GetProcessTierOptions = {},
+): Promise<ProcessTier | undefined> {
+  options.signal?.throwIfAborted()
+  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const app = await platform.app.info(appIdentity)
+  return app.process_tier as ProcessTier | undefined
+}
+
 export const appExtensions = extendResource('platform', 'app', ctx => ({
   disableMaintenance: (appIdentity: string, options?: AppMaintenanceOptions) =>
     disableMaintenance(ctx, appIdentity, options),
@@ -81,6 +107,8 @@ export const appExtensions = extendResource('platform', 'app', ctx => ({
     enableMaintenance(ctx, appIdentity, options),
   getGeneration: (appIdentity: string, options?: GetGenerationOptions) =>
     getGeneration(ctx, appIdentity, options),
+  getProcessTier: (appIdentity: string, options?: GetProcessTierOptions) =>
+    getProcessTier(ctx, appIdentity, options),
   isShielded: (appIdentity: string, options?: IsShieldedOptions) =>
     isShielded(ctx, appIdentity, options),
 }))
