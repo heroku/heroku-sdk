@@ -1,6 +1,7 @@
 import type {Formation} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {StickyRouteOptions} from '../../core/create-client.js'
 
 import {extendResource} from '../../core/extend-resource.js'
 
@@ -19,34 +20,43 @@ export type RestartDynosTarget
   = | {dyno: string}
   | {type: string}
 
+type FormationClient = {
+  batchUpdate(appIdentity: string, body: {updates: ScaleDynosUpdate[]}): Promise<Formation[]>
+  update(appIdentity: string, type: string, body: Omit<ScaleDynosUpdate, 'type'>): Promise<Formation>
+}
+
+type ScalePlatform = {
+  formation: FormationClient
+  withOptions(opts: StickyRouteOptions): ScalePlatform
+}
+
 export function scaleDynos(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: {platform: ScalePlatform},
   appIdentity: string,
   updates: ScaleDynosUpdate,
   options?: DynoOptions,
 ): Promise<Formation>
 export function scaleDynos(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: {platform: ScalePlatform},
   appIdentity: string,
   updates: ScaleDynosUpdate[],
   options?: DynoOptions,
 ): Promise<Formation[]>
 export async function scaleDynos(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: {platform: ScalePlatform},
   appIdentity: string,
   updates: ScaleDynosUpdate[] | ScaleDynosUpdate,
   options: DynoOptions = {},
 ): Promise<Formation | Formation[]> {
   options.signal?.throwIfAborted()
+  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
 
   if (Array.isArray(updates)) {
-    // @ts-expect-error — SDK accepts string quantity and flat size; heroku-types FormationBatchUpdateOpts is stricter
-    return ctx.platform.formation.batchUpdate(appIdentity, {updates})
+    return platform.formation.batchUpdate(appIdentity, {updates})
   }
 
   const {type, ...body} = updates
-  // @ts-expect-error — SDK accepts string quantity and flat size; heroku-types FormationUpdateOpts is stricter
-  return ctx.platform.formation.update(appIdentity, type, body)
+  return platform.formation.update(appIdentity, type, body)
 }
 
 export async function restartDynos(

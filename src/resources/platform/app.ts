@@ -69,7 +69,8 @@ export async function isShielded(
   options: IsShieldedOptions = {},
 ): Promise<boolean> {
   options.signal?.throwIfAborted()
-  const app = await ctx.platform.app.info(appIdentity)
+  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const app = await platform.app.info(appIdentity)
   return Boolean((app.space as {shield?: boolean} | undefined)?.shield)
 }
 

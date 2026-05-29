@@ -134,7 +134,9 @@ describe('appExtensions and named functions', () => {
 
   describe('isShielded', () => {
     function ctxWithDirectAppInfo(info: ReturnType<typeof vi.fn>): ResourceCtx {
-      return {data: {} as never, platform: {app: {info}} as never}
+      const platform: Record<string, unknown> = {app: {info}}
+      platform.withOptions = vi.fn().mockReturnValue(platform)
+      return {data: {} as never, platform: platform as never}
     }
 
     it('returns true when app is in a shielded space', async () => {

@@ -9,7 +9,9 @@ import type {ResourceCtx} from '../../core/extend-resource.js'
 import {dynoExtensions, restartDynos, scaleDynos} from './dyno.js'
 
 function platformCtx(platform: Record<string, unknown>): ResourceCtx {
-  return {data: {} as never, platform: platform as never}
+  const p: Record<string, unknown> = {...platform}
+  p.withOptions = vi.fn().mockReturnValue(p)
+  return {data: {} as never, platform: p as never}
 }
 
 describe('dyno resource', () => {
