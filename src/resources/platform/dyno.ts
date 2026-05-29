@@ -1,7 +1,5 @@
 import type {Formation} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/heroku-fetch'
-
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
@@ -34,27 +32,21 @@ export function scaleDynos(
   options?: DynoOptions,
 ): Promise<Formation[]>
 export async function scaleDynos(
-  _ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   updates: ScaleDynosUpdate[] | ScaleDynosUpdate,
   options: DynoOptions = {},
 ): Promise<Formation | Formation[]> {
   options.signal?.throwIfAborted()
 
-  const client = new HerokuApiClient({service: 'platform'})
-
   if (Array.isArray(updates)) {
-    const response = await client.patch(`/apps/${appIdentity}/formation`, {
-      body: {updates},
-    })
-    return response.json() as Promise<Formation[]>
+    // @ts-expect-error — SDK accepts string quantity and flat size; heroku-types FormationBatchUpdateOpts is stricter
+    return ctx.platform.formation.batchUpdate(appIdentity, {updates})
   }
 
   const {type, ...body} = updates
-  const response = await client.patch(`/apps/${appIdentity}/formation/${type}`, {
-    body,
-  })
-  return response.json() as Promise<Formation>
+  // @ts-expect-error — SDK accepts string quantity and flat size; heroku-types FormationUpdateOpts is stricter
+  return ctx.platform.formation.update(appIdentity, type, body)
 }
 
 export async function restartDynos(

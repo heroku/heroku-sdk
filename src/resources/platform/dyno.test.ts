@@ -1,87 +1,73 @@
 import type {Formation} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/heroku-fetch'
 import {
-  beforeEach, describe, expect, it, vi,
+  describe, expect, it, vi,
 } from 'vitest'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {dynoExtensions, restartDynos, scaleDynos} from './dyno.js'
 
-vi.mock('@heroku/heroku-fetch', () => ({
-  HerokuApiClient: vi.fn(),
-}))
-
 function platformCtx(platform: Record<string, unknown>): ResourceCtx {
   return {data: {} as never, platform: platform as never}
 }
 
-function mockPatch(result: unknown): ReturnType<typeof vi.fn> {
-  const patch = vi.fn().mockResolvedValue(new Response(JSON.stringify(result), {
-    headers: {'content-type': 'application/json'},
-    status: 200,
-  }))
-  vi.mocked(HerokuApiClient).mockImplementation(function (this: {patch: typeof patch}) {
-    this.patch = patch
-  } as never)
-  return patch
-}
-
 describe('dyno resource', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('scaleDynos routes a single update to PATCH /apps/:app/formation/:type', async () => {
+  it('scaleDynos routes a single update object to formation.update', async () => {
     const formation = {quantity: 3, type: 'web'} as Formation
-    const patch = mockPatch(formation)
-    const ctx = platformCtx({})
+    const update = vi.fn().mockResolvedValue(formation)
+    const batchUpdate = vi.fn()
+    const ctx = platformCtx({formation: {batchUpdate, update}})
 
     const result = await scaleDynos(ctx, 'app-1', {quantity: 3, type: 'web'})
 
-    expect(HerokuApiClient).toHaveBeenCalledWith({service: 'platform'})
-    expect(patch).toHaveBeenCalledWith('/apps/app-1/formation/web', {body: {quantity: 3}})
-    expect(result).toEqual(formation)
+    expect(update).toHaveBeenCalledWith('app-1', 'web', {quantity: 3})
+    expect(batchUpdate).not.toHaveBeenCalled()
+    expect(result).toBe(formation)
   })
 
-  it('scaleDynos routes an updates array to PATCH /apps/:app/formation', async () => {
+  it('scaleDynos routes an updates array to formation.batchUpdate', async () => {
     const formations = [{quantity: 2, type: 'web'} as Formation]
-    const patch = mockPatch(formations)
-    const ctx = platformCtx({})
+    const update = vi.fn()
+    const batchUpdate = vi.fn().mockResolvedValue(formations)
+    const ctx = platformCtx({formation: {batchUpdate, update}})
 
     const updates = [{quantity: 2, type: 'web'}]
     const result = await scaleDynos(ctx, 'app-1', updates)
 
-    expect(patch).toHaveBeenCalledWith('/apps/app-1/formation', {body: {updates}})
-    expect(result).toEqual(formations)
+    expect(batchUpdate).toHaveBeenCalledWith('app-1', {updates})
+    expect(update).not.toHaveBeenCalled()
+    expect(result).toBe(formations)
   })
 
   it('scaleDynos accepts string quantity for relative scaling', async () => {
-    const patch = mockPatch([{quantity: 3, type: 'web'}])
-    const ctx = platformCtx({})
+    const formation = {quantity: 3, type: 'web'} as Formation
+    const batchUpdate = vi.fn().mockResolvedValue([formation])
+    const ctx = platformCtx({formation: {batchUpdate}})
 
     await scaleDynos(ctx, 'app-1', [{quantity: '+1', type: 'web'}])
 
-    expect(patch).toHaveBeenCalledWith('/apps/app-1/formation', {body: {updates: [{quantity: '+1', type: 'web'}]}})
+    expect(batchUpdate).toHaveBeenCalledWith('app-1', {updates: [{quantity: '+1', type: 'web'}]})
   })
 
   it('scaleDynos accepts flat size string', async () => {
-    const patch = mockPatch({quantity: 2, size: 'Standard-1X', type: 'web'})
-    const ctx = platformCtx({})
+    const formation = {quantity: 2, size: 'Standard-1X', type: 'web'} as Formation
+    const update = vi.fn().mockResolvedValue(formation)
+    const ctx = platformCtx({formation: {update}})
 
     await scaleDynos(ctx, 'app-1', {quantity: 2, size: 'Standard-1X', type: 'web'})
 
-    expect(patch).toHaveBeenCalledWith('/apps/app-1/formation/web', {body: {quantity: 2, size: 'Standard-1X'}})
+    expect(update).toHaveBeenCalledWith('app-1', 'web', {quantity: 2, size: 'Standard-1X'})
   })
 
   it('scaleDynos throws if the signal is already aborted', async () => {
-    const ctx = platformCtx({})
+    const update = vi.fn()
+    const ctx = platformCtx({formation: {update}})
     const controller = new AbortController()
     controller.abort()
 
     await expect(scaleDynos(ctx, 'app-1', {quantity: 1, type: 'web'}, {signal: controller.signal})).rejects.toThrow()
-    expect(HerokuApiClient).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
   })
 
   it('restartDynos restarts all dynos when no target is provided', async () => {
