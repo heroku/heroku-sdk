@@ -2,9 +2,9 @@ import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {listPipelineApps, pipelineCouplingExtensions} from './pipeline-coupling.js'
+import {listPipelineApps, pipelineCouplingExtensions} from './index.js'
 
 type PlatformMock = {
   filterAppsApps: ReturnType<typeof vi.fn>

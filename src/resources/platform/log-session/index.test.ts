@@ -3,9 +3,9 @@ import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {logSessionExtensions, streamLogs} from './log-session.js'
+import {logSessionExtensions, streamLogs} from './index.js'
 
 vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: vi.fn(),

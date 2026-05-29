@@ -1,8 +1,8 @@
 import type {App} from '@heroku/types/3.sdk'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../core/extend-resource.js'
+import {extendResource} from '../../../core/extend-resource.js'
 
 export type AppMaintenanceOptions = {
   signal?: AbortSignal

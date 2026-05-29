@@ -1,9 +1,9 @@
 import type {Formation} from '@heroku/types/3.sdk'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
-import type {StickyRouteOptions} from '../../core/create-client.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {StickyRouteOptions} from '../../../core/create-client.js'
 
-import {extendResource} from '../../core/extend-resource.js'
+import {extendResource} from '../../../core/extend-resource.js'
 
 export type DynoOptions = {
   signal?: AbortSignal
