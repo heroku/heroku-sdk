@@ -1,7 +1,7 @@
 import type {Formation} from '@heroku/types/3.sdk'
 
-import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {StickyRouteOptions} from '../../../core/create-client.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
 
@@ -45,7 +45,7 @@ export function scaleDynos(
 export async function scaleDynos(
   ctx: {platform: ScalePlatform},
   appIdentity: string,
-  updates: ScaleDynosUpdate[] | ScaleDynosUpdate,
+  updates: ScaleDynosUpdate | ScaleDynosUpdate[],
   options: DynoOptions = {},
 ): Promise<Formation | Formation[]> {
   options.signal?.throwIfAborted()
