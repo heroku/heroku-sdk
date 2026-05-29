@@ -2,9 +2,9 @@ import type {Pipeline} from '@heroku/types/3.sdk'
 
 import {HerokuApiClient, type HerokuApiClientOptions} from '@heroku/heroku-fetch'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../core/extend-resource.js'
+import {extendResource} from '../../../core/extend-resource.js'
 
 export type ResolvePipelineOptions = {
   clientOptions?: HerokuApiClientOptions

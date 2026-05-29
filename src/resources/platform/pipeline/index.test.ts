@@ -5,14 +5,14 @@ import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {
   PipelineAmbiguousError,
   pipelineExtensions,
   PipelineNotFoundError,
   resolvePipeline,
-} from './pipeline.js'
+} from './index.js'
 
 vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: vi.fn(),

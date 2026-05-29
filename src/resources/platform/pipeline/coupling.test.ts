@@ -4,7 +4,7 @@ import {
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {listPipelineApps, pipelineCouplingExtensions} from './index.js'
+import {listPipelineApps, pipelineCouplingExtensions} from './coupling.js'
 
 type PlatformMock = {
   filterAppsApps: ReturnType<typeof vi.fn>

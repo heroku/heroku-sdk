@@ -7,9 +7,9 @@ import type {
 import {HerokuApiClient} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../core/extend-resource.js'
+import {extendResource} from '../../../core/extend-resource.js'
 
 const debug = createDebug('heroku:sdk:resources:pipeline-promotion')
 
