@@ -7,7 +7,7 @@ import type {
 import {extendResource} from '../../../core/extend-resource.js'
 import {createAndWait} from './create-and-wait.js'
 import {describeAddon} from './describe.js'
-import {listPlans} from './list-plans.js'
+import {listPlans, listPlansForAddon} from './list-plans.js'
 import {resolveAddon, resolveAddonByAttachment} from './resolve.js'
 import {upgrade} from './upgrade.js'
 
@@ -21,7 +21,8 @@ export {
   AddonNotFoundError,
   AddonProvisioningFailedError,
 } from './errors.js'
-export {listPlans} from './list-plans.js'
+export {listPlans, listPlansForAddon} from './list-plans.js'
+export {type PlanPriceBreakdown, priceForPlan} from './pricing.js'
 export {resolveAddon, resolveAddonByAttachment} from './resolve.js'
 export type {
   AddOnOptions,
@@ -40,6 +41,8 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
     describeAddon(ctx, addonIdentity, options),
   listPlans: (serviceIdentity: string, options?: AddOnOptions) =>
     listPlans(ctx, serviceIdentity, options),
+  listPlansForAddon: (addonIdentity: string, options?: ResolveAddonOptions) =>
+    listPlansForAddon(ctx, addonIdentity, options),
   resolve: (addonIdentity: string, options?: ResolveAddonOptions) =>
     resolveAddon(ctx, addonIdentity, options),
   resolveByAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>

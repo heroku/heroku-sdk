@@ -16,6 +16,8 @@ import {
   createAndWait,
   describeAddon,
   listPlans,
+  listPlansForAddon,
+  priceForPlan,
   resolveAddon,
   resolveAddonByAttachment,
   upgrade,
@@ -292,6 +294,125 @@ describe('add-on resource', () => {
 
       await expect(listPlans(ctx, 'svc', {signal: controller.signal})).rejects.toThrow()
       expect(listByAddOnService).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('listPlansForAddon', () => {
+    it('resolves the add-on then lists plans for its service', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {id: 'svc-id', name: 'heroku-postgresql'},
+      } as Partial<AddOn>)
+      const plans = [
+        {id: 'p2', name: 'standard-0', price: {cents: 5000, unit: 'month'}},
+        {id: 'p1', name: 'mini', price: {cents: 500, unit: 'month'}},
+      ] as Plan[]
+      const {ctx, listByAddOnService, resolution} = buildCtx({
+        plans,
+        resolveResponses: [[addon]],
+      })
+
+      const result = await listPlansForAddon(ctx, 'addon-id')
+
+      // Resolve runs first; the route is given the add-on identity.
+      expect(resolution).toHaveBeenCalledWith({addon: 'addon-id'})
+      // Then the service name (not id) is forwarded to listPlans.
+      expect(listByAddOnService).toHaveBeenCalledWith('heroku-postgresql')
+      // And the result is sorted ascending.
+      expect(result.map(plan => plan.id)).toEqual(['p1', 'p2'])
+    })
+
+    it('forwards appIdentity to the resolve step', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {id: 'svc-id', name: 'heroku-redis'},
+      } as Partial<AddOn>)
+      const {ctx, resolution} = buildCtx({plans: [], resolveResponses: [[addon]]})
+
+      await listPlansForAddon(ctx, 'addon-id', {appIdentity: 'my-app'})
+
+      expect(resolution).toHaveBeenCalledWith({addon: 'addon-id', app: 'my-app'})
+    })
+
+    it('throws AddonNotFoundError when resolve finds nothing', async () => {
+      const {ctx} = buildCtx({resolveResponses: [[]]})
+
+      await expect(listPlansForAddon(ctx, 'missing')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws if the resolved add-on is missing addon_service.name', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: undefined as never,
+      })
+      const {ctx} = buildCtx({plans: [], resolveResponses: [[addon]]})
+
+      await expect(listPlansForAddon(ctx, 'addon-id')).rejects.toThrow(/addon_service\.name/)
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const {ctx, resolution} = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(listPlansForAddon(ctx, 'addon-id', {signal: controller.signal})).rejects.toThrow()
+      expect(resolution).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('priceForPlan', () => {
+    it('breaks down a monthly plan into perMonth/perHour cents', () => {
+      const plan = {price: {cents: 7200, contract: false, unit: 'month'}} as Plan
+
+      const result = priceForPlan(plan)
+
+      expect(result).toEqual({
+        cents: 7200,
+        contract: false,
+        // 7200 / (24 * 30) = 10
+        perHourCents: 10,
+        perMonthCents: 7200,
+        unit: 'month',
+      })
+    })
+
+    it('breaks down an hourly plan into perMonth/perHour cents', () => {
+      const plan = {price: {cents: 5, contract: false, unit: 'hour'}} as Plan
+
+      const result = priceForPlan(plan)
+
+      expect(result).toEqual({
+        cents: 5,
+        contract: false,
+        perHourCents: 5,
+        // 5 * 24 * 30 = 3600
+        perMonthCents: 3600,
+        unit: 'hour',
+      })
+    })
+
+    it('returns undefined when price is missing', () => {
+      expect(priceForPlan({} as Plan)).toBeUndefined()
+    })
+
+    it('returns undefined when cents is not a number', () => {
+      expect(priceForPlan({price: {unit: 'month'} as never} as Plan)).toBeUndefined()
+    })
+
+    it('falls back to raw cents on both axes for unknown units', () => {
+      const plan = {price: {cents: 1000, unit: 'token'}} as Plan
+
+      const result = priceForPlan(plan)
+
+      expect(result).toMatchObject({
+        cents: 1000, perHourCents: 1000, perMonthCents: 1000, unit: 'token',
+      })
+    })
+
+    it('reports contract=true when set', () => {
+      const plan = {price: {cents: 0, contract: true, unit: 'month'}} as Plan
+
+      expect(priceForPlan(plan)?.contract).toBe(true)
     })
   })
 
@@ -695,12 +816,13 @@ describe('add-on resource', () => {
       expect(addOnExtensions.resource).toBe('addOn')
     })
 
-    it('factory exposes createAndWait, describe, listPlans, resolve, resolveByAttachment, upgrade', () => {
+    it('factory exposes createAndWait, describe, listPlans, listPlansForAddon, resolve, resolveByAttachment, upgrade', () => {
       const {ctx} = buildCtx()
       const methods = addOnExtensions.factory(ctx)
       expect(typeof methods.createAndWait).toBe('function')
       expect(typeof methods.describe).toBe('function')
       expect(typeof methods.listPlans).toBe('function')
+      expect(typeof methods.listPlansForAddon).toBe('function')
       expect(typeof methods.resolve).toBe('function')
       expect(typeof methods.resolveByAttachment).toBe('function')
       expect(typeof methods.upgrade).toBe('function')
