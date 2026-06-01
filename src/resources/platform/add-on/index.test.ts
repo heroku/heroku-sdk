@@ -917,13 +917,15 @@ describe('add-on resource', () => {
       expect(addOnExtensions.resource).toBe('addOn')
     })
 
-    it('factory exposes createAndWait, describe, listPlans, listPlansForAddon, resolve, resolveByAttachment, upgrade', () => {
+    it('factory exposes the full add-on surface', () => {
       const {ctx} = buildCtx()
       const methods = addOnExtensions.factory(ctx)
       expect(typeof methods.createAndWait).toBe('function')
       expect(typeof methods.describe).toBe('function')
+      expect(typeof methods.formatPlanPriceLabel).toBe('function')
       expect(typeof methods.listPlans).toBe('function')
       expect(typeof methods.listPlansForAddon).toBe('function')
+      expect(typeof methods.priceForPlan).toBe('function')
       expect(typeof methods.resolve).toBe('function')
       expect(typeof methods.resolveByAttachment).toBe('function')
       expect(typeof methods.upgrade).toBe('function')

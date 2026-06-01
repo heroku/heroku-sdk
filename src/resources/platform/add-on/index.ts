@@ -8,6 +8,7 @@ import {extendResource} from '../../../core/extend-resource.js'
 import {createAndWait} from './create-and-wait.js'
 import {describeAddon} from './describe.js'
 import {listPlans, listPlansForAddon} from './list-plans.js'
+import {formatPlanPriceLabel, priceForPlan} from './pricing.js'
 import {resolveAddon, resolveAddonByAttachment} from './resolve.js'
 import {upgrade} from './upgrade.js'
 
@@ -44,10 +45,12 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
     createAndWait(ctx, appIdentity, body, options),
   describe: (addonIdentity: string, options?: ResolveAddonOptions) =>
     describeAddon(ctx, addonIdentity, options),
+  formatPlanPriceLabel,
   listPlans: (serviceIdentity: string, options?: AddOnOptions) =>
     listPlans(ctx, serviceIdentity, options),
   listPlansForAddon: (addonIdentity: string, options?: ResolveAddonOptions) =>
     listPlansForAddon(ctx, addonIdentity, options),
+  priceForPlan,
   resolve: (addonIdentity: string, options?: ResolveAddonOptions) =>
     resolveAddon(ctx, addonIdentity, options),
   resolveByAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
