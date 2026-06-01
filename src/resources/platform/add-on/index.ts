@@ -1,5 +1,6 @@
 import type {AddOnCreateOpts} from '@heroku/types/3.sdk'
 
+import type {ListPlansForAddonOptions} from './list-plans.js'
 import type {
   AddOnOptions, CreateAndWaitOptions, ResolveAddonOptions, UpgradeAddOnOptions,
 } from './types.js'
@@ -7,7 +8,8 @@ import type {
 import {extendResource} from '../../../core/extend-resource.js'
 import {createAndWait} from './create-and-wait.js'
 import {describeAddon} from './describe.js'
-import {listPlans} from './list-plans.js'
+import {listPlans, listPlansForAddon} from './list-plans.js'
+import {formatPlanPriceLabel, priceForPlan} from './pricing.js'
 import {resolveAddon, resolveAddonByAttachment} from './resolve.js'
 import {upgrade} from './upgrade.js'
 
@@ -21,7 +23,13 @@ export {
   AddonNotFoundError,
   AddonProvisioningFailedError,
 } from './errors.js'
-export {listPlans} from './list-plans.js'
+export {listPlans, listPlansForAddon, type ListPlansForAddonOptions} from './list-plans.js'
+export {
+  formatPlanPriceLabel,
+  type FormatPlanPriceLabelOptions,
+  type PlanPriceBreakdown,
+  priceForPlan,
+} from './pricing.js'
 export {resolveAddon, resolveAddonByAttachment} from './resolve.js'
 export type {
   AddOnOptions,
@@ -38,8 +46,12 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
     createAndWait(ctx, appIdentity, body, options),
   describe: (addonIdentity: string, options?: ResolveAddonOptions) =>
     describeAddon(ctx, addonIdentity, options),
+  formatPlanPriceLabel,
   listPlans: (serviceIdentity: string, options?: AddOnOptions) =>
     listPlans(ctx, serviceIdentity, options),
+  listPlansForAddon: (addonIdentity: string, options?: ListPlansForAddonOptions) =>
+    listPlansForAddon(ctx, addonIdentity, options),
+  priceForPlan,
   resolve: (addonIdentity: string, options?: ResolveAddonOptions) =>
     resolveAddon(ctx, addonIdentity, options),
   resolveByAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>

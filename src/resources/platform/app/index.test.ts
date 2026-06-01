@@ -32,6 +32,12 @@ function ctxWithAppInfo(info: ReturnType<typeof vi.fn>): {
   }
 }
 
+function ctxWithDirectAppInfo(info: ReturnType<typeof vi.fn>): ResourceCtx {
+  const platform: Record<string, unknown> = {app: {info}}
+  platform.withOptions = vi.fn().mockReturnValue(platform)
+  return {data: {} as never, platform: platform as never}
+}
+
 describe('appExtensions and named functions', () => {
   it('enableMaintenance calls platform.app.update with maintenance: true', async () => {
     const update = vi.fn().mockResolvedValue({maintenance: true, name: 'app-1'} as App)
@@ -133,12 +139,6 @@ describe('appExtensions and named functions', () => {
   })
 
   describe('isShielded', () => {
-    function ctxWithDirectAppInfo(info: ReturnType<typeof vi.fn>): ResourceCtx {
-      const platform: Record<string, unknown> = {app: {info}}
-      platform.withOptions = vi.fn().mockReturnValue(platform)
-      return {data: {} as never, platform: platform as never}
-    }
-
     it('returns true when app is in a shielded space', async () => {
       const info = vi.fn().mockResolvedValue({space: {shield: true}})
       const ctx = ctxWithDirectAppInfo(info)
@@ -180,13 +180,8 @@ describe('appExtensions and named functions', () => {
   })
 
   describe('getProcessTier', () => {
-    function ctxWithDirectAppInfo(info: ReturnType<typeof vi.fn>): ResourceCtx {
-      const platform: Record<string, unknown> = {app: {info}}
-      platform.withOptions = vi.fn().mockReturnValue(platform)
-      return {data: {} as never, platform: platform as never}
-    }
-
     it('returns the process tier when present', async () => {
+      // eslint-disable-next-line camelcase
       const info = vi.fn().mockResolvedValue({process_tier: 'eco'})
       const ctx = ctxWithDirectAppInfo(info)
 
