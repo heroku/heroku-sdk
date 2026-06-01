@@ -334,20 +334,34 @@ describe('add-on resource', () => {
       expect(resolution).toHaveBeenCalledWith({addon: 'addon-id', app: 'my-app'})
     })
 
+    it('skips the app-scoped resolve for namespaced identities', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {id: 'svc-id', name: 'heroku-postgresql'},
+      } as Partial<AddOn>)
+      const {ctx, resolution} = buildCtx({plans: [], resolveResponses: [[addon]]})
+
+      await listPlansForAddon(ctx, 'postgres-curved-12345::SECONDARY', {appIdentity: 'my-app'})
+
+      // Despite passing `appIdentity`, the namespaced identity (`::`)
+      // forces a global resolve — `app` is omitted from the body.
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'postgres-curved-12345::SECONDARY'})
+    })
+
     it('throws AddonNotFoundError when resolve finds nothing', async () => {
       const {ctx} = buildCtx({resolveResponses: [[]]})
 
       await expect(listPlansForAddon(ctx, 'missing')).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
-    it('throws if the resolved add-on is missing addon_service.name', async () => {
+    it('throws AddonNotFoundError if the resolved add-on is missing addon_service.name', async () => {
       const addon = buildAddon({
         // eslint-disable-next-line camelcase
         addon_service: undefined as never,
       })
       const {ctx} = buildCtx({plans: [], resolveResponses: [[addon]]})
 
-      await expect(listPlansForAddon(ctx, 'addon-id')).rejects.toThrow(/addon_service\.name/)
+      await expect(listPlansForAddon(ctx, 'addon-id')).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
     it('throws if the signal is already aborted', async () => {
@@ -369,11 +383,23 @@ describe('add-on resource', () => {
       expect(result).toEqual({
         cents: 7200,
         contract: false,
+        metered: false,
         // 7200 / (24 * 30) = 10
         perHourCents: 10,
         perMonthCents: 7200,
         unit: 'month',
       })
+    })
+
+    it('preserves fractional perHourCents — does not round or floor', () => {
+      const plan = {price: {cents: 500, contract: false, unit: 'month'}} as Plan
+
+      const result = priceForPlan(plan)
+
+      // 500 / 720 = 0.69444... — locked in so a future Math.floor/round
+      // would fail the test.
+      expect(result?.perHourCents).toBeCloseTo(500 / (24 * 30), 10)
+      expect(result?.perHourCents).not.toBe(0)
     })
 
     it('breaks down an hourly plan into perMonth/perHour cents', () => {
@@ -384,6 +410,7 @@ describe('add-on resource', () => {
       expect(result).toEqual({
         cents: 5,
         contract: false,
+        metered: false,
         perHourCents: 5,
         // 5 * 24 * 30 = 3600
         perMonthCents: 3600,
@@ -399,13 +426,21 @@ describe('add-on resource', () => {
       expect(priceForPlan({price: {unit: 'month'} as never} as Plan)).toBeUndefined()
     })
 
-    it('falls back to raw cents on both axes for unknown units', () => {
+    it('returns undefined perMonthCents/perHourCents for unknown units', () => {
       const plan = {price: {cents: 1000, unit: 'token'}} as Plan
 
       const result = priceForPlan(plan)
 
-      expect(result).toMatchObject({
-        cents: 1000, perHourCents: 1000, perMonthCents: 1000, unit: 'token',
+      // The breakdown still exists (caller may want `cents` and
+      // `unit`), but per-month and per-hour are undefined so the
+      // caller can omit those labels.
+      expect(result).toEqual({
+        cents: 1000,
+        contract: false,
+        metered: false,
+        perHourCents: undefined,
+        perMonthCents: undefined,
+        unit: 'token',
       })
     })
 
@@ -413,6 +448,16 @@ describe('add-on resource', () => {
       const plan = {price: {cents: 0, contract: true, unit: 'month'}} as Plan
 
       expect(priceForPlan(plan)?.contract).toBe(true)
+    })
+
+    it('reports metered=true when set', () => {
+      const plan = {
+        price: {
+          cents: 0, contract: false, metered: true, unit: 'month',
+        },
+      } as Plan
+
+      expect(priceForPlan(plan)?.metered).toBe(true)
     })
   })
 

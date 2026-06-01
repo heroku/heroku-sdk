@@ -3,7 +3,16 @@ import type {Plan} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnOptions, ResolveAddonOptions} from './types.js'
 
+import {AddonNotFoundError} from './errors.js'
 import {resolveAddonInternal} from './resolve.js'
+
+/**
+ * Subset of {@link ResolveAddonOptions} accepted by
+ * {@link listPlansForAddon}. The `addonService` filter is intentionally
+ * omitted: once you've pinned an add-on identity, filtering its
+ * resolution by service name is nonsensical.
+ */
+export type ListPlansForAddonOptions = Pick<ResolveAddonOptions, 'appIdentity' | 'signal'>;
 
 /**
  * List the plans available for an add-on service, sorted ascending by
@@ -40,19 +49,21 @@ export async function listPlans(
 export async function listPlansForAddon(
   ctx: Pick<ResourceCtx, 'platform'>,
   addonIdentity: string,
-  options: ResolveAddonOptions = {},
+  options: ListPlansForAddonOptions = {},
 ): Promise<Plan[]> {
   options.signal?.throwIfAborted()
   const addon = await resolveAddonInternal(ctx.platform, addonIdentity, {
-    addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
-  // Use the resolved service name. The auto-generated route accepts
-  // either name or id; name is stable across environments and easier
-  // to identify in logs.
+  // The route accepts either name or id; name is stable across
+  // environments and easier to identify in logs.
   const serviceName = addon.addon_service?.name
   if (!serviceName) {
-    throw new Error(`Resolved add-on is missing addon_service.name (id=${addon.id})`)
+    // The resolve found the add-on but the response was missing the
+    // service info we need to look up plans. Treat this as not-found
+    // for the caller's purpose (they wanted a plans list and we
+    // can't produce one).
+    throw new AddonNotFoundError()
   }
 
   return listPlans(ctx, serviceName, options)
