@@ -22,7 +22,12 @@ export {
   AddonProvisioningFailedError,
 } from './errors.js'
 export {listPlans, listPlansForAddon} from './list-plans.js'
-export {type PlanPriceBreakdown, priceForPlan} from './pricing.js'
+export {
+  formatPlanPriceLabel,
+  type FormatPlanPriceLabelOptions,
+  type PlanPriceBreakdown,
+  priceForPlan,
+} from './pricing.js'
 export {resolveAddon, resolveAddonByAttachment} from './resolve.js'
 export type {
   AddOnOptions,

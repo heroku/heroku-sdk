@@ -15,6 +15,7 @@ import {
   AddonProvisioningFailedError,
   createAndWait,
   describeAddon,
+  formatPlanPriceLabel,
   listPlans,
   listPlansForAddon,
   priceForPlan,
@@ -458,6 +459,61 @@ describe('add-on resource', () => {
       } as Plan
 
       expect(priceForPlan(plan)?.metered).toBe(true)
+    })
+  })
+
+  describe('formatPlanPriceLabel', () => {
+    it('formats a monthly plan as "$X / hour (Max $Y/month)"', () => {
+      const plan = {price: {cents: 7200, contract: false, unit: 'month'}} as Plan
+
+      expect(formatPlanPriceLabel(plan)).toBe('$0.10 / hour (Max $72.00/month)')
+    })
+
+    it('formats an hourly plan as "$X / hour (Max $Y/month)"', () => {
+      const plan = {price: {cents: 5, contract: false, unit: 'hour'}} as Plan
+
+      expect(formatPlanPriceLabel(plan)).toBe('$0.05 / hour (Max $36.00/month)')
+    })
+
+    it('returns an empty string for a metered plan', () => {
+      const plan = {
+        price: {
+          cents: 1000, contract: false, metered: true, unit: 'month',
+        },
+      } as Plan
+
+      expect(formatPlanPriceLabel(plan)).toBe('')
+    })
+
+    it('returns an empty string for a contract-priced plan', () => {
+      const plan = {price: {cents: 0, contract: true, unit: 'month'}} as Plan
+
+      expect(formatPlanPriceLabel(plan)).toBe('')
+    })
+
+    it('returns an empty string for an unknown unit', () => {
+      const plan = {price: {cents: 1000, unit: 'token'}} as Plan
+
+      expect(formatPlanPriceLabel(plan)).toBe('')
+    })
+
+    it('returns an empty string when the plan has no price', () => {
+      expect(formatPlanPriceLabel({} as Plan)).toBe('')
+    })
+
+    it('honors locale and currency overrides', () => {
+      const plan = {price: {cents: 7200, contract: false, unit: 'month'}} as Plan
+
+      // de-DE uses '.' for thousands and ',' for decimals; EUR uses '€'.
+      const result = formatPlanPriceLabel(plan, {currency: 'EUR', locale: 'de-DE'})
+
+      // Don't pin the exact whitespace/ordering — different ICU
+      // versions render currency differently — but assert the
+      // structural pieces.
+      expect(result).toMatch(/hour/)
+      expect(result).toMatch(/Max/)
+      expect(result).toMatch(/€|EUR/)
+      expect(result).not.toMatch(/\$/)
     })
   })
 

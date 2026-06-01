@@ -95,3 +95,47 @@ export function priceForPlan(plan: Plan): PlanPriceBreakdown | undefined {
     unit,
   }
 }
+
+export type FormatPlanPriceLabelOptions = {
+  /** ISO 4217 currency code passed to `Intl.NumberFormat`. Default: `'USD'`. */
+  currency?: string
+  /** BCP 47 locale tag passed to `Intl.NumberFormat`. Default: `'en-US'`. */
+  locale?: string
+}
+
+/**
+ * Format a plan's price as a human-readable suffix:
+ * `"$0.007 / hour (Max $5/month)"`. Returns an empty string when the
+ * plan has no displayable price (no `price.cents`, an unknown unit,
+ * a metered plan, or a contract-priced plan) — callers can compose
+ * their final label as `${name}${suffix ? ' - ' + suffix : ''}`
+ * without per-call defensive checks.
+ *
+ * Locale and currency default to `'en-US'` / `'USD'`. Pass options
+ * to override.
+ *
+ * @example
+ * ```ts
+ * const suffix = formatPlanPriceLabel(plan);
+ * const label = suffix ? `${plan.human_name} - ${suffix}` : plan.human_name;
+ * ```
+ */
+export function formatPlanPriceLabel(
+  plan: Plan,
+  options: FormatPlanPriceLabelOptions = {},
+): string {
+  const breakdown = priceForPlan(plan)
+  if (!breakdown) return ''
+  // Metered and contract-priced plans don't have a meaningful flat
+  // monthly/hourly label — the consumer should describe them
+  // differently (e.g. "metered", "contract pricing"). Returning an
+  // empty string here lets the caller fall back to the plan name.
+  if (breakdown.metered || breakdown.contract) return ''
+  if (breakdown.perMonthCents === undefined || breakdown.perHourCents === undefined) return ''
+
+  const {currency = 'USD', locale = 'en-US'} = options
+  const formatter = new Intl.NumberFormat(locale, {currency, style: 'currency'})
+  const perHour = formatter.format(breakdown.perHourCents / 100)
+  const perMonth = formatter.format(breakdown.perMonthCents / 100)
+  return `${perHour} / hour (Max ${perMonth}/month)`
+}
