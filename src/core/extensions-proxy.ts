@@ -32,6 +32,24 @@ export function mergeExtensions<T extends object>(
 
   return new Proxy(client, {
     get(target, resourceKey: string, receiver) {
+      // `withOptions` / `withHeaders` on the routes client return a
+      // fresh routes proxy without our extensions layer. Intercept
+      // them so the result is re-wrapped with the same extensions —
+      // otherwise extension methods (like `addOn.listPlans`) silently
+      // disappear after a `sdk.platform.withOptions({signal}).addOn`
+      // chain.
+      if (resourceKey === 'withOptions' || resourceKey === 'withHeaders') {
+        const inner = Reflect.get(target, resourceKey, receiver)
+        if (typeof inner !== 'function') {
+          return inner
+        }
+
+        return (...args: unknown[]) => {
+          const rewrapped = (inner as (...a: unknown[]) => T).apply(target, args)
+          return mergeExtensions(rewrapped, extensions, ctx)
+        }
+      }
+
       const extMethods = methodsByResource.get(resourceKey)
       const routeResource = Reflect.get(target, resourceKey, receiver)
 

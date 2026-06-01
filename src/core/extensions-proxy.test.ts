@@ -90,4 +90,39 @@ describe('mergeExtensions', () => {
     expect(_touch).toBeDefined()
     expect(factory).toHaveBeenCalledTimes(1)
   })
+
+  it('preserves extension methods after withOptions', () => {
+    const ext = extendResource('platform', 'app', () => ({hello: () => 'world'}))
+    const inner = {app: {info: vi.fn()}}
+    const withOptions = vi.fn().mockReturnValue(inner)
+    const routes = {app: {info: vi.fn()}, withOptions} as Record<string, unknown>
+
+    const merged = mergeExtensions(routes, [ext], fakeCtx()) as {
+      app: {hello: () => string};
+      withOptions: (opts: object) => {app: {hello: () => string}};
+    }
+
+    const {signal} = new AbortController()
+    const scoped = merged.withOptions({signal})
+
+    expect(withOptions).toHaveBeenCalledWith({signal})
+    expect(scoped.app.hello()).toBe('world')
+  })
+
+  it('preserves extension methods after withHeaders', () => {
+    const ext = extendResource('platform', 'app', () => ({hello: () => 'world'}))
+    const inner = {app: {info: vi.fn()}}
+    const withHeaders = vi.fn().mockReturnValue(inner)
+    const routes = {app: {info: vi.fn()}, withHeaders} as Record<string, unknown>
+
+    const merged = mergeExtensions(routes, [ext], fakeCtx()) as {
+      app: {hello: () => string};
+      withHeaders: (headers: object) => {app: {hello: () => string}};
+    }
+
+    const scoped = merged.withHeaders({Accept: 'application/vnd.heroku+json; version=3'})
+
+    expect(withHeaders).toHaveBeenCalledWith({Accept: 'application/vnd.heroku+json; version=3'})
+    expect(scoped.app.hello()).toBe('world')
+  })
 })
