@@ -1,5 +1,6 @@
 import type {AddOnCreateOpts} from '@heroku/types/3.sdk'
 
+import type {ListPlansForAddonOptions} from './list-plans.js'
 import type {
   AddOnOptions, CreateAndWaitOptions, ResolveAddonOptions, UpgradeAddOnOptions,
 } from './types.js'
@@ -22,7 +23,7 @@ export {
   AddonNotFoundError,
   AddonProvisioningFailedError,
 } from './errors.js'
-export {listPlans, listPlansForAddon} from './list-plans.js'
+export {listPlans, listPlansForAddon, type ListPlansForAddonOptions} from './list-plans.js'
 export {
   formatPlanPriceLabel,
   type FormatPlanPriceLabelOptions,
@@ -48,7 +49,7 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
   formatPlanPriceLabel,
   listPlans: (serviceIdentity: string, options?: AddOnOptions) =>
     listPlans(ctx, serviceIdentity, options),
-  listPlansForAddon: (addonIdentity: string, options?: ResolveAddonOptions) =>
+  listPlansForAddon: (addonIdentity: string, options?: ListPlansForAddonOptions) =>
     listPlansForAddon(ctx, addonIdentity, options),
   priceForPlan,
   resolve: (addonIdentity: string, options?: ResolveAddonOptions) =>
