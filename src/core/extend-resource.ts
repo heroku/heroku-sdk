@@ -51,7 +51,7 @@ type ResourceKeysOf<E> = E extends ResourceExtension<ServiceName, infer R, Resou
 export type ApplyExtensions<Base, E>
   = & {
     [K in keyof Base]: K extends ResourceKeysOf<E>
-      ? Base[K] & MethodsForResource<E, K & string>
+      ? Omit<Base[K], keyof MethodsForResource<E, K & string>> & MethodsForResource<E, K & string>
       : Base[K]
   }
   & {

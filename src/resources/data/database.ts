@@ -1,8 +1,4 @@
-import type {
-  DatabaseInfoResult,
-  DatabasePrepareUpgradeResult,
-  DatabaseRunUpgradeResult,
-} from '@heroku/types/data'
+import type {DatabaseInfoResult} from '@heroku/types/data'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
@@ -17,61 +13,135 @@ export type DatabaseUpgradeBody = {
   version?: string
 }
 
+export type DatabaseDescribeResult = DatabaseInfoResult & {
+  following?: string
+  num_connections?: number
+  num_tables?: number
+  postgres_version?: string
+  'hot_standby?'?: boolean
+  'standalone?'?: boolean
+}
+
+export type DatabaseUpgradeWaitResult = {
+  'error?': boolean
+  message: string
+  step: string
+  'waiting?': boolean
+}
+
+export type DatabaseUpgradeResponse = {
+  message: string
+}
+
+type DatabaseDataClient = {
+  database: {
+    cancelUpgrade(name: string): Promise<DatabaseUpgradeResponse>
+    dryRunUpgrade(name: string, body: DatabaseUpgradeBody): Promise<DatabaseUpgradeResponse>
+    info(name: string): Promise<DatabaseDescribeResult>
+    prepareUpgrade(name: string, body: DatabaseUpgradeBody): Promise<DatabaseUpgradeResponse>
+    runUpgrade(name: string, body: DatabaseUpgradeBody): Promise<DatabaseUpgradeResponse>
+    upgradeWaitStatus(name: string): Promise<DatabaseUpgradeWaitResult>
+  }
+}
+
+type DatabaseCtx = {data: DatabaseDataClient; platform: ResourceCtx['platform']}
+
 export async function describe(
-  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
+  ctx: DatabaseCtx,
   appIdentity: string,
   addonIdentity?: string,
   options: DatabaseOptions = {},
-): Promise<DatabaseInfoResult> {
+): Promise<DatabaseDescribeResult> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
   return ctx.data.database.info(addon.id)
 }
 
-export async function runUpgrade(
-  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
+export async function upgradeWaitStatus(
+  ctx: DatabaseCtx,
+  appIdentity: string,
+  addonIdentity?: string,
+  options: DatabaseOptions = {},
+): Promise<DatabaseUpgradeWaitResult> {
+  options.signal?.throwIfAborted()
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  return ctx.data.database.upgradeWaitStatus(addon.id)
+}
+
+export async function dryRunUpgrade(
+  ctx: DatabaseCtx,
   appIdentity: string,
   addonIdentity?: string,
   body: DatabaseUpgradeBody = {},
   options: DatabaseOptions = {},
-): Promise<DatabaseRunUpgradeResult> {
+): Promise<DatabaseUpgradeResponse> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
-  // Cast: routes.js declares hasRequestBody for runUpgrade but the generated
-  // HerokuClient interface omits the body param (Shogun spec lacks a request schema).
-  const fn = ctx.data.database.runUpgrade as
-    (name: string, body: DatabaseUpgradeBody) => Promise<DatabaseRunUpgradeResult>
-  return fn(addon.id, body)
+  return ctx.data.database.dryRunUpgrade(addon.id, body)
+}
+
+export async function runUpgrade(
+  ctx: DatabaseCtx,
+  appIdentity: string,
+  addonIdentity?: string,
+  body: DatabaseUpgradeBody = {},
+  options: DatabaseOptions = {},
+): Promise<DatabaseUpgradeResponse> {
+  options.signal?.throwIfAborted()
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  return ctx.data.database.runUpgrade(addon.id, body)
 }
 
 export async function prepareUpgrade(
-  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
+  ctx: DatabaseCtx,
   appIdentity: string,
   addonIdentity?: string,
   body: DatabaseUpgradeBody = {},
   options: DatabaseOptions = {},
-): Promise<DatabasePrepareUpgradeResult> {
+): Promise<DatabaseUpgradeResponse> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
-  // See note on runUpgrade.
-  const fn = ctx.data.database.prepareUpgrade as
-    (name: string, body: DatabaseUpgradeBody) => Promise<DatabasePrepareUpgradeResult>
-  return fn(addon.id, body)
+  return ctx.data.database.prepareUpgrade(addon.id, body)
 }
 
-export const databaseExtensions = extendResource('data', 'database', ctx => ({
-  describe: (appIdentity: string, addonIdentity?: string, options?: DatabaseOptions) =>
-    describe(ctx, appIdentity, addonIdentity, options),
-  prepareUpgrade: (
-    appIdentity: string,
-    addonIdentity?: string,
-    body?: DatabaseUpgradeBody,
-    options?: DatabaseOptions,
-  ) => prepareUpgrade(ctx, appIdentity, addonIdentity, body, options),
-  runUpgrade: (
-    appIdentity: string,
-    addonIdentity?: string,
-    body?: DatabaseUpgradeBody,
-    options?: DatabaseOptions,
-  ) => runUpgrade(ctx, appIdentity, addonIdentity, body, options),
-}))
+export async function cancelUpgrade(
+  ctx: DatabaseCtx,
+  appIdentity: string,
+  addonIdentity?: string,
+  options: DatabaseOptions = {},
+): Promise<DatabaseUpgradeResponse> {
+  options.signal?.throwIfAborted()
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  return ctx.data.database.cancelUpgrade(addon.id)
+}
+
+export const databaseExtensions = extendResource('data', 'database', rawCtx => {
+  // Bridge heroku-types' loose client types to the adapter's strongly-typed contract
+  const ctx = rawCtx as unknown as DatabaseCtx
+  return {
+    cancelUpgrade: (appIdentity: string, addonIdentity?: string, options?: DatabaseOptions) =>
+      cancelUpgrade(ctx, appIdentity, addonIdentity, options),
+    describe: (appIdentity: string, addonIdentity?: string, options?: DatabaseOptions) =>
+      describe(ctx, appIdentity, addonIdentity, options),
+    dryRunUpgrade: (
+      appIdentity: string,
+      addonIdentity?: string,
+      body?: DatabaseUpgradeBody,
+      options?: DatabaseOptions,
+    ) => dryRunUpgrade(ctx, appIdentity, addonIdentity, body, options),
+    prepareUpgrade: (
+      appIdentity: string,
+      addonIdentity?: string,
+      body?: DatabaseUpgradeBody,
+      options?: DatabaseOptions,
+    ) => prepareUpgrade(ctx, appIdentity, addonIdentity, body, options),
+    runUpgrade: (
+      appIdentity: string,
+      addonIdentity?: string,
+      body?: DatabaseUpgradeBody,
+      options?: DatabaseOptions,
+    ) => runUpgrade(ctx, appIdentity, addonIdentity, body, options),
+    upgradeWaitStatus: (appIdentity: string, addonIdentity?: string, options?: DatabaseOptions) =>
+      upgradeWaitStatus(ctx, appIdentity, addonIdentity, options),
+  }
+})
