@@ -39,6 +39,7 @@ export type DatabaseUpgradeResponse = {
 
 type DatabaseDataClient = {
   database: {
+    cancelUpgrade(name: string): Promise<DatabaseUpgradeResponse>
     dryRunUpgrade(name: string, body: DatabaseUpgradeBody): Promise<DatabaseUpgradeResponse>
     info(name: string): Promise<DatabaseDescribeResult>
     prepareUpgrade(name: string, body: DatabaseUpgradeBody): Promise<DatabaseUpgradeResponse>
@@ -107,9 +108,20 @@ export async function prepareUpgrade(
   return ctx.data.database.prepareUpgrade(addon.id, body)
 }
 
+export async function cancelUpgrade(
+  ctx: DatabaseCtx,
+  name: string,
+  options: DatabaseOptions = {},
+): Promise<DatabaseUpgradeResponse> {
+  options.signal?.throwIfAborted()
+  return ctx.data.database.cancelUpgrade(name)
+}
+
 export const databaseExtensions = extendResource('data', 'database', rawCtx => {
   const ctx = rawCtx as unknown as DatabaseCtx
   return {
+    cancelUpgrade: (name: string, options?: DatabaseOptions) =>
+      cancelUpgrade(ctx, name, options),
     describe: (appIdentity: string, addonIdentity?: string, options?: DatabaseOptions) =>
       describe(ctx, appIdentity, addonIdentity, options),
     dryRunUpgrade: (

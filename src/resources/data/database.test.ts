@@ -7,10 +7,11 @@ import {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {
-  databaseExtensions, describe as describeFn, dryRunUpgrade, prepareUpgrade, runUpgrade, upgradeWaitStatus,
+  cancelUpgrade, databaseExtensions, describe as describeFn, dryRunUpgrade, prepareUpgrade, runUpgrade, upgradeWaitStatus,
 } from './database.js'
 
 function buildCtx(opts: {
+  cancelUpgrade?: ReturnType<typeof vi.fn>
   databaseInfo?: ReturnType<typeof vi.fn>
   dryRunUpgrade?: ReturnType<typeof vi.fn>
   prepareUpgrade?: ReturnType<typeof vi.fn>
@@ -22,6 +23,7 @@ function buildCtx(opts: {
   return {
     data: {
       database: {
+        cancelUpgrade: opts.cancelUpgrade ?? vi.fn(),
         dryRunUpgrade: opts.dryRunUpgrade ?? vi.fn(),
         info: opts.databaseInfo ?? vi.fn(),
         prepareUpgrade: opts.prepareUpgrade ?? vi.fn(),
@@ -137,6 +139,24 @@ describe('database resource', () => {
     })
   })
 
+  it('cancelUpgrade calls database.cancelUpgrade with the raw addon ID', async () => {
+    const cancelUpgradeFn = vi.fn().mockResolvedValue({message: 'cancelled'})
+    const ctx = buildCtx({cancelUpgrade: cancelUpgradeFn})
+
+    const result = await cancelUpgrade(ctx, 'addon-1')
+
+    expect(cancelUpgradeFn).toHaveBeenCalledWith('addon-1')
+    expect(result).toEqual({message: 'cancelled'})
+  })
+
+  it('cancelUpgrade throws if signal is aborted', async () => {
+    const ctx = buildCtx({})
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(cancelUpgrade(ctx, 'addon-1', {signal: controller.signal})).rejects.toThrow()
+  })
+
   it('databaseExtensions declares service: data, resource: database', () => {
     expect(databaseExtensions.service).toBe('data')
     expect(databaseExtensions.resource).toBe('database')
@@ -144,6 +164,7 @@ describe('database resource', () => {
 
   it('databaseExtensions factory exposes all methods', () => {
     const methods = databaseExtensions.factory(buildCtx({}))
+    expect(typeof methods.cancelUpgrade).toBe('function')
     expect(typeof methods.describe).toBe('function')
     expect(typeof methods.dryRunUpgrade).toBe('function')
     expect(typeof methods.prepareUpgrade).toBe('function')
