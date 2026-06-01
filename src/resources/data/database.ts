@@ -1,8 +1,4 @@
-import type {
-  DatabaseInfoResult,
-  DatabasePrepareUpgradeResult,
-  DatabaseRunUpgradeResult,
-} from '@heroku/types/data'
+import type {DatabaseInfoResult} from '@heroku/types/data'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
@@ -110,18 +106,21 @@ export async function prepareUpgrade(
 
 export async function cancelUpgrade(
   ctx: DatabaseCtx,
-  name: string,
+  appIdentity: string,
+  addonIdentity?: string,
   options: DatabaseOptions = {},
 ): Promise<DatabaseUpgradeResponse> {
   options.signal?.throwIfAborted()
-  return ctx.data.database.cancelUpgrade(name)
+  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  return ctx.data.database.cancelUpgrade(addon.id)
 }
 
 export const databaseExtensions = extendResource('data', 'database', rawCtx => {
+  // Bridge heroku-types' loose client types to the adapter's strongly-typed contract
   const ctx = rawCtx as unknown as DatabaseCtx
   return {
-    cancelUpgrade: (name: string, options?: DatabaseOptions) =>
-      cancelUpgrade(ctx, name, options),
+    cancelUpgrade: (appIdentity: string, addonIdentity?: string, options?: DatabaseOptions) =>
+      cancelUpgrade(ctx, appIdentity, addonIdentity, options),
     describe: (appIdentity: string, addonIdentity?: string, options?: DatabaseOptions) =>
       describe(ctx, appIdentity, addonIdentity, options),
     dryRunUpgrade: (

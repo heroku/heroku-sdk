@@ -139,12 +139,18 @@ describe('database resource', () => {
     })
   })
 
-  it('cancelUpgrade calls database.cancelUpgrade with the raw addon ID', async () => {
+  it('cancelUpgrade resolves the addon and calls database.cancelUpgrade', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const cancelUpgradeFn = vi.fn().mockResolvedValue({message: 'cancelled'})
-    const ctx = buildCtx({cancelUpgrade: cancelUpgradeFn})
+    const ctx = buildCtx({cancelUpgrade: cancelUpgradeFn, resolutionByAttachment})
 
-    const result = await cancelUpgrade(ctx, 'addon-1')
+    const result = await cancelUpgrade(ctx, 'app-1', 'DATABASE_URL')
 
+    expect(resolutionByAttachment).toHaveBeenCalledWith({
+      // eslint-disable-next-line camelcase
+      addon_attachment: 'DATABASE_URL',
+      app: 'app-1',
+    })
     expect(cancelUpgradeFn).toHaveBeenCalledWith('addon-1')
     expect(result).toEqual({message: 'cancelled'})
   })
@@ -154,7 +160,7 @@ describe('database resource', () => {
     const controller = new AbortController()
     controller.abort()
 
-    await expect(cancelUpgrade(ctx, 'addon-1', {signal: controller.signal})).rejects.toThrow()
+    await expect(cancelUpgrade(ctx, 'app-1', undefined, {signal: controller.signal})).rejects.toThrow()
   })
 
   it('databaseExtensions declares service: data, resource: database', () => {

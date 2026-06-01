@@ -42,6 +42,7 @@ export async function listCredentials(
 }
 
 export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', rawCtx => {
+  // Bridge heroku-types' loose client types to the adapter's strongly-typed contract
   const ctx = rawCtx as unknown as CredentialsCtx
   return {
     listCredentials: (

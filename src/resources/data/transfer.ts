@@ -57,6 +57,7 @@ export async function listByApp(
 }
 
 export const transferExtensions = extendResource('data', 'transfer', rawCtx => {
+  // Bridge heroku-types' loose client types to the adapter's strongly-typed contract
   const ctx = rawCtx as unknown as TransferCtx
   return {
     listByApp: (appIdentity: string, addonIdentity?: string, options?: TransferOptions) =>
