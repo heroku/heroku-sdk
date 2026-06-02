@@ -48,10 +48,23 @@ export async function dispatch(
     return result
   }
 
-  let nextRange = response.headers.get('next-range')
+  const nextRange = response.headers.get('next-range')
   if (!nextRange) return result
 
-  const accumulated = [...result]
+  return followPages(client, path, result, nextRange, invocation, requestOptions)
+}
+
+/* eslint-disable no-await-in-loop -- pagination is inherently sequential; each page depends on the previous next-range header */
+async function followPages(
+  client: HerokuApiClient,
+  path: string,
+  firstPage: unknown[],
+  initialRange: string,
+  invocation?: string,
+  requestOptions?: RequestOptions,
+): Promise<unknown[]> {
+  const accumulated = [...firstPage]
+  let nextRange: null | string = initialRange
   let pages = 1
   while (nextRange && pages < MAX_PAGES) {
     const pageOptions: RequestOptions = {
@@ -74,6 +87,7 @@ export async function dispatch(
   debug('%s pagination complete pages=%d total=%d', invocation ?? 'dispatch', pages, accumulated.length)
   return accumulated
 }
+/* eslint-enable no-await-in-loop */
 
 function callMethod(
   client: HerokuApiClient,

@@ -33,6 +33,10 @@ function mockClient() {
   }
 }
 
+function mockInfinitePaginationResponse() {
+  return mockResponse([{id: 'x'}], 200, {'next-range': 'id next..'})
+}
+
 describe('dispatch', () => {
   it('calls client.get for GET routes', async () => {
     const client = mockClient()
@@ -212,8 +216,10 @@ describe('dispatch', () => {
     })
 
     it('stops paginating after 500 pages to prevent infinite loops', async () => {
-      const alwaysPaginates = () => mockResponse([{id: 'x'}], 200, {'next-range': 'id next..'})
-      const client = {...mockClient(), get: vi.fn().mockImplementation(alwaysPaginates)}
+      const client = {
+        ...mockClient(),
+        get: vi.fn().mockImplementation(mockInfinitePaginationResponse),
+      }
       const route: RouteDefinition = {method: 'GET', path: '/apps'}
 
       const result = await dispatch(client as any, route, [])
