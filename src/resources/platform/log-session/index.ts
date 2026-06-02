@@ -7,6 +7,20 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
 import {getGeneration} from '../app/index.js'
+import {parseHerokuLogLine} from './parser.js'
+
+export {
+  type AttachmentAttachedEvent,
+  type AttachmentDetachedEvent,
+  type AttachmentUpdatedEvent,
+  type HerokuLogEvent,
+  parseHerokuLogLine,
+  type ProvisioningCompletedEvent,
+  type ScaledToEntry,
+  type ScaledToEvent,
+  type StartingProcessEvent,
+  type StateChangedEvent,
+} from './parser.js'
 
 const debug = createDebug('heroku:sdk:resources:log-session')
 
@@ -249,6 +263,7 @@ function buildCreateOpts(options: {
 }
 
 export const logSessionExtensions = extendResource('platform', 'logSession', ctx => ({
+  parseHerokuLogLine,
   streamLogs: (appIdentity: string, options?: StreamLogsOptions) =>
     streamLogs(ctx, appIdentity, options),
 }))

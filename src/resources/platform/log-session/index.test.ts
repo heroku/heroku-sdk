@@ -287,5 +287,14 @@ describe('log-session resource', () => {
       const methods = logSessionExtensions.factory(ctx)
       expect(typeof methods.streamLogs).toBe('function')
     })
+
+    it('factory exposes parseHerokuLogLine()', () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      const methods = logSessionExtensions.factory(ctx)
+      expect(methods.parseHerokuLogLine('heroku[web.1]: State changed from up to down'))
+        .toEqual({
+          dynoName: 'web.1', from: 'up', kind: 'state-changed', source: 'heroku', to: 'down',
+        })
+    })
   })
 })
