@@ -6,9 +6,10 @@ import {
 
 import {dispatch} from './dispatcher.js'
 
-function mockResponse(body: unknown, status = 200): Response {
+function mockResponse(body: unknown, status = 200, extraHeaders?: Record<string, string>): Response {
+  const headers = new Headers({'content-length': JSON.stringify(body).length.toString(), ...extraHeaders})
   return {
-    headers: new Headers({'content-length': JSON.stringify(body).length.toString()}),
+    headers,
     json: () => Promise.resolve(body),
     status,
   } as unknown as Response
@@ -30,6 +31,10 @@ function mockClient() {
     post: vi.fn().mockResolvedValue(mockResponse({id: '2'})),
     put: vi.fn().mockResolvedValue(mockResponse({id: '3'})),
   }
+}
+
+function mockInfinitePaginationResponse() {
+  return mockResponse([{id: 'x'}], 200, {'next-range': 'id next..'})
 }
 
 describe('dispatch', () => {
@@ -109,5 +114,119 @@ describe('dispatch', () => {
     const route = {method: 'OPTIONS', path: '/apps'} as unknown as RouteDefinition
 
     await expect(dispatch(client as any, route, [])).rejects.toThrow('Unsupported HTTP method: OPTIONS')
+  })
+
+  describe('auto-pagination', () => {
+    it('follows next-range headers for GET requests returning arrays', async () => {
+      const page1 = mockResponse([{id: '1'}, {id: '2'}], 200, {'next-range': 'id 3..'})
+      const page2 = mockResponse([{id: '3'}, {id: '4'}], 200)
+      const client = {...mockClient(), get: vi.fn().mockResolvedValueOnce(page1).mockResolvedValueOnce(page2)}
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
+
+      const result = await dispatch(client as any, route, [])
+
+      expect(result).toEqual([{id: '1'}, {id: '2'}, {id: '3'}, {id: '4'}])
+      expect(client.get).toHaveBeenCalledTimes(2)
+      expect(client.get).toHaveBeenNthCalledWith(2, '/apps', {headers: {Range: 'id 3..'}})
+    })
+
+    it('follows multiple pages until next-range disappears', async () => {
+      const page1 = mockResponse([{id: '1'}], 200, {'next-range': 'id 2..'})
+      const page2 = mockResponse([{id: '2'}], 200, {'next-range': 'id 3..'})
+      const page3 = mockResponse([{id: '3'}], 200)
+      const client = {
+        ...mockClient(),
+        get: vi.fn().mockResolvedValueOnce(page1).mockResolvedValueOnce(page2).mockResolvedValueOnce(page3),
+      }
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
+
+      const result = await dispatch(client as any, route, [])
+
+      expect(result).toEqual([{id: '1'}, {id: '2'}, {id: '3'}])
+      expect(client.get).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not paginate when caller supplies a Range header', async () => {
+      const page1 = mockResponse([{id: '1'}], 200, {'next-range': 'id 2..'})
+      const client = {...mockClient(), get: vi.fn().mockResolvedValueOnce(page1)}
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
+
+      const result = await dispatch(client as any, route, [], undefined, {headers: {Range: 'id ..; max=1'}})
+
+      expect(result).toEqual([{id: '1'}])
+      expect(client.get).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not paginate when caller supplies a lowercase range header', async () => {
+      const page1 = mockResponse([{id: '1'}], 200, {'next-range': 'id 2..'})
+      const client = {...mockClient(), get: vi.fn().mockResolvedValueOnce(page1)}
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
+
+      const result = await dispatch(client as any, route, [], undefined, {headers: {range: 'id ..; max=1'}})
+
+      expect(result).toEqual([{id: '1'}])
+      expect(client.get).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not paginate non-array responses', async () => {
+      const response = mockResponse({id: '1', name: 'my-app'}, 200, {'next-range': 'id 2..'})
+      const client = {...mockClient(), get: vi.fn().mockResolvedValueOnce(response)}
+      const route: RouteDefinition = {method: 'GET', path: '/apps/{appIdentity}'}
+
+      const result = await dispatch(client as any, route, ['my-app'])
+
+      expect(result).toEqual({id: '1', name: 'my-app'})
+      expect(client.get).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not paginate non-GET methods', async () => {
+      const response = mockResponse([{id: '1'}], 200, {'next-range': 'id 2..'})
+      const client = {...mockClient(), post: vi.fn().mockResolvedValueOnce(response)}
+      const route: RouteDefinition = {hasRequestBody: true, method: 'POST', path: '/apps'}
+
+      const result = await dispatch(client as any, route, [{name: 'app'}])
+
+      expect(result).toEqual([{id: '1'}])
+      expect(client.post).toHaveBeenCalledTimes(1)
+    })
+
+    it('preserves existing requestOptions when paginating', async () => {
+      const page1 = mockResponse([{id: '1'}], 200, {'next-range': 'id 2..'})
+      const page2 = mockResponse([{id: '2'}], 200)
+      const client = {...mockClient(), get: vi.fn().mockResolvedValueOnce(page1).mockResolvedValueOnce(page2)}
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
+
+      await dispatch(client as any, route, [], undefined, {headers: {Accept: 'application/json'}, timeout: 5000})
+
+      expect(client.get).toHaveBeenNthCalledWith(2, '/apps', {
+        headers: {Accept: 'application/json', Range: 'id 2..'},
+        timeout: 5000,
+      })
+    })
+
+    it('returns first page if no next-range header present', async () => {
+      const response = mockResponse([{id: '1'}, {id: '2'}], 200)
+      const client = {...mockClient(), get: vi.fn().mockResolvedValueOnce(response)}
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
+
+      const result = await dispatch(client as any, route, [])
+
+      expect(result).toEqual([{id: '1'}, {id: '2'}])
+      expect(client.get).toHaveBeenCalledTimes(1)
+    })
+
+    it('stops paginating after 500 pages to prevent infinite loops', async () => {
+      const client = {
+        ...mockClient(),
+        get: vi.fn().mockImplementation(mockInfinitePaginationResponse),
+      }
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
+
+      const result = await dispatch(client as any, route, [])
+
+      expect(Array.isArray(result)).toBe(true)
+      expect((result as unknown[]).length).toBe(500)
+      expect(client.get).toHaveBeenCalledTimes(500)
+    })
   })
 })

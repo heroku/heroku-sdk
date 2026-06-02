@@ -7,6 +7,13 @@ import {countPlaceholders, interpolatePath} from './interpolate-path.js'
 
 const debug = createDebug('heroku:sdk:dispatcher')
 
+const MAX_PAGES = 500
+
+function hasCallerRangeHeader(requestOptions?: RequestOptions): boolean {
+  if (!requestOptions?.headers) return false
+  return Object.keys(requestOptions.headers).some(k => k.toLowerCase() === 'range')
+}
+
 export async function dispatch(
   client: HerokuApiClient,
   route: RouteDefinition,
@@ -35,8 +42,52 @@ export async function dispatch(
     return undefined
   }
 
-  return response.json()
+  const result = await response.json()
+
+  if (route.method !== 'GET' || !Array.isArray(result) || hasCallerRangeHeader(requestOptions)) {
+    return result
+  }
+
+  const nextRange = response.headers.get('next-range')
+  if (!nextRange) return result
+
+  return followPages(client, path, result, nextRange, invocation, requestOptions)
 }
+
+/* eslint-disable no-await-in-loop -- pagination is inherently sequential; each page depends on the previous next-range header */
+async function followPages(
+  client: HerokuApiClient,
+  path: string,
+  firstPage: unknown[],
+  initialRange: string,
+  invocation?: string,
+  requestOptions?: RequestOptions,
+): Promise<unknown[]> {
+  const accumulated = [...firstPage]
+  let nextRange: null | string = initialRange
+  let pages = 1
+  while (nextRange && pages < MAX_PAGES) {
+    const pageOptions: RequestOptions = {
+      ...requestOptions,
+      headers: {...requestOptions?.headers, Range: nextRange},
+    }
+
+    debug('%s paginate page=%d range=%s', invocation ?? 'dispatch', pages + 1, nextRange)
+    const pageResponse = await callMethod(client, 'GET', path, undefined, pageOptions)
+    const pageBody = await pageResponse.json()
+
+    if (Array.isArray(pageBody)) {
+      accumulated.push(...pageBody)
+    }
+
+    nextRange = pageResponse.headers.get('next-range')
+    pages++
+  }
+
+  debug('%s pagination complete pages=%d total=%d', invocation ?? 'dispatch', pages, accumulated.length)
+  return accumulated
+}
+/* eslint-enable no-await-in-loop */
 
 function callMethod(
   client: HerokuApiClient,
