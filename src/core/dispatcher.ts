@@ -7,6 +7,13 @@ import {countPlaceholders, interpolatePath} from './interpolate-path.js'
 
 const debug = createDebug('heroku:sdk:dispatcher')
 
+const MAX_PAGES = 500
+
+function hasCallerRangeHeader(requestOptions?: RequestOptions): boolean {
+  if (!requestOptions?.headers) return false
+  return Object.keys(requestOptions.headers).some(k => k.toLowerCase() === 'range')
+}
+
 export async function dispatch(
   client: HerokuApiClient,
   route: RouteDefinition,
@@ -35,7 +42,37 @@ export async function dispatch(
     return undefined
   }
 
-  return response.json()
+  const result = await response.json()
+
+  if (route.method !== 'GET' || !Array.isArray(result) || hasCallerRangeHeader(requestOptions)) {
+    return result
+  }
+
+  let nextRange = response.headers.get('next-range')
+  if (!nextRange) return result
+
+  const accumulated = [...result]
+  let pages = 1
+  while (nextRange && pages < MAX_PAGES) {
+    const pageOptions: RequestOptions = {
+      ...requestOptions,
+      headers: {...requestOptions?.headers, Range: nextRange},
+    }
+
+    debug('%s paginate page=%d range=%s', invocation ?? 'dispatch', pages + 1, nextRange)
+    const pageResponse = await callMethod(client, 'GET', path, undefined, pageOptions)
+    const pageBody = await pageResponse.json()
+
+    if (Array.isArray(pageBody)) {
+      accumulated.push(...pageBody)
+    }
+
+    nextRange = pageResponse.headers.get('next-range')
+    pages++
+  }
+
+  debug('%s pagination complete pages=%d total=%d', invocation ?? 'dispatch', pages, accumulated.length)
+  return accumulated
 }
 
 function callMethod(
