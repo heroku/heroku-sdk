@@ -47,8 +47,8 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
-    "@heroku/heroku-fetch": "github:heroku/heroku-fetch#main",
-    "@heroku/types": "github:heroku/heroku-types",
+    "@heroku/heroku-fetch": "^0.1.1-beta",
+    "@heroku/types": "^3.0.0-beta",
     "debug": "^4.4.0"
   }
 }
