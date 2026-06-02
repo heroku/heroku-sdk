@@ -63,6 +63,14 @@ function streamThatTimesOut(): ReadableStream<Uint8Array> {
   })
 }
 
+function streamThatErrors(message: string): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.error(new Error(message))
+    },
+  })
+}
+
 /**
  * Wire HerokuApiClient's mock so that constructing one and calling
  * .stream() returns the next response from the supplied list. Each
@@ -192,6 +200,109 @@ describe('log-session resource', () => {
       expect(create).toHaveBeenCalledTimes(2)
       expect(stream).toHaveBeenCalledTimes(2)
       expect(lines).toEqual(['after recreate'])
+    })
+
+    // Tests below use `retryBaseDelayMs: 1, maxRetryDelayMs: 1` so
+    // exponential backoff doesn't make the suite slow.
+    const FAST_RETRY = {maxRetryDelayMs: 1, retryBaseDelayMs: 1} as const
+
+    it('recreates the session on transport error when tailing', async () => {
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
+      const stream = vi.fn()
+        .mockResolvedValueOnce(new Response(streamThatErrors('terminated')))
+        .mockResolvedValue(new Response(streamFromChunks(['after reconnect\n'])))
+      vi.mocked(HerokuApiClient).mockImplementation(function (this: {stream: typeof stream}) {
+        this.stream = stream
+      } as never)
+
+      const iter = streamLogs(ctx, 'my-app', {...FAST_RETRY, recreateSession: true, tail: true})
+      const lines: string[] = []
+      for await (const line of iter) {
+        lines.push(line)
+        await iter.return()
+      }
+
+      expect(create).toHaveBeenCalledTimes(2)
+      expect(lines).toEqual(['after reconnect'])
+    })
+
+    it('gives up after maxConsecutiveTransportErrors with no successful yield', async () => {
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
+      const stream = vi.fn()
+        .mockResolvedValue(new Response(streamThatErrors('terminated')))
+      vi.mocked(HerokuApiClient).mockImplementation(function (this: {stream: typeof stream}) {
+        this.stream = stream
+      } as never)
+
+      const iter = streamLogs(ctx, 'my-app', {...FAST_RETRY, recreateSession: true, tail: true})
+      await expect(collect(iter)).rejects.toThrow(/terminated/)
+      // 1 initial + 5 retries.
+      expect(create).toHaveBeenCalledTimes(6)
+    })
+
+    it('resets the consecutive-error counter after a successful yield', async () => {
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
+      // Pattern: 4 errors, one good, then 5 more errors. Without the
+      // reset on yield this would give up; with the reset it survives
+      // the second burst (4 + 1 + 5 attempts, with retry allowed since
+      // we yielded between). The 5th error in the second burst hits
+      // MAX and we throw.
+      const stream = vi.fn()
+        .mockResolvedValueOnce(new Response(streamThatErrors('blip 1')))
+        .mockResolvedValueOnce(new Response(streamThatErrors('blip 2')))
+        .mockResolvedValueOnce(new Response(streamThatErrors('blip 3')))
+        .mockResolvedValueOnce(new Response(streamThatErrors('blip 4')))
+        .mockResolvedValueOnce(new Response(streamFromChunks(['recovered\n'])))
+        .mockResolvedValue(new Response(streamThatErrors('blip again')))
+      vi.mocked(HerokuApiClient).mockImplementation(function (this: {stream: typeof stream}) {
+        this.stream = stream
+      } as never)
+
+      const iter = streamLogs(ctx, 'my-app', {...FAST_RETRY, recreateSession: true, tail: true})
+      const collected: string[] = []
+      await expect((async () => {
+        for await (const line of iter) collected.push(line)
+      })()).rejects.toThrow(/blip again/)
+
+      expect(collected).toEqual(['recovered'])
+      // 4 errors (counter 1..4, all under MAX) + 1 success (counter
+      // resets to 0) + 5 retries (counter 1..5, last one bumps to 5
+      // then on the 6th error the check fails and we throw) = 11
+      // create calls.
+      expect(create).toHaveBeenCalledTimes(11)
+    })
+
+    it('does not retry transport errors when recreateSession is false', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(new Response(streamThatErrors('terminated')))
+
+      const iter = streamLogs(ctx, 'my-app', {recreateSession: false, tail: true})
+      await expect(collect(iter)).rejects.toThrow(/terminated/)
+    })
+
+    it('aborts mid-backoff without throwing extra recreate attempts', async () => {
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(
+        new Response(streamThatErrors('terminated')),
+        new Response(streamFromChunks(['never reached\n'])),
+      )
+      const controller = new AbortController()
+
+      const iter = streamLogs(ctx, 'my-app', {
+        // 100ms backoff gives us time to abort between attempts.
+        maxRetryDelayMs: 100,
+        recreateSession: true,
+        retryBaseDelayMs: 100,
+        signal: controller.signal,
+        tail: true,
+      })
+      const next = iter.next()
+      // Abort during the backoff window between the first error and
+      // the recreate attempt.
+      setTimeout(() => controller.abort(), 30)
+      await expect(next).rejects.toThrow()
+      // Only the initial create succeeded; no retry started.
+      expect(create).toHaveBeenCalledTimes(1)
     })
 
     it('does not recreate when recreateSession is false (single tail iteration)', async () => {

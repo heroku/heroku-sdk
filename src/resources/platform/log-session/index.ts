@@ -25,7 +25,14 @@ export {
 const debug = createDebug('heroku:sdk:resources:log-session')
 
 const DEFAULT_FIR_SESSION_TIMEOUT_MS = 15 * 60 * 1000
-const FIR_TIMEOUT_ERROR_MESSAGE = 'Fir log stream timeout'
+// Maximum consecutive transport errors before we give up — protects
+// against a persistently broken upstream (DNS, TLS, etc.) busy-looping
+// forever. The counter resets on every successful yield.
+const MAX_CONSECUTIVE_TRANSPORT_ERRORS = 5
+// Initial backoff between recreate attempts; doubles up to a cap so
+// a bad-network burst doesn't hammer the platform.
+const TRANSPORT_RETRY_BASE_DELAY_MS = 500
+const TRANSPORT_RETRY_MAX_DELAY_MS = 5000
 
 export type StreamLogsOptions = {
   /** Limit output to a single dyno (e.g. `web.1` on Cedar, `web-abc-123` on Fir). */
@@ -35,6 +42,18 @@ export type StreamLogsOptions = {
    * apps only — silently ignored on Fir.
    */
   lines?: number
+  /**
+   * Maximum number of consecutive transport-error reconnects (TCP
+   * reset, proxy `terminated`, EOF mid-stream, etc.) before the
+   * iterator gives up and surfaces the error. Counter resets the
+   * moment a real line yields again. Defaults to 5.
+   */
+  maxConsecutiveTransportErrors?: number
+  /**
+   * Cap on the per-attempt backoff after exponential growth.
+   * Defaults to 5000ms.
+   */
+  maxRetryDelayMs?: number
   /**
    * Fires once per session creation, before the SDK opens the
    * `logplex_url` stream. Receives the resolved generation so the
@@ -51,6 +70,12 @@ export type StreamLogsOptions = {
    * disconnect to the caller.
    */
   recreateSession?: boolean
+  /**
+   * Initial backoff between reconnect attempts after a transport
+   * error; doubles each attempt up to {@link maxRetryDelayMs}.
+   * Defaults to 500ms.
+   */
+  retryBaseDelayMs?: number
   /**
    * If `recreateSession` is true, the SDK forces a recreate after
    * this many milliseconds without seeing data. Defaults to
@@ -109,6 +134,9 @@ export async function * streamLogs(
   const {
     dyno,
     lines,
+    maxConsecutiveTransportErrors = MAX_CONSECUTIVE_TRANSPORT_ERRORS,
+    maxRetryDelayMs = TRANSPORT_RETRY_MAX_DELAY_MS,
+    retryBaseDelayMs = TRANSPORT_RETRY_BASE_DELAY_MS,
     sessionTimeoutMs = DEFAULT_FIR_SESSION_TIMEOUT_MS,
     signal,
     source,
@@ -132,6 +160,7 @@ export async function * streamLogs(
   // close before we ask for the next one.
   /* eslint-disable no-await-in-loop */
   let isRecreate = false
+  let consecutiveTransportErrors = 0
   while (true) {
     debug('streamLogs creating session app=%s generation=%s tail=%s', appIdentity, generation ?? '<unknown>', effectiveTail)
     const session: LogSession = await ctx.platform.logSession.create(appIdentity, createOpts)
@@ -192,14 +221,21 @@ export async function * streamLogs(
           while (newlineIndex !== -1) {
             const line = pending.slice(0, newlineIndex)
             pending = pending.slice(newlineIndex + 1)
-            if (line.length > 0) yield line
+            if (line.length > 0) {
+              consecutiveTransportErrors = 0
+              yield line
+            }
+
             newlineIndex = pending.indexOf('\n')
           }
         }
 
         // Flush any trailing partial line that didn't end in '\n'.
         const trailing = pending + decoder.decode()
-        if (trailing.length > 0) yield trailing
+        if (trailing.length > 0) {
+          consecutiveTransportErrors = 0
+          yield trailing
+        }
       } finally {
         if (timeoutHandle) clearTimeout(timeoutHandle)
         reader.releaseLock()
@@ -220,8 +256,31 @@ export async function * streamLogs(
       if (signal?.aborted) throw error
       if (timedOut) continue
 
-      // Translate Fir's documented timeout error message into a recreate.
-      if (error instanceof Error && error.message === FIR_TIMEOUT_ERROR_MESSAGE && recreateSession) {
+      // When recreating, treat any transport-level failure (TCP
+      // reset, proxy `terminated`, EOF mid-stream, the documented
+      // Fir timeout, etc.) as recoverable: open a fresh session and
+      // keep yielding. Without this the iterator dies on the first
+      // network blip and tail consumers (e.g. the vscode resource
+      // explorer) silently lose updates.
+      //
+      // To keep a permanently-broken upstream from busy-looping, cap
+      // consecutive errors and back off between attempts. The counter
+      // resets the moment we yield a real line again.
+      if (recreateSession && consecutiveTransportErrors < maxConsecutiveTransportErrors) {
+        consecutiveTransportErrors++
+        const delay = Math.min(
+          retryBaseDelayMs * (2 ** (consecutiveTransportErrors - 1)),
+          maxRetryDelayMs,
+        )
+        debug(
+          'streamLogs session=%s transport error (%d/%d); reconnecting after %dms: %s',
+          session.id,
+          consecutiveTransportErrors,
+          maxConsecutiveTransportErrors,
+          delay,
+          (error as Error).message,
+        )
+        await waitOrAbort(delay, signal)
         continue
       }
 
@@ -229,6 +288,38 @@ export async function * streamLogs(
     }
   }
   /* eslint-enable no-await-in-loop */
+}
+
+/**
+ * Resolves after `ms` milliseconds, or rejects if the signal aborts
+ * first. Used between recreate attempts so a persistent transport
+ * failure doesn't busy-loop the platform's session-create endpoint.
+ */
+async function waitOrAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, ms)
+    })
+    return
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason)
+      return
+    }
+
+    const handle = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = (): void => {
+      clearTimeout(handle)
+      reject(signal.reason)
+    }
+
+    signal.addEventListener('abort', onAbort, {once: true})
+  })
 }
 
 /**
