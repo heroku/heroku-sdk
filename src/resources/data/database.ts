@@ -15,10 +15,10 @@ export type DatabaseUpgradeBody = {
 
 export type DatabaseDescribeResult = DatabaseInfoResult & {
   following?: string
+  'hot_standby?'?: boolean
   num_connections?: number
   num_tables?: number
   postgres_version?: string
-  'hot_standby?'?: boolean
   'standalone?'?: boolean
 }
 
