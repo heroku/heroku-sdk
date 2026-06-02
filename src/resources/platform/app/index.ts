@@ -1,8 +1,14 @@
 import type {App} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {DescribeAppOptions} from './info.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {describeApp} from './info.js'
+
+export {
+  type AppInfo, describeApp, type DescribeAppOptions, type PipelineCouplingDetail,
+} from './info.js'
 
 export type AppMaintenanceOptions = {
   signal?: AbortSignal
@@ -106,6 +112,8 @@ export async function getProcessTier(
 }
 
 export const appExtensions = extendResource('platform', 'app', ctx => ({
+  describe: (appIdentity: string, options?: DescribeAppOptions) =>
+    describeApp(ctx, appIdentity, options),
   disableMaintenance: (appIdentity: string, options?: AppMaintenanceOptions) =>
     disableMaintenance(ctx, appIdentity, options),
   enableMaintenance: (appIdentity: string, options?: AppMaintenanceOptions) =>
