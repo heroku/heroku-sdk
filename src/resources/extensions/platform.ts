@@ -1,5 +1,5 @@
 export {addOnExtensions} from '../platform/add-on/index.js'
-export {appExtensions} from '../platform/app/index.js'
+export {type AppInfo, appExtensions, type PipelineCouplingDetail} from '../platform/app/index.js'
 export {dynoExtensions} from '../platform/dyno/index.js'
 export {
   type AttachmentAttachedEvent,
