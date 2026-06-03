@@ -5,3 +5,15 @@ channels:
     branch: main
     prerelease: false
     npm-tag: latest
+
+  beta:
+    branch: beta
+    prerelease: true
+    prerelease-type: beta
+    npm-tag: beta
+
+  # alpha:
+  #   branch: alpha
+  #   prerelease: true
+  #   prerelease-type: alpha
+  #   npm-tag: alpha
