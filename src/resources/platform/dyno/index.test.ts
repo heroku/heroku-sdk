@@ -112,10 +112,11 @@ describe('dyno resource', () => {
     expect(dynoExtensions.resource).toBe('dyno')
   })
 
-  it('dynoExtensions factory exposes scale and restart methods', () => {
+  it('dynoExtensions factory exposes scale, restart, and waitForInfo methods', () => {
     const ctx = platformCtx({dyno: {}, formation: {}})
     const methods = dynoExtensions.factory(ctx)
     expect(typeof methods.scale).toBe('function')
     expect(typeof methods.restart).toBe('function')
+    expect(typeof methods.waitForInfo).toBe('function')
   })
 })
