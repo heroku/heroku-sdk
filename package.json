@@ -26,6 +26,30 @@
       "types": "./dist/resources/extensions/data.d.ts",
       "default": "./dist/resources/extensions/data.js"
     },
+    "./resources/platform/add-on": {
+      "types": "./dist/resources/platform/add-on/index.d.ts",
+      "default": "./dist/resources/platform/add-on/index.js"
+    },
+    "./resources/platform/app": {
+      "types": "./dist/resources/platform/app/index.d.ts",
+      "default": "./dist/resources/platform/app/index.js"
+    },
+    "./resources/platform/dyno": {
+      "types": "./dist/resources/platform/dyno/index.d.ts",
+      "default": "./dist/resources/platform/dyno/index.js"
+    },
+    "./resources/platform/log-session": {
+      "types": "./dist/resources/platform/log-session/index.d.ts",
+      "default": "./dist/resources/platform/log-session/index.js"
+    },
+    "./resources/platform/pipeline": {
+      "types": "./dist/resources/platform/pipeline/index.d.ts",
+      "default": "./dist/resources/platform/pipeline/index.js"
+    },
+    "./resources/platform/pipeline/*": {
+      "types": "./dist/resources/platform/pipeline/*.d.ts",
+      "default": "./dist/resources/platform/pipeline/*.js"
+    },
     "./resources/*": {
       "types": "./dist/resources/*.d.ts",
       "default": "./dist/resources/*.js"
@@ -42,6 +66,7 @@
     "example": "tsx",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
+    "prebuild": "rimraf dist",
     "prepare": "npm run build",
     "test": "vitest --run"
   },
@@ -60,6 +85,7 @@
     "eslint": "^9.39.4",
     "eslint-config-oclif": "^6.0.167",
     "eslint-plugin-vitest": "0.5.4",
+    "rimraf": "^6.1.3",
     "tsx": "^4.22.4",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"

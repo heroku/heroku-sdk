@@ -4,6 +4,11 @@ import type {StickyRouteOptions} from '../../../core/create-client.js'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {waitForInfo, type WaitForInfoOptions} from './wait-for-info.js'
+
+export {
+  DynoNotReadyError, type DynoState, waitForInfo, type WaitForInfoOptions,
+} from './wait-for-info.js'
 
 export type DynoOptions = {
   signal?: AbortSignal
@@ -90,4 +95,8 @@ export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
     (appIdentity: string, updates: ScaleDynosUpdate, options?: DynoOptions): Promise<Formation>
     (appIdentity: string, updates: ScaleDynosUpdate[], options?: DynoOptions): Promise<Formation[]>
   },
+
+  waitForInfo: (appIdentity: string, dynoIdentity: string, options?: WaitForInfoOptions) => (
+    waitForInfo(ctx, appIdentity, dynoIdentity, options)
+  ),
 }))
