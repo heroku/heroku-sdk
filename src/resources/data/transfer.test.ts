@@ -40,6 +40,24 @@ describe('transfer resource', () => {
     expect(result).toEqual([{num: 1, succeeded: true}])
   })
 
+  it('listByApp returns [] when the addon resolver throws 404', async () => {
+    const notFound = Object.assign(new Error('Not Found'), {statusCode: 404})
+    const resolutionByAttachment = vi.fn().mockRejectedValue(notFound)
+    const ctx = buildCtx({resolutionByAttachment})
+
+    const result = await listByApp(ctx, 'app-without-pg')
+
+    expect(result).toEqual([])
+  })
+
+  it('listByApp rethrows non-404 resolver errors', async () => {
+    const serverError = Object.assign(new Error('Internal Server Error'), {statusCode: 500})
+    const resolutionByAttachment = vi.fn().mockRejectedValue(serverError)
+    const ctx = buildCtx({resolutionByAttachment})
+
+    await expect(listByApp(ctx, 'app-1')).rejects.toThrow('Internal Server Error')
+  })
+
   it('listByApp throws if signal is aborted', async () => {
     const ctx = buildCtx({})
     const controller = new AbortController()
