@@ -6,12 +6,30 @@
   "type": "module",
   "main": "dist/index.js",
   "exports": {
-    ".": "./dist/index.js",
-    "./platform": "./dist/services/platform.js",
-    "./data": "./dist/services/data.js",
-    "./extensions/platform": "./dist/resources/extensions/platform.js",
-    "./extensions/data": "./dist/resources/extensions/data.js",
-    "./resources/*": "./dist/resources/*.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./platform": {
+      "types": "./dist/services/platform.d.ts",
+      "default": "./dist/services/platform.js"
+    },
+    "./data": {
+      "types": "./dist/services/data.d.ts",
+      "default": "./dist/services/data.js"
+    },
+    "./extensions/platform": {
+      "types": "./dist/resources/extensions/platform.d.ts",
+      "default": "./dist/resources/extensions/platform.js"
+    },
+    "./extensions/data": {
+      "types": "./dist/resources/extensions/data.d.ts",
+      "default": "./dist/resources/extensions/data.js"
+    },
+    "./resources/*": {
+      "types": "./dist/resources/*.d.ts",
+      "default": "./dist/resources/*.js"
+    }
   },
   "sideEffects": false,
   "repository": {
