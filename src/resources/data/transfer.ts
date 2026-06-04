@@ -52,7 +52,17 @@ export async function listByApp(
   options: TransferOptions = {},
 ): Promise<BackupTransfer[]> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  let addon
+  try {
+    addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  } catch (error: unknown) {
+    if (error instanceof Error && 'statusCode' in error && (error as {statusCode: number}).statusCode === 404) {
+      return []
+    }
+
+    throw error
+  }
+
   return ctx.data.transfer.listByApp(addon.id)
 }
 
