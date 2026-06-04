@@ -26,6 +26,26 @@
       "types": "./dist/resources/extensions/data.d.ts",
       "default": "./dist/resources/extensions/data.js"
     },
+    "./resources/platform/add-on": {
+      "types": "./dist/resources/platform/add-on/index.d.ts",
+      "default": "./dist/resources/platform/add-on/index.js"
+    },
+    "./resources/platform/app": {
+      "types": "./dist/resources/platform/app/index.d.ts",
+      "default": "./dist/resources/platform/app/index.js"
+    },
+    "./resources/platform/dyno": {
+      "types": "./dist/resources/platform/dyno/index.d.ts",
+      "default": "./dist/resources/platform/dyno/index.js"
+    },
+    "./resources/platform/log-session": {
+      "types": "./dist/resources/platform/log-session/index.d.ts",
+      "default": "./dist/resources/platform/log-session/index.js"
+    },
+    "./resources/platform/pipeline/*": {
+      "types": "./dist/resources/platform/pipeline/*.d.ts",
+      "default": "./dist/resources/platform/pipeline/*.js"
+    },
     "./resources/*": {
       "types": "./dist/resources/*.d.ts",
       "default": "./dist/resources/*.js"
