@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.2.0-beta.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.1.0-beta.0...sdk-v0.2.0-beta.0) (2026-06-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* cleans-up exports ([#26](https://github.com/heroku/heroku-sdk/issues/26))
+
+### Features
+
+* add dyno composition (list/scale/restart) ([1da9fdf](https://github.com/heroku/heroku-sdk/commit/1da9fdf1da81649d427626f21b20b30760ebfa95))
+* add dyno composition (list/scale/restart) ([59039da](https://github.com/heroku/heroku-sdk/commit/59039da157a9b9f4ae84b26c2483ff72182c8853))
+* add promotePipeline composition ([#5](https://github.com/heroku/heroku-sdk/issues/5)) ([8923ded](https://github.com/heroku/heroku-sdk/commit/8923dedf90cce960b7c820703b67c03c45bc4aa4))
+* **add-on:** listPlansForAddon and priceForPlan helpers ([#40](https://github.com/heroku/heroku-sdk/issues/40)) ([ea41870](https://github.com/heroku/heroku-sdk/commit/ea41870c186fdc8dc0affc12e8b4a6a94d2240da))
+* addon resource improvements + per-call header overrides ([#23](https://github.com/heroku/heroku-sdk/issues/23)) ([d21fbf7](https://github.com/heroku/heroku-sdk/commit/d21fbf746da71d9400a758faad3cbacb6894aba7))
+* adds app info resource ([#47](https://github.com/heroku/heroku-sdk/issues/47)) ([f6b0ee4](https://github.com/heroku/heroku-sdk/commit/f6b0ee404c3b9bc5c0cf5a445c0de72431e1e611))
+* auto-pagination to dispatcher GET array responses ([#44](https://github.com/heroku/heroku-sdk/issues/44)) ([bb5d75d](https://github.com/heroku/heroku-sdk/commit/bb5d75da1c41ecf52a903e1c8e41d26a15151fba))
+* **client:** add withOptions to set sticky signal/headers/timeout ([#34](https://github.com/heroku/heroku-sdk/issues/34)) ([be2b097](https://github.com/heroku/heroku-sdk/commit/be2b09708f210f7780f28b80a56343453173e82a))
+* **compositions:** add listPipelineApps ([#17](https://github.com/heroku/heroku-sdk/issues/17)) ([34fe268](https://github.com/heroku/heroku-sdk/commit/34fe268d74bfabad2dcbc62278ac70a624154420))
+* **compositions:** add maintenance mode functions to app resource ([#10](https://github.com/heroku/heroku-sdk/issues/10)) ([9533e6d](https://github.com/heroku/heroku-sdk/commit/9533e6d7dce128f152621c76807559d09a2b2c98))
+* **compositions:** add pg resource for legacy Postgres add-ons ([#9](https://github.com/heroku/heroku-sdk/issues/9)) ([6a333b9](https://github.com/heroku/heroku-sdk/commit/6a333b920ea80ebda1c4f8a6df166b822f84d868))
+* **compositions:** expand add-on resolution and pg helpers ([157713e](https://github.com/heroku/heroku-sdk/commit/157713ea0ea6250f941297cfc75fc8ea3411a1e5))
+* **compositions:** stream release-command output during promotePipeline ([#15](https://github.com/heroku/heroku-sdk/issues/15)) ([1c6c155](https://github.com/heroku/heroku-sdk/commit/1c6c15552856c6bdcb6f634884d2fba5c88a49c3))
+* **core:** instrument dispatcher and client with debug ([#11](https://github.com/heroku/heroku-sdk/issues/11)) ([4af40e6](https://github.com/heroku/heroku-sdk/commit/4af40e64f30c593f671888ed7115ad000720acb1))
+* **log-session:** add parseHerokuLogLine for runtime event parsing ([#43](https://github.com/heroku/heroku-sdk/issues/43)) ([95fddd4](https://github.com/heroku/heroku-sdk/commit/95fddd4412d6288fb59f607f417abae3aeb8b972))
+* **log-session:** recreate streamLogs on transport errors ([#46](https://github.com/heroku/heroku-sdk/issues/46)) ([6399a52](https://github.com/heroku/heroku-sdk/commit/6399a5262e2122eec06ec33df049ed4181159552))
+* migrate pg adapters ([#38](https://github.com/heroku/heroku-sdk/issues/38)) ([5272cd2](https://github.com/heroku/heroku-sdk/commit/5272cd22ced4ece97c39a02ccc2d236e269f6b96))
+* new add-on composition helpers ([#16](https://github.com/heroku/heroku-sdk/issues/16)) ([86cfd49](https://github.com/heroku/heroku-sdk/commit/86cfd496eb33066d2ee05834460c1ee0ea2604fa))
+* ps process tier support ([#37](https://github.com/heroku/heroku-sdk/issues/37)) ([c582a10](https://github.com/heroku/heroku-sdk/commit/c582a10197a9dc93cdd56ecb7a5bc3176ccf4e22))
+* ps scale shield support ([#35](https://github.com/heroku/heroku-sdk/issues/35)) ([4d52a7d](https://github.com/heroku/heroku-sdk/commit/4d52a7d6a74ae10262092453e5254d9d9d00a499))
+* resource extensions (HerokuSDK + extendResource) ([#18](https://github.com/heroku/heroku-sdk/issues/18)) ([339f043](https://github.com/heroku/heroku-sdk/commit/339f043a0e3b084d07051c43631272fc715b4a1a))
+* **resources:** add createAndWait orchestration to add-on resource ([#27](https://github.com/heroku/heroku-sdk/issues/27)) ([efce1d4](https://github.com/heroku/heroku-sdk/commit/efce1d4fffd1be97127f4fe78bc65b1e22d6d0de))
+* **resources:** add streamLogs to logSession resource ([#28](https://github.com/heroku/heroku-sdk/issues/28)) ([19e7998](https://github.com/heroku/heroku-sdk/commit/19e799844a066c17b32a137840ce4630f18215d2))
+* **resources:** withSearchParams, pipeline resolution, debug coverage ([#25](https://github.com/heroku/heroku-sdk/issues/25)) ([89cfddd](https://github.com/heroku/heroku-sdk/commit/89cfdddbd92ac7e0c4e6720ae477af7fc7876d0c))
+* **services:** add createDataClient factory ([f78d9d4](https://github.com/heroku/heroku-sdk/commit/f78d9d4c4c165aa127dfd3629ee78e07b5b3b1ee))
+* **services:** add createPlatformClient factory ([a0ccf42](https://github.com/heroku/heroku-sdk/commit/a0ccf42c0588d0a18f7a90cf3fe571e2f605c5f8))
+* update package exports ([#50](https://github.com/heroku/heroku-sdk/issues/50)) ([28a93bf](https://github.com/heroku/heroku-sdk/commit/28a93bfe128d25b6e61cef8af4d7685698e03204))
+
+
+### Bug Fixes
+
+* build failure due to upstream type changes ([#33](https://github.com/heroku/heroku-sdk/issues/33)) ([4a13a9f](https://github.com/heroku/heroku-sdk/commit/4a13a9fe2ee7e2a1a6d94b548926366bd95bd6a3))
+* **core:** preserve extensions after withOptions/withHeaders ([#41](https://github.com/heroku/heroku-sdk/issues/41)) ([012bcc8](https://github.com/heroku/heroku-sdk/commit/012bcc89c5a2ab7c7b2ad67918dae7378bbecc10))
+
+
+### Miscellaneous Chores
+
+* cleans-up exports ([#26](https://github.com/heroku/heroku-sdk/issues/26)) ([20dbe31](https://github.com/heroku/heroku-sdk/commit/20dbe314ea00d057b26b329f5b47736f26821503))
+
 ## 0.3.0
 
 ### Breaking changes
