@@ -1,6 +1,9 @@
 export {addOnExtensions} from '../platform/add-on/index.js'
 export {appExtensions, type AppInfo, type PipelineCouplingDetail} from '../platform/app/index.js'
-export {dynoExtensions} from '../platform/dyno/index.js'
+export {
+  dynoExtensions,
+  DynoNotReadyError, type DynoState, waitForInfo, type WaitForInfoOptions,
+} from '../platform/dyno/index.js'
 export {
   type AttachmentAttachedEvent,
   type AttachmentDetachedEvent,
