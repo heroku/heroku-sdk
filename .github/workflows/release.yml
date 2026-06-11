@@ -7,13 +7,21 @@ on:
       - beta
 
 jobs:
-  create-release:
+  release-please:
     runs-on: pub-hk-ubuntu-24.04-ip
     permissions:
       contents: write
       pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      pr_number: ${{ steps.release.outputs.pr_number }}
+      config_file: ${{ steps.release.outputs.config_file }}
+      manifest_file: ${{ steps.release.outputs.manifest_file }}
+      npm_tag: ${{ steps.release.outputs.npm_tag }}
+      package_name: ${{ steps.release.outputs.package_name }}
+      no_release_needed: ${{ steps.release.outputs.no_release_needed }}
+      pr_already_exists: ${{ steps.release.outputs.pr_already_exists }}
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -33,17 +41,19 @@ jobs:
           path: workflows-repo
           ref: main
 
-      - name: Create GitHub Release
+      - name: Run release-please
         id: release
-        uses: ./workflows-repo/.github/actions/release-on-push-create-release-public
+        uses: ./workflows-repo/.github/actions/release-please-pr-public
         with:
           package-manager: npm
           branch_name: ${{ github.ref_name }}
           token: ${{ steps.app-token.outputs.token }}
 
   validate:
-    needs: create-release
-    if: needs.create-release.outputs.release_created != 'true'
+    needs: release-please
+    if: |
+      needs.release-please.outputs.release_created != 'true' &&
+      (needs.release-please.outputs.pr_number != '' || needs.release-please.outputs.pr_already_exists == 'true')
     runs-on: pub-hk-ubuntu-24.04-ip
     steps:
       - name: Generate GitHub App token
@@ -71,56 +81,12 @@ jobs:
           lint_command: 'run lint'
           test_command: 'run test'
 
-  release-please-pr:
-    needs: [create-release, validate]
-    if: needs.create-release.outputs.release_created != 'true'
-    runs-on: pub-hk-ubuntu-24.04-ip
-    permissions:
-      contents: write
-      pull-requests: write
-    outputs:
-      release_created: ${{ steps.release-workflow.outputs.release_created }}
-      tag_name: ${{ steps.release-workflow.outputs.tag_name }}
-      pr_number: ${{ steps.release-workflow.outputs.pr_number }}
-      config_file: ${{ steps.release-workflow.outputs.config_file }}
-      manifest_file: ${{ steps.release-workflow.outputs.manifest_file }}
-      npm_tag: ${{ steps.release-workflow.outputs.npm_tag }}
-      package_name: ${{ steps.release-workflow.outputs.package_name }}
-      no_release_needed: ${{ steps.release-workflow.outputs.no_release_needed }}
-      pr_already_exists: ${{ steps.release-workflow.outputs.pr_already_exists }}
-    steps:
-      - name: Generate GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ vars.DEV_TOOLS_RELEASE_WORKFLOW_APP_ID }}
-          private-key: ${{ secrets.DEV_TOOLS_RELEASE_WORKFLOW_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
-      - uses: actions/checkout@v6
-
-      - name: Checkout workflows repository
-        uses: actions/checkout@v6
-        with:
-          repository: heroku/npm-release-workflows
-          token: ${{ steps.app-token.outputs.token }}
-          path: workflows-repo
-          ref: main
-
-      - name: Create release PR
-        id: release-workflow
-        uses: ./workflows-repo/.github/actions/release-please-pr-public
-        with:
-          package-manager: npm
-          branch_name: ${{ github.ref_name }}
-          token: ${{ steps.app-token.outputs.token }}
-
   publish:
-    needs: [create-release, release-please-pr]
+    needs: [release-please, validate]
     if: |
-      needs.create-release.outputs.release_created != 'true' &&
-      needs.release-please-pr.result == 'success' &&
-      (needs.release-please-pr.outputs.pr_number != '' || needs.release-please-pr.outputs.pr_already_exists == 'true')
+      needs.release-please.outputs.release_created != 'true' &&
+      needs.validate.result == 'success' &&
+      (needs.release-please.outputs.pr_number != '' || needs.release-please.outputs.pr_already_exists == 'true')
     runs-on: pub-hk-ubuntu-24.04-ip
     permissions:
       contents: write
@@ -151,14 +117,14 @@ jobs:
           package-manager: npm
           workflows_token: ${{ steps.app-token.outputs.token }}
           build_command: 'run build'
-          npm_tag: ${{ needs.release-please-pr.outputs.npm_tag }}
-          package_name: ${{ needs.release-please-pr.outputs.package_name }}
-          pr_number: ${{ needs.release-please-pr.outputs.pr_number }}
+          npm_tag: ${{ needs.release-please.outputs.npm_tag }}
+          package_name: ${{ needs.release-please.outputs.package_name }}
+          pr_number: ${{ needs.release-please.outputs.pr_number }}
           branch_name: ${{ github.ref_name }}
 
       - name: Merge release PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          gh pr merge ${{ needs.release-please-pr.outputs.pr_number }} \
+          gh pr merge ${{ needs.release-please.outputs.pr_number }} \
             --squash --auto --delete-branch
