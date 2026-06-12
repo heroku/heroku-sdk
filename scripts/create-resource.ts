@@ -1,3 +1,5 @@
+import {existsSync, statSync} from 'node:fs'
+import path from 'node:path'
 import {parseArgs} from 'node:util'
 
 export type Names = {
@@ -170,4 +172,43 @@ describe('${names.resourceCamel} resource', () => {
   })
 })
 `
+}
+
+export type InspectInput = {
+  functions: string[]
+  names: Names
+  root: string
+  service: ServiceName
+}
+
+export type InspectResult = {
+  conflicts: string[]
+  resourceExists: boolean
+  resourceForm: 'dir'
+}
+
+export function inspectTarget(input: InspectInput): InspectResult {
+  const {functions, names, root, service} = input
+  const serviceDir = path.join(root, 'src', 'resources', service)
+  const singleFilePath = path.join(serviceDir, `${names.resourceKebab}.ts`)
+  const resourceDir = path.join(serviceDir, names.resourceKebab)
+
+  if (existsSync(singleFilePath) && statSync(singleFilePath).isFile()) {
+    throw new Error(
+      `convert single-file form to directory form first: ${path.relative(root, singleFilePath)}`,
+    )
+  }
+
+  const resourceExists = existsSync(resourceDir) && statSync(resourceDir).isDirectory()
+
+  const conflicts: string[] = []
+  for (const fn of functions) {
+    const fnNames = deriveNames(names.resourceCamel, fn)
+    const verbPath = path.join(resourceDir, `${fnNames.fnKebab}.ts`)
+    if (existsSync(verbPath)) {
+      conflicts.push(path.relative(root, verbPath))
+    }
+  }
+
+  return {conflicts, resourceExists, resourceForm: 'dir'}
 }

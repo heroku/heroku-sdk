@@ -1,13 +1,22 @@
+import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+
 import {describe, expect, it} from 'vitest'
 
 import {
   deriveNames,
+  inspectTarget,
   parseCli,
   renderResourceIndex,
   renderResourceIndexTest,
   renderVerbFile,
   renderVerbTest,
 } from './create-resource.js'
+
+function makeFixture(): string {
+  return mkdtempSync(join(tmpdir(), 'create-resource-'))
+}
 
 describe('deriveNames', () => {
   it('derives names for a single-word camelCase resource and function', () => {
@@ -204,5 +213,76 @@ describe('release resource', () => {
   })
 })
 `)
+  })
+})
+
+describe('inspectTarget', () => {
+  it('reports a brand-new resource when the resource directory does not exist', () => {
+    const root = makeFixture()
+    try {
+      mkdirSync(join(root, 'src/resources/platform'), {recursive: true})
+      const result = inspectTarget({
+        functions: ['describe'],
+        names: deriveNames('release', 'describe'),
+        root,
+        service: 'platform',
+      })
+      expect(result).toEqual({conflicts: [], resourceExists: false, resourceForm: 'dir'})
+    } finally {
+      rmSync(root, {recursive: true, force: true})
+    }
+  })
+
+  it('reports an existing directory-form resource', () => {
+    const root = makeFixture()
+    try {
+      mkdirSync(join(root, 'src/resources/platform/app'), {recursive: true})
+      writeFileSync(join(root, 'src/resources/platform/app/index.ts'), '')
+      const result = inspectTarget({
+        functions: ['describe'],
+        names: deriveNames('app', 'describe'),
+        root,
+        service: 'platform',
+      })
+      expect(result).toEqual({conflicts: [], resourceExists: true, resourceForm: 'dir'})
+    } finally {
+      rmSync(root, {recursive: true, force: true})
+    }
+  })
+
+  it('detects a single-file resource and refuses to proceed', () => {
+    const root = makeFixture()
+    try {
+      mkdirSync(join(root, 'src/resources/data'), {recursive: true})
+      writeFileSync(join(root, 'src/resources/data/maintenance.ts'), '')
+      expect(() =>
+        inspectTarget({
+          functions: ['info'],
+          names: deriveNames('maintenance', 'info'),
+          root,
+          service: 'data',
+        }),
+      ).toThrow(/single-file form/)
+    } finally {
+      rmSync(root, {recursive: true, force: true})
+    }
+  })
+
+  it('lists conflicts for verb files that already exist', () => {
+    const root = makeFixture()
+    try {
+      mkdirSync(join(root, 'src/resources/platform/app'), {recursive: true})
+      writeFileSync(join(root, 'src/resources/platform/app/index.ts'), '')
+      writeFileSync(join(root, 'src/resources/platform/app/describe.ts'), '')
+      const result = inspectTarget({
+        functions: ['describe', 'listReleases'],
+        names: deriveNames('app', 'describe'),
+        root,
+        service: 'platform',
+      })
+      expect(result.conflicts).toEqual(['src/resources/platform/app/describe.ts'])
+    } finally {
+      rmSync(root, {recursive: true, force: true})
+    }
   })
 })
