@@ -2,6 +2,7 @@ import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 
+import {Project} from 'ts-morph'
 import {describe, expect, it} from 'vitest'
 
 import {
@@ -12,6 +13,7 @@ import {
   renderResourceIndexTest,
   renderVerbFile,
   renderVerbTest,
+  wireExistingResourceIndex,
 } from './create-resource.js'
 
 function makeFixture(): string {
@@ -284,5 +286,69 @@ describe('inspectTarget', () => {
     } finally {
       rmSync(root, {recursive: true, force: true})
     }
+  })
+})
+
+const SAMPLE_INDEX = `import {extendResource} from '../../../core/extend-resource.js'
+import {describe} from './describe.js'
+
+export {describe, type DescribeOptions} from './describe.js'
+
+export const appExtensions = extendResource('platform', 'app', ctx => ({
+  describe: (appIdentity: string, options?: DescribeOptions) =>
+    describe(ctx, appIdentity, options),
+}))
+`
+
+function loadIndex(text: string) {
+  const project = new Project({useInMemoryFileSystem: true})
+  return project.createSourceFile('index.ts', text)
+}
+
+describe('wireExistingResourceIndex', () => {
+  it('adds an import for the new verb file', () => {
+    const sf = loadIndex(SAMPLE_INDEX)
+    wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'listReleases'))
+    expect(sf.getFullText()).toContain("import {listReleases} from './list-releases.js'")
+  })
+
+  it('adds a re-export for the new verb file in alphabetical order', () => {
+    const sf = loadIndex(SAMPLE_INDEX)
+    wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'listReleases'))
+    const exports = sf.getExportDeclarations()
+      .map(d => d.getModuleSpecifierValue())
+      .filter(Boolean)
+    expect(exports).toEqual(['./describe.js', './list-releases.js'])
+  })
+
+  it('adds the new method to the extendResource factory in alphabetical order', () => {
+    const sf = loadIndex(SAMPLE_INDEX)
+    wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'listReleases'))
+    const text = sf.getFullText()
+    // describe should still come before listReleases
+    expect(text.indexOf('describe:')).toBeLessThan(text.indexOf('listReleases:'))
+    expect(text).toContain('listReleases: (appIdentity: string, options?: ListReleasesOptions) =>')
+  })
+
+  it('inserts a method before alphabetically-greater siblings', () => {
+    const sf = loadIndex(SAMPLE_INDEX)
+    wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'archive'))
+    const text = sf.getFullText()
+    expect(text.indexOf('archive:')).toBeLessThan(text.indexOf('describe:'))
+  })
+
+  it('throws if the file does not contain an extendResource call', () => {
+    const sf = loadIndex(`export const x = 1
+`)
+    expect(() => wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'describe'))).toThrow(
+      /extendResource/,
+    )
+  })
+
+  it('skips when the function is already wired', () => {
+    const sf = loadIndex(SAMPLE_INDEX)
+    wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'describe'))
+    const exports = sf.getExportDeclarations().filter(d => d.getModuleSpecifierValue() === './describe.js')
+    expect(exports.length).toBe(1)
   })
 })

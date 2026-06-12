@@ -2,6 +2,14 @@ import {existsSync, statSync} from 'node:fs'
 import path from 'node:path'
 import {parseArgs} from 'node:util'
 
+import {
+  IndentationText,
+  type ObjectLiteralExpression,
+  QuoteKind,
+  type SourceFile,
+  SyntaxKind,
+} from 'ts-morph'
+
 export type Names = {
   fnCamel: string
   fnKebab: string
@@ -211,4 +219,108 @@ export function inspectTarget(input: InspectInput): InspectResult {
   }
 
   return {conflicts, resourceExists, resourceForm: 'dir'}
+}
+
+export function wireExistingResourceIndex(
+  sf: SourceFile,
+  _service: ServiceName,
+  names: Names,
+): void {
+  // Match the project's existing source style (single quotes, no spaces around braces, 2-space indent).
+  sf.getProject().manipulationSettings.set({
+    indentationText: IndentationText.TwoSpaces,
+    insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces: false,
+    quoteKind: QuoteKind.Single,
+  })
+
+  const moduleSpecifier = `./${names.fnKebab}.js`
+  addNamedImport(sf, names.fnCamel, moduleSpecifier)
+  addBarrelReexport(sf, names, moduleSpecifier)
+  addBundleProperty(sf, names)
+}
+
+function addNamedImport(sf: SourceFile, name: string, moduleSpecifier: string): void {
+  const existing = sf.getImportDeclaration(d => d.getModuleSpecifierValue() === moduleSpecifier)
+  if (existing) {
+    if (!existing.getNamedImports().some(n => n.getName() === name)) {
+      existing.addNamedImport(name)
+    }
+
+    return
+  }
+
+  // eslint --fix sorts imports later, so insertion order doesn't matter.
+  sf.addImportDeclaration({moduleSpecifier, namedImports: [name]})
+}
+
+function addBarrelReexport(sf: SourceFile, names: Names, moduleSpecifier: string): void {
+  const existing = sf.getExportDeclarations().find(d => d.getModuleSpecifierValue() === moduleSpecifier)
+  if (existing) return
+
+  const barrelDecls = sf.getExportDeclarations()
+    .filter(d => d.getModuleSpecifierValue()?.startsWith('./'))
+  // Find first sibling whose specifier sorts after ours.
+  const insertBefore = barrelDecls.find(d => (d.getModuleSpecifierValue() ?? '') > moduleSpecifier)
+
+  const structure = {
+    moduleSpecifier,
+    namedExports: [{name: names.fnCamel}, {isTypeOnly: true, name: names.optsType}],
+  }
+
+  if (insertBefore) {
+    sf.insertExportDeclaration(insertBefore.getChildIndex(), structure)
+    return
+  }
+
+  // Insert after the last barrel re-export, or at the end of the export block.
+  const lastBarrel = barrelDecls.at(-1)
+  if (lastBarrel) {
+    sf.insertExportDeclaration(lastBarrel.getChildIndex() + 1, structure)
+    return
+  }
+
+  sf.addExportDeclaration(structure)
+}
+
+function addBundleProperty(sf: SourceFile, names: Names): void {
+  const callExpr = sf.getDescendantsOfKind(SyntaxKind.CallExpression)
+    .find(c => c.getExpression().getText() === 'extendResource')
+  if (!callExpr) {
+    throw new Error('could not find extendResource(...) call in source file')
+  }
+
+  const factoryArg = callExpr.getArguments()[2]
+  if (!factoryArg) {
+    throw new Error('extendResource call missing factory argument')
+  }
+
+  const arrow = factoryArg.asKindOrThrow(SyntaxKind.ArrowFunction)
+  const body = arrow.getBody()
+
+  let objLit: ObjectLiteralExpression
+  if (body.getKind() === SyntaxKind.ObjectLiteralExpression) {
+    objLit = body.asKindOrThrow(SyntaxKind.ObjectLiteralExpression)
+  } else if (body.getKind() === SyntaxKind.ParenthesizedExpression) {
+    objLit = body.asKindOrThrow(SyntaxKind.ParenthesizedExpression)
+      .getExpression()
+      .asKindOrThrow(SyntaxKind.ObjectLiteralExpression)
+  } else {
+    throw new Error('expected `ctx => ({...})` factory body')
+  }
+
+  const propName = names.fnCamel
+  if (objLit.getProperty(propName)) return
+
+  const initializer
+    = `(appIdentity: string, options?: ${names.optsType}) => `
+    + `${names.fnCamel}(ctx, appIdentity, options)`
+
+  const properties = objLit.getProperties()
+  const insertAt = properties.findIndex(
+    p => p.getKind() === SyntaxKind.PropertyAssignment
+      && (p.asKindOrThrow(SyntaxKind.PropertyAssignment).getName() ?? '') > propName,
+  )
+
+  const index = insertAt === -1 ? properties.length : insertAt
+  objLit.insertPropertyAssignment(index, {initializer, name: propName})
 }
