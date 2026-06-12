@@ -40,4 +40,11 @@ describe('deriveNames', () => {
     expect(() => deriveNames('app', 'list-releases')).toThrow(/camelCase/i)
     expect(() => deriveNames('app', '')).toThrow(/function/i)
   })
+
+  it('rejects a resource name that is neither camelCase nor kebab-case', () => {
+    expect(() => deriveNames('Foo', 'bar')).toThrow(/resource/i)
+    expect(() => deriveNames('foo_bar', 'baz')).toThrow(/resource/i)
+    expect(() => deriveNames('-foo', 'bar')).toThrow(/resource/i)
+    expect(() => deriveNames('Add-On', 'bar')).toThrow(/resource/i)
+  })
 })
