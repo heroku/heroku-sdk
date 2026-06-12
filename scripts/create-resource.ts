@@ -1,3 +1,5 @@
+import {parseArgs} from 'node:util'
+
 export type Names = {
   fnCamel: string
   fnKebab: string
@@ -46,5 +48,54 @@ export function deriveNames(resource: string, fn: string): Names {
     optsType: `${capitalize(fn)}Options`,
     resourceCamel,
     resourceKebab,
+  }
+}
+
+export type ServiceName = 'data' | 'platform'
+export type ParsedCli = {
+  force: boolean
+  functions: string[]
+  help: boolean
+  resource: string
+  service: ServiceName
+}
+
+const SERVICES: ReadonlySet<ServiceName> = new Set(['data', 'platform'])
+
+export function parseCli(argv: string[]): ParsedCli {
+  const {values} = parseArgs({
+    allowPositionals: false,
+    args: argv,
+    options: {
+      force: {default: false, type: 'boolean'},
+      function: {multiple: true, type: 'string'},
+      help: {short: 'h', type: 'boolean'},
+      resource: {type: 'string'},
+      service: {type: 'string'},
+    },
+    strict: true,
+  })
+
+  const help = Boolean(values.help)
+  if (help) {
+    return {force: false, functions: [], help: true, resource: '', service: 'platform'}
+  }
+
+  if (!values.service) throw new Error('missing required flag: --service')
+  if (!SERVICES.has(values.service as ServiceName)) {
+    throw new Error(`invalid --service: ${values.service} (expected: data | platform)`)
+  }
+
+  if (!values.resource) throw new Error('missing required flag: --resource')
+
+  const functions = (values.function as string[] | undefined) ?? []
+  if (functions.length === 0) throw new Error('missing required flag: --function (provide one or more)')
+
+  return {
+    force: Boolean(values.force),
+    functions,
+    help: false,
+    resource: values.resource,
+    service: values.service as ServiceName,
   }
 }
