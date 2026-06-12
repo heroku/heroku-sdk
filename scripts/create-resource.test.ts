@@ -1,6 +1,13 @@
 import {describe, expect, it} from 'vitest'
 
-import {deriveNames, parseCli} from './create-resource.js'
+import {
+  deriveNames,
+  parseCli,
+  renderResourceIndex,
+  renderResourceIndexTest,
+  renderVerbFile,
+  renderVerbTest,
+} from './create-resource.js'
 
 describe('deriveNames', () => {
   it('derives names for a single-word camelCase resource and function', () => {
@@ -107,5 +114,95 @@ describe('parseCli', () => {
     expect(() =>
       parseCli(['--service', 'platform', '--resource', 'app', '--function', 'd', '--bogus']),
     ).toThrow()
+  })
+})
+
+describe('renderVerbFile', () => {
+  it('renders the verb file template for a platform resource', () => {
+    const names = deriveNames('release', 'describe')
+    const out = renderVerbFile('platform', names)
+    expect(out).toBe(`import type {ResourceCtx} from '../../../core/extend-resource.js'
+
+export type DescribeOptions = {
+  signal?: AbortSignal
+}
+
+export async function describe(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  options: DescribeOptions = {},
+): Promise<unknown> {
+  options.signal?.throwIfAborted()
+  throw new Error('Not implemented: describe')
+}
+`)
+  })
+
+  it('uses the data service in the ctx pick when service is data', () => {
+    const names = deriveNames('database', 'describe')
+    expect(renderVerbFile('data', names)).toContain("Pick<ResourceCtx, 'data'>")
+  })
+})
+
+describe('renderVerbTest', () => {
+  it('renders the verb test template', () => {
+    const names = deriveNames('release', 'describe')
+    expect(renderVerbTest(names)).toBe(`import {describe as describeTest, expect, it} from 'vitest'
+
+import {describe} from './describe.js'
+
+describeTest('describe', () => {
+  it('throws until implemented', async () => {
+    const ctx = {data: {} as never, platform: {} as never}
+    await expect(describe(ctx, 'app-1')).rejects.toThrow('Not implemented')
+  })
+
+  it('respects an already-aborted signal', async () => {
+    const ctx = {data: {} as never, platform: {} as never}
+    const controller = new AbortController()
+    controller.abort()
+    await expect(describe(ctx, 'app-1', {signal: controller.signal})).rejects.toThrow()
+  })
+})
+`)
+  })
+})
+
+describe('renderResourceIndex', () => {
+  it('renders the resource index template', () => {
+    const names = deriveNames('release', 'describe')
+    expect(renderResourceIndex('platform', names)).toBe(`import {extendResource} from '../../../core/extend-resource.js'
+import {describe} from './describe.js'
+
+export {describe, type DescribeOptions} from './describe.js'
+
+export const releaseExtensions = extendResource('platform', 'release', ctx => ({
+  describe: (appIdentity: string, options?: DescribeOptions) =>
+    describe(ctx, appIdentity, options),
+}))
+`)
+  })
+})
+
+describe('renderResourceIndexTest', () => {
+  it('renders the resource index test template', () => {
+    const names = deriveNames('release', 'describe')
+    expect(renderResourceIndexTest('platform', names)).toBe(`import {describe, expect, it} from 'vitest'
+
+import {releaseExtensions} from './index.js'
+
+describe('release resource', () => {
+  it('releaseExtensions declares service: platform, resource: release', () => {
+    expect(releaseExtensions.service).toBe('platform')
+    expect(releaseExtensions.resource).toBe('release')
+  })
+
+  it('releaseExtensions factory exposes the expected methods', () => {
+    const ctx = {data: {} as never, platform: {} as never}
+    const methods = releaseExtensions.factory(ctx)
+    expect(typeof methods.describe).toBe('function')
+  })
+})
+`)
   })
 })

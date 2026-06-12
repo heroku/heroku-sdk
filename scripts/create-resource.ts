@@ -99,3 +99,75 @@ export function parseCli(argv: string[]): ParsedCli {
     service: values.service as ServiceName,
   }
 }
+
+export function renderVerbFile(service: ServiceName, names: Names): string {
+  return `import type {ResourceCtx} from '../../../core/extend-resource.js'
+
+export type ${names.optsType} = {
+  signal?: AbortSignal
+}
+
+export async function ${names.fnCamel}(
+  ctx: Pick<ResourceCtx, '${service}'>,
+  appIdentity: string,
+  options: ${names.optsType} = {},
+): Promise<unknown> {
+  options.signal?.throwIfAborted()
+  throw new Error('Not implemented: ${names.fnCamel}')
+}
+`
+}
+
+export function renderVerbTest(names: Names): string {
+  return `import {describe as describeTest, expect, it} from 'vitest'
+
+import {${names.fnCamel}} from './${names.fnKebab}.js'
+
+describeTest('${names.fnCamel}', () => {
+  it('throws until implemented', async () => {
+    const ctx = {data: {} as never, platform: {} as never}
+    await expect(${names.fnCamel}(ctx, 'app-1')).rejects.toThrow('Not implemented')
+  })
+
+  it('respects an already-aborted signal', async () => {
+    const ctx = {data: {} as never, platform: {} as never}
+    const controller = new AbortController()
+    controller.abort()
+    await expect(${names.fnCamel}(ctx, 'app-1', {signal: controller.signal})).rejects.toThrow()
+  })
+})
+`
+}
+
+export function renderResourceIndex(service: ServiceName, names: Names): string {
+  return `import {extendResource} from '../../../core/extend-resource.js'
+import {${names.fnCamel}} from './${names.fnKebab}.js'
+
+export {${names.fnCamel}, type ${names.optsType}} from './${names.fnKebab}.js'
+
+export const ${names.resourceCamel}Extensions = extendResource('${service}', '${names.resourceCamel}', ctx => ({
+  ${names.fnCamel}: (appIdentity: string, options?: ${names.optsType}) =>
+    ${names.fnCamel}(ctx, appIdentity, options),
+}))
+`
+}
+
+export function renderResourceIndexTest(service: ServiceName, names: Names): string {
+  return `import {describe, expect, it} from 'vitest'
+
+import {${names.resourceCamel}Extensions} from './index.js'
+
+describe('${names.resourceCamel} resource', () => {
+  it('${names.resourceCamel}Extensions declares service: ${service}, resource: ${names.resourceCamel}', () => {
+    expect(${names.resourceCamel}Extensions.service).toBe('${service}')
+    expect(${names.resourceCamel}Extensions.resource).toBe('${names.resourceCamel}')
+  })
+
+  it('${names.resourceCamel}Extensions factory exposes the expected methods', () => {
+    const ctx = {data: {} as never, platform: {} as never}
+    const methods = ${names.resourceCamel}Extensions.factory(ctx)
+    expect(typeof methods.${names.fnCamel}).toBe('function')
+  })
+})
+`
+}
