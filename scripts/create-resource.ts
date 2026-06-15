@@ -1,15 +1,32 @@
-import {existsSync, statSync} from 'node:fs'
+import {execFileSync} from 'node:child_process'
+import {
+  existsSync, mkdirSync, statSync, writeFileSync,
+} from 'node:fs'
 import path from 'node:path'
+import {pathToFileURL} from 'node:url'
 import {parseArgs} from 'node:util'
-
 import {
   IndentationText,
   type ObjectLiteralElementLike,
   type ObjectLiteralExpression,
+  Project,
+  type ProjectOptions,
   QuoteKind,
   type SourceFile,
   SyntaxKind,
 } from 'ts-morph'
+
+export function makeProject(opts: ProjectOptions = {}): Project {
+  return new Project({
+    ...opts,
+    manipulationSettings: {
+      indentationText: IndentationText.TwoSpaces,
+      insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces: false,
+      quoteKind: QuoteKind.Single,
+      ...opts.manipulationSettings,
+    },
+  })
+}
 
 export type Names = {
   fnCamel: string
@@ -89,7 +106,9 @@ export function parseCli(argv: string[]): ParsedCli {
 
   const help = Boolean(values.help)
   if (help) {
-    return {force: false, functions: [], help: true, resource: '', service: 'platform'}
+    return {
+      force: false, functions: [], help: true, resource: '', service: 'platform',
+    }
   }
 
   if (!values.service) throw new Error('missing required flag: --service')
@@ -203,9 +222,7 @@ export function inspectTarget(input: InspectInput): InspectResult {
   const resourceDir = path.join(serviceDir, names.resourceKebab)
 
   if (existsSync(singleFilePath) && statSync(singleFilePath).isFile()) {
-    throw new Error(
-      `convert single-file form to directory form first: ${path.relative(root, singleFilePath)}`,
-    )
+    throw new Error(`convert single-file form to directory form first: ${path.relative(root, singleFilePath)}`)
   }
 
   const resourceExists = existsSync(resourceDir) && statSync(resourceDir).isDirectory()
@@ -227,13 +244,6 @@ export function wireExistingResourceIndex(
   _service: ServiceName,
   names: Names,
 ): void {
-  // Match the project's existing source style (single quotes, no spaces around braces, 2-space indent).
-  sf.getProject().manipulationSettings.set({
-    indentationText: IndentationText.TwoSpaces,
-    insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces: false,
-    quoteKind: QuoteKind.Single,
-  })
-
   const moduleSpecifier = `./${names.fnKebab}.js`
   addNamedImport(sf, names.fnCamel, moduleSpecifier)
   addBarrelReexport(sf, names, moduleSpecifier)
@@ -332,4 +342,179 @@ function getPropertyName(p: ObjectLiteralElementLike): string | undefined {
   }
 
   return undefined
+}
+
+export function wireExtensionsBarrel(
+  sf: SourceFile,
+  service: ServiceName,
+  names: Names,
+): void {
+  const exportName = `${names.resourceCamel}Extensions`
+  const moduleSpecifier = `../${service}/${names.resourceKebab}/index.js`
+
+  const existing = sf.getExportDeclarations().find(d => {
+    const named = d.getNamedExports().map(n => n.getName())
+    return named.includes(exportName)
+  })
+  if (existing) return
+
+  const decls = sf.getExportDeclarations()
+  const insertBefore = decls.find(d => {
+    const first = d.getNamedExports()[0]?.getName() ?? ''
+    return first > exportName
+  })
+
+  const structure = {
+    moduleSpecifier,
+    namedExports: [{name: exportName}],
+  }
+
+  if (insertBefore) {
+    sf.insertExportDeclaration(insertBefore.getChildIndex(), structure)
+    return
+  }
+
+  sf.addExportDeclaration(structure)
+}
+
+const USAGE = `Usage: create-resource --service <platform|data> --resource <name> --function <name> [--function <name>...] [--force]
+
+Required:
+  --service   platform | data
+  --resource  resource name (camelCase or kebab-case)
+  --function  function name in camelCase (repeatable)
+
+Optional:
+  --force     overwrite existing verb files
+  -h, --help  show usage
+`
+
+type WriteAction = {action: 'create' | 'overwrite'; contents: string; path: string}
+
+export async function main(argv: string[], root: string = process.cwd()): Promise<number> {
+  let cli: ParsedCli
+  try {
+    cli = parseCli(argv)
+  } catch (error) {
+    process.stderr.write(`${(error as Error).message}\n\n${USAGE}`)
+    return 1
+  }
+
+  if (cli.help) {
+    process.stdout.write(USAGE)
+    return 0
+  }
+
+  const resourceNames = deriveNames(cli.resource, cli.functions[0])
+  let inspection
+  try {
+    inspection = inspectTarget({
+      functions: cli.functions,
+      names: resourceNames,
+      root,
+      service: cli.service,
+    })
+  } catch (error) {
+    process.stderr.write(`error: ${(error as Error).message}\n`)
+    return 1
+  }
+
+  if (inspection.conflicts.length > 0 && !cli.force) {
+    process.stderr.write(`error: target file(s) already exist (use --force to overwrite):\n  - ${inspection.conflicts.join('\n  - ')}\n`)
+    return 1
+  }
+
+  const writes: WriteAction[] = []
+  const resourceDir = path.join(root, 'src', 'resources', cli.service, resourceNames.resourceKebab)
+
+  for (const fn of cli.functions) {
+    const fnNames = deriveNames(cli.resource, fn)
+    const verbPath = path.join(resourceDir, `${fnNames.fnKebab}.ts`)
+    const verbTestPath = path.join(resourceDir, `${fnNames.fnKebab}.test.ts`)
+    const exists = inspection.conflicts.includes(path.relative(root, verbPath))
+    writes.push(
+      {
+        action: exists ? 'overwrite' : 'create',
+        contents: renderVerbFile(cli.service, fnNames),
+        path: verbPath,
+      },
+      {
+        action: exists ? 'overwrite' : 'create',
+        contents: renderVerbTest(fnNames),
+        path: verbTestPath,
+      },
+    )
+  }
+
+  if (!inspection.resourceExists) {
+    writes.push(
+      {
+        action: 'create',
+        contents: renderResourceIndex(cli.service, resourceNames),
+        path: path.join(resourceDir, 'index.ts'),
+      },
+      {
+        action: 'create',
+        contents: renderResourceIndexTest(cli.service, resourceNames),
+        path: path.join(resourceDir, 'index.test.ts'),
+      },
+    )
+  }
+
+  // Apply file writes.
+  mkdirSync(resourceDir, {recursive: true})
+  for (const w of writes) {
+    writeFileSync(w.path, w.contents)
+  }
+
+  // ts-morph edits to existing files.
+  const morphFiles: string[] = []
+  if (inspection.resourceExists) {
+    const indexPath = path.join(resourceDir, 'index.ts')
+    const project = makeProject({skipFileDependencyResolution: true})
+    const sf = project.addSourceFileAtPath(indexPath)
+    for (const fn of cli.functions) {
+      wireExistingResourceIndex(sf, cli.service, deriveNames(cli.resource, fn))
+    }
+
+    sf.saveSync()
+    morphFiles.push(indexPath)
+  } else {
+    const barrelPath = path.join(root, 'src', 'resources', 'extensions', `${cli.service}.ts`)
+    const project = makeProject({skipFileDependencyResolution: true})
+    const sf = project.addSourceFileAtPath(barrelPath)
+    wireExtensionsBarrel(sf, cli.service, resourceNames)
+    sf.saveSync()
+    morphFiles.push(barrelPath)
+  }
+
+  // Lint touched files (non-fatal).
+  const lintTargets = [...writes.map(w => w.path), ...morphFiles]
+  try {
+    execFileSync('npx', ['eslint', '--fix', ...lintTargets], {cwd: root, stdio: 'inherit'})
+  } catch {
+    process.stderr.write('warning: eslint --fix reported issues (files left in place)\n')
+  }
+
+  // Summary.
+  process.stdout.write('\nCreated/updated files:\n')
+  for (const w of writes) {
+    process.stdout.write(`  ${w.action === 'create' ? '+' : '~'} ${path.relative(root, w.path)}\n`)
+  }
+
+  for (const f of morphFiles) {
+    process.stdout.write(`  ~ ${path.relative(root, f)}\n`)
+  }
+
+  process.stdout.write('\nNext: implement each function — they currently throw "Not implemented".\n')
+  return 0
+}
+
+const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+if (isMain) {
+  // eslint-disable-next-line unicorn/prefer-top-level-await
+  main(process.argv.slice(2)).then(code => {
+    // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
+    process.exit(code)
+  })
 }

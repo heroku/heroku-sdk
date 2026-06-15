@@ -1,19 +1,22 @@
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {
+  mkdirSync, mkdtempSync, rmSync, writeFileSync,
+} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-
-import {Project} from 'ts-morph'
+import {SyntaxKind} from 'ts-morph'
 import {describe, expect, it} from 'vitest'
 
 import {
   deriveNames,
   inspectTarget,
+  makeProject,
   parseCli,
   renderResourceIndex,
   renderResourceIndexTest,
   renderVerbFile,
   renderVerbTest,
   wireExistingResourceIndex,
+  wireExtensionsBarrel,
 } from './create-resource.js'
 
 function makeFixture(): string {
@@ -80,19 +83,26 @@ describe('parseCli', () => {
 
   it('accepts repeated --function flags', () => {
     const result = parseCli([
-      '--service', 'platform',
-      '--resource', 'app',
-      '--function', 'describe',
-      '--function', 'listReleases',
+      '--service',
+      'platform',
+      '--resource',
+      'app',
+      '--function',
+      'describe',
+      '--function',
+      'listReleases',
     ])
     expect(result.functions).toEqual(['describe', 'listReleases'])
   })
 
   it('accepts --force as a boolean flag', () => {
     const result = parseCli([
-      '--service', 'platform',
-      '--resource', 'app',
-      '--function', 'describe',
+      '--service',
+      'platform',
+      '--resource',
+      'app',
+      '--function',
+      'describe',
       '--force',
     ])
     expect(result.force).toBe(true)
@@ -105,8 +115,7 @@ describe('parseCli', () => {
 
   it('rejects an invalid --service value', () => {
     expect(() =>
-      parseCli(['--service', 'billing', '--resource', 'app', '--function', 'describe']),
-    ).toThrow(/service/i)
+      parseCli(['--service', 'billing', '--resource', 'app', '--function', 'describe'])).toThrow(/service/i)
   })
 
   it('rejects missing --service when not asking for help', () => {
@@ -123,8 +132,7 @@ describe('parseCli', () => {
 
   it('rejects unknown flags', () => {
     expect(() =>
-      parseCli(['--service', 'platform', '--resource', 'app', '--function', 'd', '--bogus']),
-    ).toThrow()
+      parseCli(['--service', 'platform', '--resource', 'app', '--function', 'd', '--bogus'])).toThrow()
   })
 })
 
@@ -231,7 +239,7 @@ describe('inspectTarget', () => {
       })
       expect(result).toEqual({conflicts: [], resourceExists: false, resourceForm: 'dir'})
     } finally {
-      rmSync(root, {recursive: true, force: true})
+      rmSync(root, {force: true, recursive: true})
     }
   })
 
@@ -248,7 +256,7 @@ describe('inspectTarget', () => {
       })
       expect(result).toEqual({conflicts: [], resourceExists: true, resourceForm: 'dir'})
     } finally {
-      rmSync(root, {recursive: true, force: true})
+      rmSync(root, {force: true, recursive: true})
     }
   })
 
@@ -263,10 +271,9 @@ describe('inspectTarget', () => {
           names: deriveNames('maintenance', 'info'),
           root,
           service: 'data',
-        }),
-      ).toThrow(/single-file form/)
+        })).toThrow(/single-file form/)
     } finally {
-      rmSync(root, {recursive: true, force: true})
+      rmSync(root, {force: true, recursive: true})
     }
   })
 
@@ -284,7 +291,7 @@ describe('inspectTarget', () => {
       })
       expect(result.conflicts).toEqual(['src/resources/platform/app/describe.ts'])
     } finally {
-      rmSync(root, {recursive: true, force: true})
+      rmSync(root, {force: true, recursive: true})
     }
   })
 })
@@ -301,7 +308,7 @@ export const appExtensions = extendResource('platform', 'app', ctx => ({
 `
 
 function loadIndex(text: string) {
-  const project = new Project({useInMemoryFileSystem: true})
+  const project = makeProject({useInMemoryFileSystem: true})
   return project.createSourceFile('index.ts', text)
 }
 
@@ -340,9 +347,7 @@ describe('wireExistingResourceIndex', () => {
   it('throws if the file does not contain an extendResource call', () => {
     const sf = loadIndex(`export const x = 1
 `)
-    expect(() => wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'describe'))).toThrow(
-      /extendResource/,
-    )
+    expect(() => wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'describe'))).toThrow(/extendResource/)
   })
 
   it('skips when the function is already wired', () => {
@@ -350,10 +355,21 @@ describe('wireExistingResourceIndex', () => {
     wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'describe'))
     const exports = sf.getExportDeclarations().filter(d => d.getModuleSpecifierValue() === './describe.js')
     expect(exports.length).toBe(1)
+    const imports = sf.getImportDeclarations().filter(d => d.getModuleSpecifierValue() === './describe.js')
+    expect(imports.length).toBe(1)
+    const callExpr = sf.getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find(c => c.getExpression().getText() === 'extendResource')!
+    const arrow = callExpr.getArguments()[2].asKindOrThrow(SyntaxKind.ArrowFunction)
+    const objLit = arrow.getBody()
+      .asKindOrThrow(SyntaxKind.ParenthesizedExpression)
+      .getExpression()
+      .asKindOrThrow(SyntaxKind.ObjectLiteralExpression)
+    const describeProps = objLit.getProperties().filter(p => p.isKind(SyntaxKind.PropertyAssignment) && p.getName() === 'describe')
+    expect(describeProps.length).toBe(1)
   })
 
   it('inserts alphabetically among shorthand property siblings', () => {
-    const project = new Project({useInMemoryFileSystem: true})
+    const project = makeProject({useInMemoryFileSystem: true})
     const sf = project.createSourceFile('shorthand-index.ts', `import {extendResource} from '../../../core/extend-resource.js'
 import {formatPlanPriceLabel} from './pricing.js'
 import {priceForPlan} from './pricing.js'
@@ -370,5 +386,36 @@ export const sampleExtensions = extendResource('platform', 'sample', ctx => ({
     // don't accidentally match their import declarations above the bundle.
     expect(text.indexOf('formatPlanPriceLabel,')).toBeLessThan(text.indexOf('patch:'))
     expect(text.indexOf('patch:')).toBeLessThan(text.indexOf('priceForPlan,'))
+  })
+})
+
+const SAMPLE_BARREL = `export {addOnExtensions} from '../platform/add-on/index.js'
+export {appExtensions} from '../platform/app/index.js'
+`
+
+describe('wireExtensionsBarrel', () => {
+  it('inserts a new export in alphabetical order', () => {
+    const project = makeProject({useInMemoryFileSystem: true})
+    const sf = project.createSourceFile('platform.ts', SAMPLE_BARREL)
+    wireExtensionsBarrel(sf, 'platform', deriveNames('release', 'describe'))
+    const out = sf.getFullText()
+    expect(out).toContain("export {releaseExtensions} from '../platform/release/index.js'")
+    expect(out.indexOf('appExtensions')).toBeLessThan(out.indexOf('releaseExtensions'))
+  })
+
+  it('inserts before alphabetically-greater siblings', () => {
+    const project = makeProject({useInMemoryFileSystem: true})
+    const sf = project.createSourceFile('platform.ts', SAMPLE_BARREL)
+    wireExtensionsBarrel(sf, 'platform', deriveNames('account', 'info'))
+    const out = sf.getFullText()
+    expect(out.indexOf('accountExtensions')).toBeLessThan(out.indexOf('addOnExtensions'))
+  })
+
+  it('skips when the resource is already exported', () => {
+    const project = makeProject({useInMemoryFileSystem: true})
+    const sf = project.createSourceFile('platform.ts', SAMPLE_BARREL)
+    wireExtensionsBarrel(sf, 'platform', deriveNames('app', 'describe'))
+    const matches = sf.getFullText().match(/appExtensions/g) ?? []
+    expect(matches.length).toBe(1)
   })
 })
