@@ -358,6 +358,7 @@ export function wireExtensionsBarrel(
   })
   if (existing) return
 
+  // Best-effort alphabetical insertion; eslint --fix sorts exports later.
   const decls = sf.getExportDeclarations()
   const insertBefore = decls.find(d => {
     const first = d.getNamedExports()[0]?.getName() ?? ''
@@ -513,8 +514,15 @@ export async function main(argv: string[], root: string = process.cwd()): Promis
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
 if (isMain) {
   // eslint-disable-next-line unicorn/prefer-top-level-await
-  main(process.argv.slice(2)).then(code => {
-    // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
-    process.exit(code)
-  })
+  main(process.argv.slice(2))
+    .then(code => {
+      // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
+      process.exit(code)
+    })
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err)
+      process.stderr.write(`fatal: ${message}\n`)
+      // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
+      process.exit(1)
+    })
 }
