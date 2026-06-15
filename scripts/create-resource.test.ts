@@ -351,4 +351,24 @@ describe('wireExistingResourceIndex', () => {
     const exports = sf.getExportDeclarations().filter(d => d.getModuleSpecifierValue() === './describe.js')
     expect(exports.length).toBe(1)
   })
+
+  it('inserts alphabetically among shorthand property siblings', () => {
+    const project = new Project({useInMemoryFileSystem: true})
+    const sf = project.createSourceFile('shorthand-index.ts', `import {extendResource} from '../../../core/extend-resource.js'
+import {formatPlanPriceLabel} from './pricing.js'
+import {priceForPlan} from './pricing.js'
+
+export const sampleExtensions = extendResource('platform', 'sample', ctx => ({
+  formatPlanPriceLabel,
+  priceForPlan,
+}))
+`)
+    wireExistingResourceIndex(sf, 'platform', deriveNames('sample', 'patch'))
+    const text = sf.getFullText()
+    // patch should sort between formatPlanPriceLabel and priceForPlan in the bundle body.
+    // Match the shorthand siblings as they appear in the bundle (with trailing comma) so we
+    // don't accidentally match their import declarations above the bundle.
+    expect(text.indexOf('formatPlanPriceLabel,')).toBeLessThan(text.indexOf('patch:'))
+    expect(text.indexOf('patch:')).toBeLessThan(text.indexOf('priceForPlan,'))
+  })
 })

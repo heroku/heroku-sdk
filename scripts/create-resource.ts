@@ -4,6 +4,7 @@ import {parseArgs} from 'node:util'
 
 import {
   IndentationText,
+  type ObjectLiteralElementLike,
   type ObjectLiteralExpression,
   QuoteKind,
   type SourceFile,
@@ -316,11 +317,19 @@ function addBundleProperty(sf: SourceFile, names: Names): void {
     + `${names.fnCamel}(ctx, appIdentity, options)`
 
   const properties = objLit.getProperties()
-  const insertAt = properties.findIndex(
-    p => p.getKind() === SyntaxKind.PropertyAssignment
-      && (p.asKindOrThrow(SyntaxKind.PropertyAssignment).getName() ?? '') > propName,
-  )
+  const insertAt = properties.findIndex(p => {
+    const name = getPropertyName(p)
+    return name !== undefined && name > propName
+  })
 
   const index = insertAt === -1 ? properties.length : insertAt
   objLit.insertPropertyAssignment(index, {initializer, name: propName})
+}
+
+function getPropertyName(p: ObjectLiteralElementLike): string | undefined {
+  if (p.isKind(SyntaxKind.PropertyAssignment) || p.isKind(SyntaxKind.ShorthandPropertyAssignment)) {
+    return p.getName()
+  }
+
+  return undefined
 }
