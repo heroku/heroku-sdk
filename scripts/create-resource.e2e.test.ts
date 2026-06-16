@@ -1,0 +1,138 @@
+import {execFileSync, spawnSync} from 'node:child_process'
+import {
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync,
+} from 'node:fs'
+import {tmpdir} from 'node:os'
+import path from 'node:path'
+import {fileURLToPath} from 'node:url'
+
+import {afterEach, beforeEach, describe, expect, it} from 'vitest'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = path.resolve(HERE, '..')
+const SCRIPT_PATH = path.join(REPO_ROOT, 'scripts', 'create-resource.ts')
+
+let workDir: string
+
+function stageFixture(): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'create-resource-e2e-'))
+  // Copy core/ so generated files can resolve `../../../core/extend-resource.js`.
+  cpSync(
+    path.join(REPO_ROOT, 'src', 'core'),
+    path.join(dir, 'src', 'core'),
+    {recursive: true},
+  )
+  cpSync(
+    path.join(REPO_ROOT, 'src', 'services'),
+    path.join(dir, 'src', 'services'),
+    {recursive: true},
+  )
+  // Symlink node_modules so module resolution works for `@heroku/types`,
+  // `@heroku/heroku-fetch`, vitest, and friends inside the temp tree.
+  symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(dir, 'node_modules'), 'dir')
+  // Empty resource trees plus a barrel for each service.
+  mkdirSync(path.join(dir, 'src', 'resources', 'extensions'), {recursive: true})
+  writeFileSync(path.join(dir, 'src', 'resources', 'extensions', 'platform.ts'), '')
+  writeFileSync(path.join(dir, 'src', 'resources', 'extensions', 'data.ts'), '')
+  // Stub package.json so `npx eslint` and `tsc` look in REPO_ROOT instead.
+  writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}')
+  // Minimal tsconfig used for `tsc --noEmit`.
+  writeFileSync(
+    path.join(dir, 'tsconfig.json'),
+    JSON.stringify({
+      compilerOptions: {
+        esModuleInterop: true,
+        lib: ['ES2022', 'DOM'],
+        module: 'ES2022',
+        moduleResolution: 'bundler',
+        noEmit: true,
+        skipLibCheck: true,
+        strict: true,
+        target: 'ES2022',
+      },
+      exclude: ['node_modules', '**/*.test.ts'],
+      include: ['src/**/*.ts'],
+    }, null, 2),
+  )
+  return dir
+}
+
+function runScript(args: string[], cwd: string) {
+  return spawnSync('npx', ['tsx', SCRIPT_PATH, ...args, '--no-lint'], {
+    cwd,
+    encoding: 'utf8',
+    env: {...process.env, CREATE_RESOURCE_NO_LINT: '1'},
+  })
+}
+
+beforeEach(() => {
+  workDir = stageFixture()
+})
+
+afterEach(() => {
+  rmSync(workDir, {force: true, recursive: true})
+})
+
+describe('create-resource (e2e)', () => {
+  it('scaffolds a brand-new resource', () => {
+    const r = runScript(
+      ['--service', 'platform', '--resource', 'release', '--function', 'describe'],
+      workDir,
+    )
+    expect(r.status, r.stderr).toBe(0)
+
+    const verbPath = path.join(workDir, 'src/resources/platform/release/describe.ts')
+    const indexPath = path.join(workDir, 'src/resources/platform/release/index.ts')
+    const barrelPath = path.join(workDir, 'src/resources/extensions/platform.ts')
+
+    expect(existsSync(verbPath)).toBe(true)
+    expect(existsSync(indexPath)).toBe(true)
+    expect(readFileSync(barrelPath, 'utf8')).toContain(
+      "export {releaseExtensions} from '../platform/release/index.js'",
+    )
+
+    // Resulting tree must type-check.
+    execFileSync('npx', ['tsc', '--noEmit', '-p', workDir], {
+      cwd: REPO_ROOT,
+      stdio: 'inherit',
+    })
+  })
+
+  it('adds a function to an existing resource', () => {
+    runScript(
+      ['--service', 'platform', '--resource', 'release', '--function', 'describe'],
+      workDir,
+    )
+    const r = runScript(
+      ['--service', 'platform', '--resource', 'release', '--function', 'archive'],
+      workDir,
+    )
+    expect(r.status, r.stderr).toBe(0)
+
+    const indexText = readFileSync(
+      path.join(workDir, 'src/resources/platform/release/index.ts'),
+      'utf8',
+    )
+    expect(indexText).toContain('archive:')
+    expect(indexText).toContain('describe:')
+    expect(indexText.indexOf('archive:')).toBeLessThan(indexText.indexOf('describe:'))
+
+    execFileSync('npx', ['tsc', '--noEmit', '-p', workDir], {
+      cwd: REPO_ROOT,
+      stdio: 'inherit',
+    })
+  })
+
+  it('refuses to overwrite without --force', () => {
+    runScript(
+      ['--service', 'platform', '--resource', 'release', '--function', 'describe'],
+      workDir,
+    )
+    const r = runScript(
+      ['--service', 'platform', '--resource', 'release', '--function', 'describe'],
+      workDir,
+    )
+    expect(r.status).toBe(1)
+    expect(r.stderr).toMatch(/already exist/)
+  })
+})

@@ -76,6 +76,7 @@ describe('parseCli', () => {
       force: false,
       functions: ['describe'],
       help: false,
+      noLint: false,
       resource: 'app',
       service: 'platform',
     })
@@ -191,7 +192,7 @@ describe('renderResourceIndex', () => {
   it('renders the resource index template', () => {
     const names = deriveNames('release', 'describe')
     expect(renderResourceIndex('platform', names)).toBe(`import {extendResource} from '../../../core/extend-resource.js'
-import {describe} from './describe.js'
+import {describe, type DescribeOptions} from './describe.js'
 
 export {describe, type DescribeOptions} from './describe.js'
 
@@ -297,7 +298,7 @@ describe('inspectTarget', () => {
 })
 
 const SAMPLE_INDEX = `import {extendResource} from '../../../core/extend-resource.js'
-import {describe} from './describe.js'
+import {describe, type DescribeOptions} from './describe.js'
 
 export {describe, type DescribeOptions} from './describe.js'
 
@@ -316,7 +317,7 @@ describe('wireExistingResourceIndex', () => {
   it('adds an import for the new verb file', () => {
     const sf = loadIndex(SAMPLE_INDEX)
     wireExistingResourceIndex(sf, 'platform', deriveNames('app', 'listReleases'))
-    expect(sf.getFullText()).toContain("import {listReleases} from './list-releases.js'")
+    expect(sf.getFullText()).toContain("import {listReleases, type ListReleasesOptions} from './list-releases.js'")
   })
 
   it('adds a re-export for the new verb file in alphabetical order', () => {

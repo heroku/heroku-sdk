@@ -84,6 +84,7 @@ export type ParsedCli = {
   force: boolean
   functions: string[]
   help: boolean
+  noLint: boolean
   resource: string
   service: ServiceName
 }
@@ -98,6 +99,7 @@ export function parseCli(argv: string[]): ParsedCli {
       force: {default: false, type: 'boolean'},
       function: {multiple: true, type: 'string'},
       help: {short: 'h', type: 'boolean'},
+      'no-lint': {default: false, type: 'boolean'},
       resource: {type: 'string'},
       service: {type: 'string'},
     },
@@ -107,7 +109,7 @@ export function parseCli(argv: string[]): ParsedCli {
   const help = Boolean(values.help)
   if (help) {
     return {
-      force: false, functions: [], help: true, resource: '', service: 'platform',
+      force: false, functions: [], help: true, noLint: false, resource: '', service: 'platform',
     }
   }
 
@@ -125,6 +127,7 @@ export function parseCli(argv: string[]): ParsedCli {
     force: Boolean(values.force),
     functions,
     help: false,
+    noLint: Boolean(values['no-lint']),
     resource: values.resource,
     service: values.service as ServiceName,
   }
@@ -171,7 +174,7 @@ describeTest('${names.fnCamel}', () => {
 
 export function renderResourceIndex(service: ServiceName, names: Names): string {
   return `import {extendResource} from '../../../core/extend-resource.js'
-import {${names.fnCamel}} from './${names.fnKebab}.js'
+import {${names.fnCamel}, type ${names.optsType}} from './${names.fnKebab}.js'
 
 export {${names.fnCamel}, type ${names.optsType}} from './${names.fnKebab}.js'
 
@@ -245,23 +248,28 @@ export function wireExistingResourceIndex(
   names: Names,
 ): void {
   const moduleSpecifier = `./${names.fnKebab}.js`
-  addNamedImport(sf, names.fnCamel, moduleSpecifier)
+  addNamedImport(sf, moduleSpecifier, {name: names.fnCamel})
+  addNamedImport(sf, moduleSpecifier, {isTypeOnly: true, name: names.optsType})
   addBarrelReexport(sf, names, moduleSpecifier)
   addBundleProperty(sf, names)
 }
 
-function addNamedImport(sf: SourceFile, name: string, moduleSpecifier: string): void {
+function addNamedImport(
+  sf: SourceFile,
+  moduleSpecifier: string,
+  spec: {isTypeOnly?: boolean; name: string},
+): void {
   const existing = sf.getImportDeclaration(d => d.getModuleSpecifierValue() === moduleSpecifier)
   if (existing) {
-    if (!existing.getNamedImports().some(n => n.getName() === name)) {
-      existing.addNamedImport(name)
+    if (!existing.getNamedImports().some(n => n.getName() === spec.name)) {
+      existing.addNamedImport(spec)
     }
 
     return
   }
 
   // eslint --fix sorts imports later, so insertion order doesn't matter.
-  sf.addImportDeclaration({moduleSpecifier, namedImports: [name]})
+  sf.addImportDeclaration({moduleSpecifier, namedImports: [spec]})
 }
 
 function addBarrelReexport(sf: SourceFile, names: Names, moduleSpecifier: string): void {
@@ -387,6 +395,7 @@ Required:
 
 Optional:
   --force     overwrite existing verb files
+  --no-lint   skip eslint --fix on generated files
   -h, --help  show usage
 `
 
@@ -490,11 +499,14 @@ export async function main(argv: string[], root: string = process.cwd()): Promis
   }
 
   // Lint touched files (non-fatal).
-  const lintTargets = [...writes.map(w => w.path), ...morphFiles]
-  try {
-    execFileSync('npx', ['eslint', '--fix', ...lintTargets], {cwd: root, stdio: 'inherit'})
-  } catch {
-    process.stderr.write('warning: eslint --fix reported issues (files left in place)\n')
+  const skipLint = cli.noLint || process.env.CREATE_RESOURCE_NO_LINT === '1'
+  if (!skipLint) {
+    const lintTargets = [...writes.map(w => w.path), ...morphFiles]
+    try {
+      execFileSync('npx', ['eslint', '--fix', ...lintTargets], {cwd: root, stdio: 'inherit'})
+    } catch {
+      process.stderr.write('warning: eslint --fix reported issues (files left in place)\n')
+    }
   }
 
   // Summary.
