@@ -14,7 +14,10 @@ import {
   QuoteKind,
   type SourceFile,
   SyntaxKind,
+  ts,
 } from 'ts-morph'
+
+const REMOVE_SEMICOLONS = {semicolons: ts.SemicolonPreference.Remove} as const
 
 export function makeProject(opts: ProjectOptions = {}): Project {
   return new Project({
@@ -252,6 +255,9 @@ export function wireExistingResourceIndex(
   addNamedImport(sf, moduleSpecifier, {isTypeOnly: true, name: names.optsType})
   addBarrelReexport(sf, names, moduleSpecifier)
   addBundleProperty(sf, names)
+  // ts-morph's printer appends `;` to inserted import/export declarations;
+  // re-format with SemicolonPreference.Remove to match the file's no-semi style.
+  sf.formatText(REMOVE_SEMICOLONS)
 }
 
 function addNamedImport(
@@ -380,10 +386,13 @@ export function wireExtensionsBarrel(
 
   if (insertBefore) {
     sf.insertExportDeclaration(insertBefore.getChildIndex(), structure)
-    return
+  } else {
+    sf.addExportDeclaration(structure)
   }
 
-  sf.addExportDeclaration(structure)
+  // ts-morph's printer appends `;` to inserted export declarations;
+  // re-format with SemicolonPreference.Remove to match the file's no-semi style.
+  sf.formatText(REMOVE_SEMICOLONS)
 }
 
 const USAGE = `Usage: create-resource --service <platform|data> --resource <name> --function <name> [--function <name>...] [--force] [--no-lint]
