@@ -260,6 +260,40 @@ export function wireExistingResourceIndex(
   sf.formatText(REMOVE_SEMICOLONS)
 }
 
+export function wireExistingResourceIndexTest(sf: SourceFile, names: Names): void {
+  const factoryIt = sf.getDescendantsOfKind(SyntaxKind.CallExpression).find(c => {
+    if (c.getExpression().getText() !== 'it') return false
+    const firstArg = c.getArguments()[0]
+    if (!firstArg?.isKind(SyntaxKind.StringLiteral)) return false
+    return firstArg.getLiteralValue().includes('factory exposes the expected methods')
+  })
+  if (!factoryIt) {
+    throw new Error('could not find the "factory exposes the expected methods" it() block')
+  }
+
+  const arrowArg = factoryIt.getArguments()[1]
+  const arrow = arrowArg?.asKindOrThrow(SyntaxKind.ArrowFunction)
+  if (!arrow) {
+    throw new Error('expected an arrow-function body for the factory it() block')
+  }
+
+  const block = arrow.getBody().asKindOrThrow(SyntaxKind.Block)
+  const expectStmt = `expect(typeof methods.${names.fnCamel}).toBe('function')`
+
+  // Skip if already asserted (e.g., re-running on the same file).
+  if (block.getText().includes(`methods.${names.fnCamel}`)) return
+
+  // Insert in alphabetical order among existing `expect(typeof methods.X)` lines.
+  const statements = block.getStatements()
+  const expectIdx = statements.findIndex(s => {
+    const m = s.getText().match(/methods\.([A-Za-z0-9_]+)/)
+    return m !== undefined && m !== null && m[1] > names.fnCamel
+  })
+
+  const insertAt = expectIdx === -1 ? statements.length : expectIdx
+  block.insertStatements(insertAt, expectStmt)
+}
+
 function addNamedImport(
   sf: SourceFile,
   moduleSpecifier: string,
@@ -410,6 +444,55 @@ Optional:
 
 type WriteAction = {action: 'create' | 'overwrite'; contents: string; path: string}
 
+function wireFunctionsIntoExistingIndex(
+  cli: Pick<ParsedCli, 'functions' | 'resource' | 'service'>,
+  resourceDir: string,
+): string[] {
+  const indexPath = path.join(resourceDir, 'index.ts')
+  const project = makeProject({skipFileDependencyResolution: true})
+  const sf = project.addSourceFileAtPath(indexPath)
+  for (const fn of cli.functions) {
+    wireExistingResourceIndex(sf, cli.service, deriveNames(cli.resource, fn))
+  }
+
+  sf.saveSync()
+  return [indexPath]
+}
+
+function wireBrandNewResource(
+  cli: Pick<ParsedCli, 'functions' | 'resource' | 'service'>,
+  root: string,
+  resourceDir: string,
+  resourceNames: Names,
+): string[] {
+  const barrelPath = path.join(root, 'src', 'resources', 'extensions', `${cli.service}.ts`)
+  const project = makeProject({skipFileDependencyResolution: true})
+  const barrelSf = project.addSourceFileAtPath(barrelPath)
+  wireExtensionsBarrel(barrelSf, cli.service, resourceNames)
+  barrelSf.saveSync()
+
+  // The renderer baked the first function into index.ts and index.test.ts;
+  // wire the remaining functions in via ts-morph so multi-function new
+  // resources don't silently drop functions 2..N.
+  const extraFns = cli.functions.slice(1)
+  if (extraFns.length === 0) return [barrelPath]
+
+  const indexPath = path.join(resourceDir, 'index.ts')
+  const indexTestPath = path.join(resourceDir, 'index.test.ts')
+  const indexProject = makeProject({skipFileDependencyResolution: true})
+  const indexSf = indexProject.addSourceFileAtPath(indexPath)
+  const indexTestSf = indexProject.addSourceFileAtPath(indexTestPath)
+  for (const fn of extraFns) {
+    const fnNames = deriveNames(cli.resource, fn)
+    wireExistingResourceIndex(indexSf, cli.service, fnNames)
+    wireExistingResourceIndexTest(indexTestSf, fnNames)
+  }
+
+  indexSf.saveSync()
+  indexTestSf.saveSync()
+  return [barrelPath]
+}
+
 export async function main(argv: string[], root: string = process.cwd()): Promise<number> {
   let cli: ParsedCli
   try {
@@ -487,25 +570,9 @@ export async function main(argv: string[], root: string = process.cwd()): Promis
   }
 
   // ts-morph edits to existing files.
-  const morphFiles: string[] = []
-  if (inspection.resourceExists) {
-    const indexPath = path.join(resourceDir, 'index.ts')
-    const project = makeProject({skipFileDependencyResolution: true})
-    const sf = project.addSourceFileAtPath(indexPath)
-    for (const fn of cli.functions) {
-      wireExistingResourceIndex(sf, cli.service, deriveNames(cli.resource, fn))
-    }
-
-    sf.saveSync()
-    morphFiles.push(indexPath)
-  } else {
-    const barrelPath = path.join(root, 'src', 'resources', 'extensions', `${cli.service}.ts`)
-    const project = makeProject({skipFileDependencyResolution: true})
-    const sf = project.addSourceFileAtPath(barrelPath)
-    wireExtensionsBarrel(sf, cli.service, resourceNames)
-    sf.saveSync()
-    morphFiles.push(barrelPath)
-  }
+  const morphFiles: string[] = inspection.resourceExists
+    ? wireFunctionsIntoExistingIndex(cli, resourceDir)
+    : wireBrandNewResource(cli, root, resourceDir, resourceNames)
 
   // Lint touched files (non-fatal).
   const skipLint = cli.noLint || process.env.CREATE_RESOURCE_NO_LINT === '1'
@@ -534,16 +601,13 @@ export async function main(argv: string[], root: string = process.cwd()): Promis
 
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
 if (isMain) {
-  // eslint-disable-next-line unicorn/prefer-top-level-await
-  main(process.argv.slice(2))
-    .then(code => {
-      // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
-      process.exit(code)
-    })
-    .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err)
-      process.stderr.write(`fatal: ${message}\n`)
-      // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
-      process.exit(1)
-    })
+  try {
+    // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
+    process.exit(await main(process.argv.slice(2)))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`fatal: ${message}\n`)
+    // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
+    process.exit(1)
+  }
 }

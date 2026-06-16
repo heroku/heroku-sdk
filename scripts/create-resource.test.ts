@@ -1,5 +1,5 @@
 import {
-  mkdirSync, mkdtempSync, rmSync, writeFileSync,
+  mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -9,6 +9,7 @@ import {describe, expect, it} from 'vitest'
 import {
   deriveNames,
   inspectTarget,
+  main,
   makeProject,
   parseCli,
   renderResourceIndex,
@@ -16,6 +17,7 @@ import {
   renderVerbFile,
   renderVerbTest,
   wireExistingResourceIndex,
+  wireExistingResourceIndexTest,
   wireExtensionsBarrel,
 } from './create-resource.js'
 
@@ -418,5 +420,89 @@ describe('wireExtensionsBarrel', () => {
     wireExtensionsBarrel(sf, 'platform', deriveNames('app', 'describe'))
     const matches = sf.getFullText().match(/appExtensions/g) ?? []
     expect(matches.length).toBe(1)
+  })
+})
+
+const SAMPLE_INDEX_TEST = renderResourceIndexTest('platform', deriveNames('release', 'describe'))
+
+describe('wireExistingResourceIndexTest', () => {
+  it("adds an expect(typeof methods.<fn>).toBe('function') line for the new function", () => {
+    const project = makeProject({useInMemoryFileSystem: true})
+    const sf = project.createSourceFile('index.test.ts', SAMPLE_INDEX_TEST)
+    wireExistingResourceIndexTest(sf, deriveNames('release', 'listItems'))
+    const text = sf.getFullText()
+    expect(text).toContain("expect(typeof methods.describe).toBe('function')")
+    expect(text).toContain("expect(typeof methods.listItems).toBe('function')")
+    // Alphabetical order: describe before listItems.
+    expect(text.indexOf('methods.describe')).toBeLessThan(text.indexOf('methods.listItems'))
+  })
+
+  it('inserts a new assertion before alphabetically-greater siblings', () => {
+    const project = makeProject({useInMemoryFileSystem: true})
+    const sf = project.createSourceFile('index.test.ts', SAMPLE_INDEX_TEST)
+    wireExistingResourceIndexTest(sf, deriveNames('release', 'archive'))
+    const text = sf.getFullText()
+    expect(text.indexOf('methods.archive')).toBeLessThan(text.indexOf('methods.describe'))
+  })
+
+  it('skips when the function is already asserted', () => {
+    const project = makeProject({useInMemoryFileSystem: true})
+    const sf = project.createSourceFile('index.test.ts', SAMPLE_INDEX_TEST)
+    wireExistingResourceIndexTest(sf, deriveNames('release', 'describe'))
+    const matches = sf.getFullText().match(/methods\.describe/g) ?? []
+    expect(matches.length).toBe(1)
+  })
+
+  it('throws if no factory it() block is present', () => {
+    const project = makeProject({useInMemoryFileSystem: true})
+    const sf = project.createSourceFile('index.test.ts', `import {expect, it} from 'vitest'
+it('something else', () => { expect(1).toBe(1) })
+`)
+    expect(() => wireExistingResourceIndexTest(sf, deriveNames('release', 'describe'))).toThrow(/factory/)
+  })
+})
+
+function makeMainFixture(): string {
+  const root = mkdtempSync(join(tmpdir(), 'create-resource-main-'))
+  mkdirSync(join(root, 'src/resources/extensions'), {recursive: true})
+  writeFileSync(join(root, 'src/resources/extensions/platform.ts'), '')
+  writeFileSync(join(root, 'src/resources/extensions/data.ts'), '')
+  return root
+}
+
+describe('main (multi-function brand-new resource)', () => {
+  it('wires every --function into the generated index.ts and index.test.ts', async () => {
+    const root = makeMainFixture()
+    try {
+      const code = await main(
+        [
+          '--service',
+          'platform',
+          '--resource',
+          'scratchpad',
+          '--function',
+          'describe',
+          '--function',
+          'listItems',
+          '--no-lint',
+        ],
+        root,
+      )
+      expect(code).toBe(0)
+
+      const indexPath = join(root, 'src/resources/platform/scratchpad/index.ts')
+      const indexText = readFileSync(indexPath, 'utf8')
+      expect(indexText).toContain("from './describe.js'")
+      expect(indexText).toContain("from './list-items.js'")
+      expect(indexText).toContain('describe:')
+      expect(indexText).toContain('listItems:')
+
+      const indexTestPath = join(root, 'src/resources/platform/scratchpad/index.test.ts')
+      const indexTestText = readFileSync(indexTestPath, 'utf8')
+      expect(indexTestText).toContain("expect(typeof methods.describe).toBe('function')")
+      expect(indexTestText).toContain("expect(typeof methods.listItems).toBe('function')")
+    } finally {
+      rmSync(root, {force: true, recursive: true})
+    }
   })
 })

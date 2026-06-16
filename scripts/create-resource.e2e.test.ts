@@ -5,8 +5,9 @@ import {
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import {fileURLToPath} from 'node:url'
-
-import {afterEach, beforeEach, describe, expect, it} from 'vitest'
+import {
+  afterEach, beforeEach, describe, expect, it,
+} from 'vitest'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '..')
@@ -87,9 +88,7 @@ describe('create-resource (e2e)', () => {
 
     expect(existsSync(verbPath)).toBe(true)
     expect(existsSync(indexPath)).toBe(true)
-    expect(readFileSync(barrelPath, 'utf8')).toContain(
-      "export {releaseExtensions} from '../platform/release/index.js'",
-    )
+    expect(readFileSync(barrelPath, 'utf8')).toContain("export {releaseExtensions} from '../platform/release/index.js'")
 
     // Resulting tree must type-check.
     execFileSync('npx', ['tsc', '--noEmit', '-p', workDir], {
@@ -118,6 +117,46 @@ describe('create-resource (e2e)', () => {
     expect(indexText).toContain('archive:')
     expect(indexText).toContain('describe:')
     expect(indexText.indexOf('archive:')).toBeLessThan(indexText.indexOf('describe:'))
+
+    execFileSync('npx', ['tsc', '--noEmit', '-p', workDir], {
+      cwd: REPO_ROOT,
+      stdio: 'inherit',
+    })
+  })
+
+  it('scaffolds multiple functions on a brand-new resource', () => {
+    const setup = runScript(
+      [
+        '--service',
+        'platform',
+        '--resource',
+        'scratchpad',
+        '--function',
+        'describe',
+        '--function',
+        'listItems',
+      ],
+      workDir,
+    )
+    expect(setup.status, setup.stderr).toBe(0)
+
+    const resourceDir = path.join(workDir, 'src/resources/platform/scratchpad')
+    expect(existsSync(path.join(resourceDir, 'describe.ts'))).toBe(true)
+    expect(existsSync(path.join(resourceDir, 'describe.test.ts'))).toBe(true)
+    expect(existsSync(path.join(resourceDir, 'list-items.ts'))).toBe(true)
+    expect(existsSync(path.join(resourceDir, 'list-items.test.ts'))).toBe(true)
+    expect(existsSync(path.join(resourceDir, 'index.ts'))).toBe(true)
+    expect(existsSync(path.join(resourceDir, 'index.test.ts'))).toBe(true)
+
+    const indexText = readFileSync(path.join(resourceDir, 'index.ts'), 'utf8')
+    expect(indexText).toContain('describe:')
+    expect(indexText).toContain('listItems:')
+    expect(indexText).toContain("from './describe.js'")
+    expect(indexText).toContain("from './list-items.js'")
+
+    const indexTestText = readFileSync(path.join(resourceDir, 'index.test.ts'), 'utf8')
+    expect(indexTestText).toContain("expect(typeof methods.describe).toBe('function')")
+    expect(indexTestText).toContain("expect(typeof methods.listItems).toBe('function')")
 
     execFileSync('npx', ['tsc', '--noEmit', '-p', workDir], {
       cwd: REPO_ROOT,
