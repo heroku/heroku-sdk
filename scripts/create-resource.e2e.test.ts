@@ -99,10 +99,12 @@ describe('create-resource (e2e)', () => {
   })
 
   it('adds a function to an existing resource', () => {
-    runScript(
+    const setup = runScript(
       ['--service', 'platform', '--resource', 'release', '--function', 'describe'],
       workDir,
     )
+    expect(setup.status, setup.stderr).toBe(0)
+
     const r = runScript(
       ['--service', 'platform', '--resource', 'release', '--function', 'archive'],
       workDir,
@@ -124,10 +126,12 @@ describe('create-resource (e2e)', () => {
   })
 
   it('refuses to overwrite without --force', () => {
-    runScript(
+    const setup = runScript(
       ['--service', 'platform', '--resource', 'release', '--function', 'describe'],
       workDir,
     )
+    expect(setup.status, setup.stderr).toBe(0)
+
     const r = runScript(
       ['--service', 'platform', '--resource', 'release', '--function', 'describe'],
       workDir,

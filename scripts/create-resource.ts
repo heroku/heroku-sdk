@@ -386,7 +386,7 @@ export function wireExtensionsBarrel(
   sf.addExportDeclaration(structure)
 }
 
-const USAGE = `Usage: create-resource --service <platform|data> --resource <name> --function <name> [--function <name>...] [--force]
+const USAGE = `Usage: create-resource --service <platform|data> --resource <name> --function <name> [--function <name>...] [--force] [--no-lint]
 
 Required:
   --service   platform | data
@@ -395,7 +395,7 @@ Required:
 
 Optional:
   --force     overwrite existing verb files
-  --no-lint   skip eslint --fix on generated files
+  --no-lint   skip the post-write eslint --fix pass
   -h, --help  show usage
 `
 
