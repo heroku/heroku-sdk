@@ -12,6 +12,10 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '..')
 const SCRIPT_PATH = path.join(REPO_ROOT, 'scripts', 'create-resource.ts')
+// `execFileSync`/`spawnSync` without a shell can't resolve `npx` on Windows
+// (it ships as `npx.cmd`); pick the platform binary so the e2e suite runs on
+// both POSIX and Win32 CI.
+const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx'
 
 let workDir: string
 
@@ -59,7 +63,7 @@ function stageFixture(): string {
 }
 
 function runScript(args: string[], cwd: string) {
-  return spawnSync('npx', ['tsx', SCRIPT_PATH, ...args, '--no-lint'], {
+  return spawnSync(NPX, ['tsx', SCRIPT_PATH, ...args, '--no-lint'], {
     cwd,
     encoding: 'utf8',
     env: {...process.env, CREATE_RESOURCE_NO_LINT: '1'},
@@ -91,7 +95,7 @@ describe('create-resource (e2e)', () => {
     expect(readFileSync(barrelPath, 'utf8')).toContain("export {releaseExtensions} from '../platform/release/index.js'")
 
     // Resulting tree must type-check.
-    execFileSync('npx', ['tsc', '--noEmit', '-p', workDir], {
+    execFileSync(NPX, ['tsc', '--noEmit', '-p', workDir], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
     })
@@ -118,7 +122,7 @@ describe('create-resource (e2e)', () => {
     expect(indexText).toContain('describe:')
     expect(indexText.indexOf('archive:')).toBeLessThan(indexText.indexOf('describe:'))
 
-    execFileSync('npx', ['tsc', '--noEmit', '-p', workDir], {
+    execFileSync(NPX, ['tsc', '--noEmit', '-p', workDir], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
     })
@@ -158,7 +162,7 @@ describe('create-resource (e2e)', () => {
     expect(indexTestText).toContain("expect(typeof methods.describe).toBe('function')")
     expect(indexTestText).toContain("expect(typeof methods.listItems).toBe('function')")
 
-    execFileSync('npx', ['tsc', '--noEmit', '-p', workDir], {
+    execFileSync(NPX, ['tsc', '--noEmit', '-p', workDir], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
     })

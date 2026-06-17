@@ -19,6 +19,13 @@ import {
 
 const REMOVE_SEMICOLONS = {semicolons: ts.SemicolonPreference.Remove} as const
 
+// path.relative() emits Windows-style backslashes on Win32; everywhere we
+// surface a relative path to the user, store it in conflicts, or compare it
+// across modules, we want one stable POSIX-style spelling.
+function relPosix(from: string, to: string): string {
+  return path.relative(from, to).split(path.sep).join('/')
+}
+
 export function makeProject(opts: ProjectOptions = {}): Project {
   return new Project({
     ...opts,
@@ -228,7 +235,7 @@ export function inspectTarget(input: InspectInput): InspectResult {
   const resourceDir = path.join(serviceDir, names.resourceKebab)
 
   if (existsSync(singleFilePath) && statSync(singleFilePath).isFile()) {
-    throw new Error(`convert single-file form to directory form first: ${path.relative(root, singleFilePath)}`)
+    throw new Error(`convert single-file form to directory form first: ${relPosix(root, singleFilePath)}`)
   }
 
   const resourceExists = existsSync(resourceDir) && statSync(resourceDir).isDirectory()
@@ -238,7 +245,7 @@ export function inspectTarget(input: InspectInput): InspectResult {
     const fnNames = deriveNames(names.resourceCamel, fn)
     const verbPath = path.join(resourceDir, `${fnNames.fnKebab}.ts`)
     if (existsSync(verbPath)) {
-      conflicts.push(path.relative(root, verbPath))
+      conflicts.push(relPosix(root, verbPath))
     }
   }
 
@@ -533,7 +540,7 @@ export async function main(argv: string[], root: string = process.cwd()): Promis
     const fnNames = deriveNames(cli.resource, fn)
     const verbPath = path.join(resourceDir, `${fnNames.fnKebab}.ts`)
     const verbTestPath = path.join(resourceDir, `${fnNames.fnKebab}.test.ts`)
-    const exists = inspection.conflicts.includes(path.relative(root, verbPath))
+    const exists = inspection.conflicts.includes(relPosix(root, verbPath))
     writes.push(
       {
         action: exists ? 'overwrite' : 'create',
@@ -578,8 +585,12 @@ export async function main(argv: string[], root: string = process.cwd()): Promis
   const skipLint = cli.noLint || process.env.CREATE_RESOURCE_NO_LINT === '1'
   if (!skipLint) {
     const lintTargets = [...writes.map(w => w.path), ...morphFiles]
+    // execFileSync (no shell) can't resolve `npx` on Windows — it lives as
+    // `npx.cmd`. Pick the platform-specific binary so paths with spaces in
+    // `root` keep working without `shell: true`.
+    const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx'
     try {
-      execFileSync('npx', ['eslint', '--fix', ...lintTargets], {cwd: root, stdio: 'inherit'})
+      execFileSync(npx, ['eslint', '--fix', ...lintTargets], {cwd: root, stdio: 'inherit'})
     } catch {
       process.stderr.write('warning: eslint --fix reported issues (files left in place)\n')
     }
@@ -588,11 +599,11 @@ export async function main(argv: string[], root: string = process.cwd()): Promis
   // Summary.
   process.stdout.write('\nCreated/updated files:\n')
   for (const w of writes) {
-    process.stdout.write(`  ${w.action === 'create' ? '+' : '~'} ${path.relative(root, w.path)}\n`)
+    process.stdout.write(`  ${w.action === 'create' ? '+' : '~'} ${relPosix(root, w.path)}\n`)
   }
 
   for (const f of morphFiles) {
-    process.stdout.write(`  ~ ${path.relative(root, f)}\n`)
+    process.stdout.write(`  ~ ${relPosix(root, f)}\n`)
   }
 
   process.stdout.write('\nNext: implement each function — they currently throw "Not implemented".\n')
