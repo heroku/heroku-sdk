@@ -2,6 +2,7 @@ import {execFileSync, spawnSync} from 'node:child_process'
 import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs'
+import {createRequire} from 'node:module'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import {fileURLToPath} from 'node:url'
@@ -12,10 +13,13 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '..')
 const SCRIPT_PATH = path.join(REPO_ROOT, 'scripts', 'create-resource.ts')
-// `execFileSync`/`spawnSync` without a shell can't resolve `npx` on Windows
-// (it ships as `npx.cmd`); pick the platform binary so the e2e suite runs on
-// both POSIX and Win32 CI.
-const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+// Spawn Node directly against each tool's JS entry instead of going through
+// the `npx` shim. On Windows, Node 22.x's CVE-2024-27980 mitigation makes
+// `spawnSync`/`execFileSync` against `npx.cmd` fail with EINVAL unless
+// `shell: true` is set (and shell-true is itself deprecated, DEP0190).
+const require = createRequire(import.meta.url)
+const TSX_BIN = require.resolve('tsx/cli')
+const TSC_BIN = require.resolve('typescript/bin/tsc')
 
 let workDir: string
 
@@ -63,7 +67,7 @@ function stageFixture(): string {
 }
 
 function runScript(args: string[], cwd: string) {
-  return spawnSync(NPX, ['tsx', SCRIPT_PATH, ...args, '--no-lint'], {
+  return spawnSync(process.execPath, [TSX_BIN, SCRIPT_PATH, ...args, '--no-lint'], {
     cwd,
     encoding: 'utf8',
     env: {...process.env, CREATE_RESOURCE_NO_LINT: '1'},
@@ -95,7 +99,7 @@ describe('create-resource (e2e)', () => {
     expect(readFileSync(barrelPath, 'utf8')).toContain("export {releaseExtensions} from '../platform/release/index.js'")
 
     // Resulting tree must type-check.
-    execFileSync(NPX, ['tsc', '--noEmit', '-p', workDir], {
+    execFileSync(process.execPath, [TSC_BIN, '--noEmit', '-p', workDir], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
     })
@@ -122,7 +126,7 @@ describe('create-resource (e2e)', () => {
     expect(indexText).toContain('describe:')
     expect(indexText.indexOf('archive:')).toBeLessThan(indexText.indexOf('describe:'))
 
-    execFileSync(NPX, ['tsc', '--noEmit', '-p', workDir], {
+    execFileSync(process.execPath, [TSC_BIN, '--noEmit', '-p', workDir], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
     })
@@ -162,7 +166,7 @@ describe('create-resource (e2e)', () => {
     expect(indexTestText).toContain("expect(typeof methods.describe).toBe('function')")
     expect(indexTestText).toContain("expect(typeof methods.listItems).toBe('function')")
 
-    execFileSync(NPX, ['tsc', '--noEmit', '-p', workDir], {
+    execFileSync(process.execPath, [TSC_BIN, '--noEmit', '-p', workDir], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
     })
