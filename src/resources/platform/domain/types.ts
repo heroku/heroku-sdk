@@ -50,6 +50,12 @@ export type CreateAndWaitOptions = DomainOptions & {
   sniEndpoint?: string
 
   /**
+   * Maximum time in milliseconds to wait when `wait` is true.
+   * Passed through to `waitForReady`.
+   */
+  timeoutMs?: number
+
+  /**
    * If true, waits for the domain to reach ready status after creation.
    *
    * Defaults to false (return immediately after create).
@@ -61,10 +67,4 @@ export type CreateAndWaitOptions = DomainOptions & {
    * Passed through to `waitForReady`.
    */
   waitIntervalMs?: number
-
-  /**
-   * Maximum time in milliseconds to wait when `wait` is true.
-   * Passed through to `waitForReady`.
-   */
-  timeoutMs?: number
 }
