@@ -2,13 +2,16 @@ import type {App} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {DescribeAppOptions} from './info.js'
+import type {WaitForACMCertificatesOptions} from './wait-for-acm-certificates.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
 import {describeApp} from './info.js'
+import {waitForACMCertificates} from './wait-for-acm-certificates.js'
 
 export {
   type AppInfo, describeApp, type DescribeAppOptions, type PipelineCouplingDetail,
 } from './info.js'
+export {waitForACMCertificates, type WaitForACMCertificatesOptions} from './wait-for-acm-certificates.js'
 
 export type AppMaintenanceOptions = {
   signal?: AbortSignal
@@ -124,4 +127,6 @@ export const appExtensions = extendResource('platform', 'app', ctx => ({
     getProcessTier(ctx, appIdentity, options),
   isShielded: (appIdentity: string, options?: IsShieldedOptions) =>
     isShielded(ctx, appIdentity, options),
+  waitForACMCertificates: (appIdentity: string, options?: WaitForACMCertificatesOptions) =>
+    waitForACMCertificates(ctx, appIdentity, options),
 }))
