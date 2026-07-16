@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.0...sdk-v0.5.1) (2026-07-16)
+
+
+### Features
+
+* add domains extensions ([#68](https://github.com/heroku/heroku-sdk/issues/68)) ([6018626](https://github.com/heroku/heroku-sdk/commit/60186264a539893c55be9c537d74423cc74b2854))
+
 ## [0.5.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.4.3...sdk-v0.5.0) (2026-07-14)
 
 
