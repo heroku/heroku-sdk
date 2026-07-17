@@ -5,6 +5,9 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {waitForReady} from '../domain/wait-for-ready.js'
 
+const DEFAULT_WAIT_INTERVAL_MS = 1000
+const DEFAULT_TIMEOUT_MS = 30_000
+
 export type CreateAndAssociateOptions = {
   intervalMs?: number
   /** Required. Given the wildcard-matched candidate hostnames, returns the subset to associate. */
@@ -22,6 +25,11 @@ export type CreateAndAssociateOptions = {
  * Steps:
  * 1. Create the SNI endpoint from the given certificate chain and private key.
  * 2. Wait for the app's domains to reach ready status (replaces the old CNAME poll).
+ *    The SDK waits on domain STATUS (`succeeded`/`none`) via `domain.waitForReady`
+ *    rather than the CLI's old `cname`-defined readiness check, polling at a default
+ *    1000ms interval to mirror the CLI's `waitForDomains` cadence. `timeoutMs`
+ *    defaults to 30s and is applied per pending domain (not a single global budget),
+ *    so an app with several pending domains can wait longer than 30s overall.
  * 3. List the (now stable) app domains and wildcard-match them against the
  *    certificate's `cert_domains`.
  * 4. If any domains matched, invoke `resolveDomains` — the interactive selection
@@ -46,7 +54,12 @@ export async function createAndAssociate(
   privateKey: string,
   options: CreateAndAssociateOptions,
 ): Promise<SniEndpoint> {
-  const {intervalMs, resolveDomains, signal, timeoutMs} = options
+  const {
+    intervalMs = DEFAULT_WAIT_INTERVAL_MS,
+    resolveDomains,
+    signal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  } = options
 
   signal?.throwIfAborted()
 
@@ -77,19 +90,22 @@ function splitDomains(domains: string[]): [string, string][] {
   return domains.map(domain => [domain.slice(0, 1), domain.slice(1)])
 }
 
+// Adapted from the CLI `certs/add.ts` matcher, but ADDS `^`/`$` anchors to fix a
+// prefix-match bug: without them a wildcard cert like `*.example.com` would match
+// hostnames that merely share a prefix (e.g. `www.example.com.evil.org`). Wildcard
+// certs must not match such hostnames, so both ends of the pattern are anchored.
 function createMatcherFromSplitDomain([firstChar, rest]: [string, string]) {
   const matcherContents = []
   if (firstChar === '*') {
     matcherContents.push(String.raw`^[\w\-]+`)
   } else {
-    matcherContents.push(firstChar)
+    matcherContents.push(`^${firstChar}`)
   }
 
   const escapedRest = rest.replaceAll('.', String.raw`\.`)
-
   matcherContents.push(escapedRest)
 
-  return new RegExp(matcherContents.join(''))
+  return new RegExp(`${matcherContents.join('')}$`)
 }
 
 function matchDomains(certDomains: string[], appDomains: string[]) {

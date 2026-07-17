@@ -96,6 +96,68 @@ describe('createAndAssociate', () => {
     expect(resolveDomains).toHaveBeenCalledWith(['www.example.com', 'api.example.com'])
   })
 
+  it('does not wildcard-match hostnames that merely share a prefix (security)', async () => {
+    const sniEndpoint = buildSniEndpoint({
+      name: 'tokyo-1234',
+      ssl_cert: {...buildSniEndpoint().ssl_cert, cert_domains: ['*.example.com']},
+    })
+    const appDomains = [
+      readyDomain({hostname: 'www.example.com', id: 'd1'}),
+      readyDomain({hostname: 'www.example.com.evil.org', id: 'd2'}),
+    ]
+    const create = vi.fn().mockResolvedValue(sniEndpoint)
+    const list = vi.fn().mockResolvedValue(appDomains)
+    const update = vi.fn().mockResolvedValue({})
+    const ctx = buildCtx({domainList: list, domainUpdate: update, sniEndpointCreate: create})
+
+    const resolveDomains = vi.fn().mockResolvedValue([])
+
+    await createAndAssociate(ctx, 'my-app', 'CERT_CHAIN', 'PRIVATE_KEY', {resolveDomains})
+
+    expect(resolveDomains).toHaveBeenCalledWith(['www.example.com'])
+  })
+
+  it('does not wildcard-match the apex domain', async () => {
+    const sniEndpoint = buildSniEndpoint({
+      name: 'tokyo-1234',
+      ssl_cert: {...buildSniEndpoint().ssl_cert, cert_domains: ['*.example.com']},
+    })
+    const appDomains = [
+      readyDomain({hostname: 'www.example.com', id: 'd1'}),
+      readyDomain({hostname: 'example.com', id: 'd2'}),
+    ]
+    const create = vi.fn().mockResolvedValue(sniEndpoint)
+    const list = vi.fn().mockResolvedValue(appDomains)
+    const update = vi.fn().mockResolvedValue({})
+    const ctx = buildCtx({domainList: list, domainUpdate: update, sniEndpointCreate: create})
+
+    const resolveDomains = vi.fn().mockResolvedValue([])
+
+    await createAndAssociate(ctx, 'my-app', 'CERT_CHAIN', 'PRIVATE_KEY', {resolveDomains})
+
+    expect(resolveDomains).toHaveBeenCalledWith(['www.example.com'])
+  })
+
+  it('exact-matches non-wildcard cert domains by string equality, excluding prefix-sharing hostnames', async () => {
+    const sniEndpoint = buildSniEndpoint({
+      name: 'tokyo-1234',
+      ssl_cert: {...buildSniEndpoint().ssl_cert, cert_domains: ['test.com']},
+    })
+    const appDomains = [
+      readyDomain({hostname: 'test.com', id: 'd1'}),
+      readyDomain({hostname: 'test.com.evil.org', id: 'd2'}),
+    ]
+    const create = vi.fn().mockResolvedValue(sniEndpoint)
+    const list = vi.fn().mockResolvedValue(appDomains)
+    const ctx = buildCtx({domainList: list, sniEndpointCreate: create})
+
+    const resolveDomains = vi.fn().mockResolvedValue([])
+
+    await createAndAssociate(ctx, 'my-app', 'CERT_CHAIN', 'PRIVATE_KEY', {resolveDomains})
+
+    expect(resolveDomains).toHaveBeenCalledWith(['test.com'])
+  })
+
   it('exact-matches non-wildcard cert domains only', async () => {
     const sniEndpoint = buildSniEndpoint({
       name: 'tokyo-1234',
