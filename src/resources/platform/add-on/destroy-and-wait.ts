@@ -89,7 +89,7 @@ export async function destroyAndWait(
   return addon as AddOn
 }
 
-function isNotFound(error: unknown): boolean {
+function isNotFound(error: unknown): error is {statusCode: number} {
   return (
     typeof error === 'object'
     && error !== null

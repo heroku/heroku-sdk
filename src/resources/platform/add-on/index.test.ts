@@ -154,6 +154,7 @@ function buildWaitCtx({
   ctx: ResourceCtx
   info: ReturnType<typeof vi.fn>
   infoByApp: ReturnType<typeof vi.fn>
+  withHeaders: ReturnType<typeof vi.fn>
 } {
   const infoByApp = vi.fn()
   for (const response of infoByAppResponses) {
@@ -175,6 +176,7 @@ function buildWaitCtx({
     ctx: {data: {} as never, platform: platform as never},
     info,
     infoByApp,
+    withHeaders: platform.withHeaders,
   }
 }
 
@@ -1064,13 +1066,6 @@ describe('add-on resource', () => {
         status: 200,
       }))
       const {ctx, infoByApp} = buildDestroyCtx()
-      infoByApp.mockResolvedValueOnce(deprovisioned)
-      infoByApp.mockImplementationOnce(async () => {
-        calls.push('poll')
-        return deprovisioned
-      })
-      // Reset: track ordering by instrumenting onDeprovisioning, not infoByApp
-      infoByApp.mockReset()
       infoByApp.mockImplementation(async () => {
         calls.push('poll')
         return deprovisioned
@@ -1093,6 +1088,32 @@ describe('add-on resource', () => {
       await destroyAndWait(ctx, 'my-app', 'my-postgres', {onDeprovisioning, wait: true})
 
       expect(onDeprovisioning).not.toHaveBeenCalled()
+    })
+
+    it('rethrows non-404 errors from infoByApp during polling', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const boom = new Error('network error')
+      clientDelete.mockResolvedValue(new Response(JSON.stringify(deprovisioning), {
+        headers: {'content-type': 'application/json'},
+        status: 200,
+      }))
+      const {ctx} = buildDestroyCtx({infoByAppResponses: [boom]})
+
+      await expect(destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})).rejects.toBe(boom)
+    })
+
+    it('sets Accept-Expansion: plan on poll requests via withHeaders', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      clientDelete.mockResolvedValue(new Response(JSON.stringify(deprovisioning), {
+        headers: {'content-type': 'application/json'},
+        status: 200,
+      }))
+      const {ctx, withHeaders} = buildDestroyCtx({infoByAppResponses: [deprovisioned]})
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})
+
+      expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'plan'})
     })
 
     it('throws if the abort signal is already aborted', async () => {
@@ -1170,6 +1191,16 @@ describe('add-on resource', () => {
       await expect(waitForProvisioning(ctx, deprovisioning as AddOn, {appIdentity: 'my-app', waitIntervalMs: 1})).rejects.toBeInstanceOf(AddonProvisioningFailedError)
 
       expect(infoByApp).toHaveBeenCalledTimes(2)
+    })
+
+    it('sets Accept-Expansion: addon_service,plan on poll requests via withHeaders', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const {ctx, withHeaders} = buildWaitCtx({infoByAppResponses: [provisioned]})
+
+      await waitForProvisioning(ctx, provisioning, {appIdentity: 'my-app', waitIntervalMs: 1})
+
+      expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'addon_service,plan'})
     })
 
     it('throws if the abort signal is already aborted', async () => {
