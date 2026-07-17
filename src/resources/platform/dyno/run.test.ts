@@ -88,6 +88,29 @@ describe('runDyno', () => {
     })
   })
 
+  it('wraps the command with an exit-status echo on the exec-inside path too', async () => {
+    const ctx = ctxWith(vi.fn())
+    const post = vi.fn().mockResolvedValue(jsonResponse(DYNO))
+    mockPost(post)
+
+    await runDyno(ctx, 'app-1', 'rake db:migrate', {dyno: 'web.1', exitCode: true})
+
+    expect(post).toHaveBeenCalledWith(
+      '/apps/app-1/dynos/web.1',
+      {command: 'rake db:migrate; echo "￿ heroku-command-exit-status: $?"'},
+      expect.anything(),
+    )
+  })
+
+  it('forwards attach: false explicitly into the create body', async () => {
+    const create = vi.fn().mockResolvedValue(DYNO)
+    const ctx = ctxWith(create)
+
+    await runDyno(ctx, 'app-1', 'bash', {attach: false})
+
+    expect(create).toHaveBeenCalledWith('app-1', {attach: false, command: 'bash'})
+  })
+
   it('scopes the platform client to the caller signal', async () => {
     const create = vi.fn().mockResolvedValue(DYNO)
     const ctx = ctxWith(create)
@@ -170,7 +193,7 @@ describe('runDyno', () => {
     expect(result).toBe(DYNO)
   })
 
-  it('gives up after two consecutive 409s and rethrows the last one', async () => {
+  it('gives up after three consecutive 409s and rethrows the last one', async () => {
     const first = new HerokuApiError('release not found', 409)
     const second = new HerokuApiError('release not found', 409)
     const third = new HerokuApiError('release not found', 409)

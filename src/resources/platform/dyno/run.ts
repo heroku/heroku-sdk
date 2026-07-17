@@ -36,10 +36,18 @@ export type RunDynoOptions = {
   /** Additional environment variables layered onto the dyno. */
   env?: Record<string, string>
   /**
-   * When `true`, the command is wrapped so its exit status is echoed
-   * to stdout on completion — a `￿ heroku-command-exit-status:
-   * <n>` line consumers may parse to surface the process exit code
-   * over the attach stream.
+   * When `true`, `command` is appended with `; echo "￿
+   * heroku-command-exit-status: $?"` to surface the process exit
+   * code over the attach stream. Consumers may parse this line to
+   * recover the exit code.
+   *
+   * Because the wrap uses a bare `;`, `command` must be a single
+   * shell statement that terminates cleanly with `;`. Trailing `&`
+   * (backgrounding), line continuations (`\`), unclosed quotes, or
+   * unterminated heredocs will break the wrap and produce a shell
+   * syntax error or garbled output. Callers who need those
+   * constructs should wrap them in a subshell or `{ ...; }` group
+   * themselves before passing `command`.
    */
   exitCode?: boolean
   /**
