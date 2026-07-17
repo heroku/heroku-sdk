@@ -8,8 +8,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 const DEFAULT_RUN_RETRIES = 2
 
-const ACCEPT_STANDARD = 'application/vnd.heroku+json; version=3'
-const ACCEPT_RUN_INSIDE = 'application/vnd.heroku+json; version=3.run-inside'
+const ACCEPT_RUN_INSIDE = 'application/vnd.heroku+json; version=3.sdk'
 
 export type RunDynoOptions = {
   /**
@@ -59,11 +58,12 @@ export type RunDynoOptions = {
  *
  * Route selection:
  *   - `POST /apps/{app}/dynos` (default) creates a new one-off dyno.
- *     Uses the SDK's routes client with `Accept: version=3`.
+ *     Uses the SDK's routes client, which sends the platform
+ *     service's default `Accept: version=3` header.
  *   - `POST /apps/{app}/dynos/{dyno}` (when `options.dyno` is set)
  *     execs the command inside the named dyno. Uses a raw
- *     `HerokuApiClient` with `Accept: version=3.run-inside` because
- *     the routes registry has no entry for this endpoint.
+ *     `HerokuApiClient` with `Accept: version=3.sdk` because the
+ *     routes registry has no entry for this endpoint.
  *
  * Retries: the runtime API occasionally returns 409 while a newly
  * pushed app's release is still propagating. This is transient and
@@ -130,7 +130,6 @@ async function postRun(
     return (await response.json()) as Dyno
   }
 
-  const platform = ctx.platform.withHeaders({Accept: ACCEPT_STANDARD})
-  const scoped = options.signal ? platform.withOptions({signal: options.signal}) : platform
-  return scoped.dyno.create(appIdentity, body)
+  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  return platform.dyno.create(appIdentity, body)
 }

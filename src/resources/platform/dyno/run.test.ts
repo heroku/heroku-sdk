@@ -21,7 +21,6 @@ const DYNO: Dyno = {name: 'run.1234', state: 'starting'} as Dyno
 
 function ctxWith(create: ReturnType<typeof vi.fn>): ResourceCtx {
   const platform = {dyno: {create}} as Record<string, unknown>
-  platform.withHeaders = vi.fn().mockReturnValue(platform)
   platform.withOptions = vi.fn().mockReturnValue(platform)
   return {data: {} as never, platform: platform as never}
 }
@@ -44,15 +43,12 @@ describe('runDyno', () => {
     vi.clearAllMocks()
   })
 
-  it('creates a one-off dyno via dyno.create with the version=3 Accept header', async () => {
+  it('creates a one-off dyno via dyno.create', async () => {
     const create = vi.fn().mockResolvedValue(DYNO)
     const ctx = ctxWith(create)
 
     const result = await runDyno(ctx, 'app-1', 'bash')
 
-    expect(ctx.platform.withHeaders).toHaveBeenCalledWith({
-      Accept: 'application/vnd.heroku+json; version=3',
-    })
     expect(create).toHaveBeenCalledExactlyOnceWith('app-1', {command: 'bash'})
     expect(HerokuApiClient).not.toHaveBeenCalled()
     expect(result).toBe(DYNO)
@@ -112,7 +108,7 @@ describe('runDyno', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
-  it('execs inside an existing dyno via a raw HerokuApiClient with the version=3.run-inside Accept', async () => {
+  it('execs inside an existing dyno via a raw HerokuApiClient with the version=3.sdk Accept', async () => {
     const create = vi.fn()
     const ctx = ctxWith(create)
     const post = vi.fn().mockResolvedValue(jsonResponse(DYNO))
@@ -126,7 +122,7 @@ describe('runDyno', () => {
       '/apps/app-1/dynos/web.1',
       {command: 'bash'},
       {
-        headers: {Accept: 'application/vnd.heroku+json; version=3.run-inside'},
+        headers: {Accept: 'application/vnd.heroku+json; version=3.sdk'},
         signal: undefined,
       },
     )
