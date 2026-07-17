@@ -16,7 +16,7 @@ describe('waitForACMCertificates', () => {
     const list = vi.fn().mockResolvedValueOnce([domain])
     const ctx = buildCtx({domainList: list})
 
-    const result = await waitForACMCertificates(ctx, 'my-app', {waitIntervalMs: 1})
+    const result = await waitForACMCertificates(ctx, 'my-app', {intervalMs: 1})
 
     expect(list).toHaveBeenCalledExactlyOnceWith('my-app')
     expect(result).toEqual([domain])
@@ -28,7 +28,7 @@ describe('waitForACMCertificates', () => {
     const list = vi.fn().mockResolvedValueOnce([heroku, custom])
     const ctx = buildCtx({domainList: list})
 
-    const result = await waitForACMCertificates(ctx, 'my-app', {waitIntervalMs: 1})
+    const result = await waitForACMCertificates(ctx, 'my-app', {intervalMs: 1})
 
     expect(list).toHaveBeenCalledTimes(1)
     expect(result).toEqual([custom])
@@ -42,7 +42,7 @@ describe('waitForACMCertificates', () => {
     const list = vi.fn().mockResolvedValueOnce([heroku, custom])
     const ctx = buildCtx({domainList: list})
 
-    const result = await waitForACMCertificates(ctx, 'my-app', {waitIntervalMs: 1})
+    const result = await waitForACMCertificates(ctx, 'my-app', {intervalMs: 1})
 
     expect(list).toHaveBeenCalledTimes(1)
     expect(result).toEqual([custom])
@@ -53,7 +53,7 @@ describe('waitForACMCertificates', () => {
     const list = vi.fn().mockResolvedValueOnce([heroku])
     const ctx = buildCtx({domainList: list})
 
-    const result = await waitForACMCertificates(ctx, 'my-app', {waitIntervalMs: 1})
+    const result = await waitForACMCertificates(ctx, 'my-app', {intervalMs: 1})
 
     expect(list).toHaveBeenCalledTimes(1)
     expect(result).toEqual([])
@@ -63,7 +63,7 @@ describe('waitForACMCertificates', () => {
     const list = vi.fn().mockResolvedValueOnce([])
     const ctx = buildCtx({domainList: list})
 
-    const result = await waitForACMCertificates(ctx, 'my-app', {waitIntervalMs: 1})
+    const result = await waitForACMCertificates(ctx, 'my-app', {intervalMs: 1})
 
     expect(list).toHaveBeenCalledTimes(1)
     expect(result).toEqual([])
@@ -99,7 +99,7 @@ describe('waitForACMCertificates', () => {
     const list = vi.fn().mockResolvedValueOnce([buildDomain({acm_status: 'failed'})])
     const ctx = buildCtx({domainList: list})
 
-    await expect(waitForACMCertificates(ctx, 'my-app', {waitIntervalMs: 1})).rejects.toThrow('ACM not enabled for some domains')
+    await expect(waitForACMCertificates(ctx, 'my-app', {intervalMs: 1})).rejects.toThrow('ACM not enabled for some domains')
   })
 
   it('treats a mix of cert issued + failed as terminal, then throws', async () => {
@@ -109,7 +109,7 @@ describe('waitForACMCertificates', () => {
     ])
     const ctx = buildCtx({domainList: list})
 
-    await expect(waitForACMCertificates(ctx, 'my-app', {waitIntervalMs: 1})).rejects.toThrow('ACM not enabled for some domains')
+    await expect(waitForACMCertificates(ctx, 'my-app', {intervalMs: 1})).rejects.toThrow('ACM not enabled for some domains')
     // Terminal on the first list — no further polling.
     expect(list).toHaveBeenCalledTimes(1)
   })
@@ -129,7 +129,7 @@ describe('waitForACMCertificates', () => {
     const ctx = buildCtx({domainList: list})
     const controller = new AbortController()
 
-    await waitForACMCertificates(ctx, 'my-app', {signal: controller.signal, waitIntervalMs: 1})
+    await waitForACMCertificates(ctx, 'my-app', {intervalMs: 1, signal: controller.signal})
 
     // @ts-expect-error — withOptions is on the mocked platform but not in the public type.
     expect(ctx.platform.withOptions).toHaveBeenCalledWith({signal: controller.signal})
@@ -141,8 +141,8 @@ describe('waitForACMCertificates', () => {
     const ctx = buildCtx({domainList: list})
 
     const promise = waitForACMCertificates(ctx, 'my-app', {
+      intervalMs: 15_000,
       timeoutMs: 10_000,
-      waitIntervalMs: 15_000,
     })
     // Surface the rejection to the microtask queue so it isn't unhandled.
     const settled = promise.then(

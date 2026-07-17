@@ -9,6 +9,13 @@ const DEFAULT_WAIT_INTERVAL_MS = 15_000
 
 export type WaitForACMCertificatesOptions = {
   /**
+   * Base polling interval in milliseconds. Defaults to 15000 (the
+   * CLI's 15s base). The effective delay grows with the CLI's backoff
+   * formula, scaled off this value.
+   */
+  intervalMs?: number
+
+  /**
    * Abort signal to cancel the operation.
    */
   signal?: AbortSignal
@@ -19,13 +26,6 @@ export type WaitForACMCertificatesOptions = {
    * poll-forever behavior) until the signal aborts.
    */
   timeoutMs?: number
-
-  /**
-   * Base polling interval in milliseconds. Defaults to 15000 (the
-   * CLI's 15s base). The effective delay grows with the CLI's backoff
-   * formula, scaled off this value.
-   */
-  waitIntervalMs?: number
 }
 
 /**
@@ -46,7 +46,7 @@ export async function waitForACMCertificates(
   appIdentity: string,
   options: WaitForACMCertificatesOptions = {},
 ): Promise<Domain[]> {
-  const {signal, timeoutMs, waitIntervalMs = DEFAULT_WAIT_INTERVAL_MS} = options
+  const {intervalMs = DEFAULT_WAIT_INTERVAL_MS, signal, timeoutMs} = options
 
   signal?.throwIfAborted()
 
@@ -66,7 +66,7 @@ export async function waitForACMCertificates(
 
   function backoff(attempts: number): number {
     const multiplier = attempts < 60 ? Math.floor(attempts / 20) : 3
-    return waitIntervalMs * (1 + multiplier)
+    return intervalMs * (1 + multiplier)
   }
 
   let domains = await platform.domain.list(appIdentity)
