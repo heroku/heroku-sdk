@@ -187,11 +187,21 @@ export async function * streamLogs(
         service: 'custom',
         token: '',
       })
-      const response = await logplexClient.stream(`${parsed.pathname}${parsed.search}`)
+      // Fir's telemetry-proxy sends newline-delimited plain text by
+      // default, but concatenates records with zero delimiter bytes —
+      // splitting on '\n' yields nothing. Requesting SSE flips the
+      // proxy into `text/event-stream`, where each record is framed
+      // as `id: N\ndata: <line>\n\n` (Cedar's logplex ignores the
+      // header and keeps sending `text/plain`).
+      const response = await logplexClient.stream(`${parsed.pathname}${parsed.search}`, {
+        headers: {Accept: 'text/event-stream'},
+      })
       if (!response.body) {
         throw new Error('Logplex stream returned no body.')
       }
 
+      const contentType = response.headers.get('content-type') ?? ''
+      const isSse = contentType.toLowerCase().includes('text/event-stream')
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let pending = ''
@@ -217,24 +227,47 @@ export async function * streamLogs(
 
           armTimeout()
           pending += decoder.decode(value, {stream: true})
-          let newlineIndex = pending.indexOf('\n')
-          while (newlineIndex !== -1) {
-            const line = pending.slice(0, newlineIndex)
-            pending = pending.slice(newlineIndex + 1)
-            if (line.length > 0) {
-              consecutiveTransportErrors = 0
-              yield line
-            }
 
-            newlineIndex = pending.indexOf('\n')
+          if (isSse) {
+            // SSE events are separated by a blank line (`\n\n`). Each
+            // event holds `data:` field lines whose values, joined by
+            // `\n` per the spec, are the log line to yield.
+            let boundary = pending.indexOf('\n\n')
+            while (boundary !== -1) {
+              const frame = pending.slice(0, boundary)
+              pending = pending.slice(boundary + 2)
+              const line = extractSseData(frame)
+              if (line.length > 0) {
+                consecutiveTransportErrors = 0
+                yield line
+              }
+
+              boundary = pending.indexOf('\n\n')
+            }
+          } else {
+            let newlineIndex = pending.indexOf('\n')
+            while (newlineIndex !== -1) {
+              const line = pending.slice(0, newlineIndex)
+              pending = pending.slice(newlineIndex + 1)
+              if (line.length > 0) {
+                consecutiveTransportErrors = 0
+                yield line
+              }
+
+              newlineIndex = pending.indexOf('\n')
+            }
           }
         }
 
         // Flush any trailing partial line that didn't end in '\n'.
-        const trailing = pending + decoder.decode()
-        if (trailing.length > 0) {
-          consecutiveTransportErrors = 0
-          yield trailing
+        // Only meaningful for the plain-text path — an SSE stream that
+        // ends mid-frame has no complete event to yield.
+        if (!isSse) {
+          const trailing = pending + decoder.decode()
+          if (trailing.length > 0) {
+            consecutiveTransportErrors = 0
+            yield trailing
+          }
         }
       } finally {
         if (timeoutHandle) clearTimeout(timeoutHandle)
@@ -288,6 +321,30 @@ export async function * streamLogs(
     }
   }
   /* eslint-enable no-await-in-loop */
+}
+
+/**
+ * Extract the joined `data:` field values from a single SSE event
+ * frame, per the HTML Living Standard's event-stream parsing rules.
+ * Lines beginning with `:` are comments and skipped; other field
+ * names (`id`, `event`, `retry`) are ignored — we only care about
+ * the log payload. Multiple `data:` lines within one event are
+ * joined with `\n`.
+ */
+function extractSseData(frame: string): string {
+  const dataLines: string[] = []
+  for (const rawLine of frame.split('\n')) {
+    if (!rawLine || rawLine.startsWith(':')) continue
+    const colon = rawLine.indexOf(':')
+    const field = colon === -1 ? rawLine : rawLine.slice(0, colon)
+    if (field !== 'data') continue
+    // Per spec: strip a single leading space from the value.
+    let value = colon === -1 ? '' : rawLine.slice(colon + 1)
+    if (value.startsWith(' ')) value = value.slice(1)
+    dataLines.push(value)
+  }
+
+  return dataLines.join('\n')
 }
 
 /**

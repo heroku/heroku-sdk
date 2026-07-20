@@ -71,6 +71,12 @@ function streamThatErrors(message: string): ReadableStream<Uint8Array> {
   })
 }
 
+function sseResponse(chunks: string[]): Response {
+  return new Response(streamFromChunks(chunks), {
+    headers: {'content-type': 'text/event-stream'},
+  })
+}
+
 /**
  * Wire HerokuApiClient's mock so that constructing one and calling
  * .stream() returns the next response from the supplied list. Each
@@ -369,6 +375,86 @@ describe('log-session resource', () => {
       expect(onSessionCreated).toHaveBeenCalledTimes(2)
       expect(onSessionCreated.mock.calls[0][0]).toEqual({generation: 'cedar', isRecreate: false})
       expect(onSessionCreated.mock.calls[1][0]).toEqual({generation: 'cedar', isRecreate: true})
+    })
+
+    it('requests text/event-stream so Fir\'s telemetry-proxy sends framed records', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      const stream = mockStream(new Response(streamFromChunks([])))
+
+      await collect(streamLogs(ctx, 'my-app'))
+
+      expect(stream).toHaveBeenCalledWith(expect.any(String), {
+        headers: {Accept: 'text/event-stream'},
+      })
+    })
+
+    it('yields decoded data lines when the response is text/event-stream', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'id: 1\ndata: line one\n\n',
+        'id: 2\ndata: line two\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['line one', 'line two'])
+    })
+
+    it('buffers an SSE frame split across chunks until the blank-line boundary arrives', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'id: 1\ndata: hel',
+        'lo world\n\nid: 2\ndata: next\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['hello world', 'next'])
+    })
+
+    it('joins multiple data: fields within one SSE event with a newline', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'data: first\ndata: second\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['first\nsecond'])
+    })
+
+    it('ignores SSE comment lines and non-data fields', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        ':heartbeat\nevent: ping\nid: 42\ndata: only this\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['only this'])
+    })
+
+    it('strips a single leading space from an SSE data value', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'data:  padded\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      // One leading space is stripped per spec; a second space is preserved.
+      expect(lines).toEqual([' padded'])
+    })
+
+    it('does not flush a trailing unterminated SSE frame', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'data: complete\n\ndata: incomplete',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['complete'])
     })
 
     it('collapses dyno+type into a single dyno field for cedar-generation apps', async () => {
