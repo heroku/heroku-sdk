@@ -97,7 +97,7 @@ export async function runDyno(
       : command,
   }
   if (options.attach !== undefined) body.attach = options.attach
-  if (options.env) body.env = options.env
+  if (options.env !== undefined) body.env = options.env
   if (options.forceNoTTY !== undefined) body.force_no_tty = options.forceNoTTY
   if (options.size !== undefined) body.size = options.size
   if (options.type !== undefined) body.type = options.type
