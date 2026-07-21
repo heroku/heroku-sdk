@@ -71,6 +71,31 @@ function streamThatErrors(message: string): ReadableStream<Uint8Array> {
   })
 }
 
+function streamOfChunksThenError(
+  chunks: string[],
+  message: string,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  const queue = [...chunks]
+  return new ReadableStream({
+    pull(controller) {
+      const next = queue.shift()
+      if (next === undefined) {
+        controller.error(new Error(message))
+        return
+      }
+
+      controller.enqueue(encoder.encode(next))
+    },
+  })
+}
+
+function sseResponse(chunks: string[]): Response {
+  return new Response(streamFromChunks(chunks), {
+    headers: {'content-type': 'text/event-stream'},
+  })
+}
+
 /**
  * Wire HerokuApiClient's mock so that constructing one and calling
  * .stream() returns the next response from the supplied list. Each
@@ -272,6 +297,42 @@ describe('log-session resource', () => {
       expect(create).toHaveBeenCalledTimes(11)
     })
 
+    it('resets the consecutive-error counter after any complete SSE frame, including heartbeats', async () => {
+      // Fir sends periodic keepalive frames (`:heartbeat\n\n`) with no
+      // `data:` field, so extractSseData yields an empty string. A
+      // session that parses a heartbeat and then dies mid-stream has
+      // proven its transport is healthy, so the retry counter must
+      // reset on any complete frame — not only on yielded log lines.
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
+      const stream = vi.fn()
+      const heartbeatResponse = () => new Response(
+        streamOfChunksThenError([':heartbeat\n\n'], 'blip'),
+        {headers: {'content-type': 'text/event-stream'}},
+      )
+
+      for (let i = 0; i < 6; i++) stream.mockResolvedValueOnce(heartbeatResponse())
+      stream.mockResolvedValueOnce(new Response(
+        streamFromChunks(['data: recovered\n\n']),
+        {headers: {'content-type': 'text/event-stream'}},
+      ))
+      vi.mocked(HerokuApiClient).mockImplementation(function (this: {stream: typeof stream}) {
+        this.stream = stream
+      } as never)
+
+      const iter = streamLogs(ctx, 'my-app', {...FAST_RETRY, recreateSession: true, tail: true})
+      const collected: string[] = []
+      for await (const line of iter) {
+        collected.push(line)
+        await iter.return()
+      }
+
+      expect(collected).toEqual(['recovered'])
+      // 6 sessions that each parsed a heartbeat then errored + 1
+      // success = 7 create calls. Without reset-on-frame the 6th error
+      // would exceed MAX (5) and throw.
+      expect(create).toHaveBeenCalledTimes(7)
+    })
+
     it('does not retry transport errors when recreateSession is false', async () => {
       const {ctx} = buildCtx(() => ({...SESSION_BASE}))
       mockStream(new Response(streamThatErrors('terminated')))
@@ -369,6 +430,86 @@ describe('log-session resource', () => {
       expect(onSessionCreated).toHaveBeenCalledTimes(2)
       expect(onSessionCreated.mock.calls[0][0]).toEqual({generation: 'cedar', isRecreate: false})
       expect(onSessionCreated.mock.calls[1][0]).toEqual({generation: 'cedar', isRecreate: true})
+    })
+
+    it('requests text/event-stream so Fir\'s telemetry-proxy sends framed records', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      const stream = mockStream(new Response(streamFromChunks([])))
+
+      await collect(streamLogs(ctx, 'my-app'))
+
+      expect(stream).toHaveBeenCalledWith(expect.any(String), {
+        headers: {Accept: 'text/event-stream'},
+      })
+    })
+
+    it('yields decoded data lines when the response is text/event-stream', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'id: 1\ndata: line one\n\n',
+        'id: 2\ndata: line two\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['line one', 'line two'])
+    })
+
+    it('buffers an SSE frame split across chunks until the blank-line boundary arrives', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'id: 1\ndata: hel',
+        'lo world\n\nid: 2\ndata: next\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['hello world', 'next'])
+    })
+
+    it('joins multiple data: fields within one SSE event with a newline', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'data: first\ndata: second\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['first\nsecond'])
+    })
+
+    it('ignores SSE comment lines and non-data fields', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        ':heartbeat\nevent: ping\nid: 42\ndata: only this\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['only this'])
+    })
+
+    it('strips a single leading space from an SSE data value', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'data:  padded\n\n',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      // One leading space is stripped per spec; a second space is preserved.
+      expect(lines).toEqual([' padded'])
+    })
+
+    it('does not flush a trailing unterminated SSE frame', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(sseResponse([
+        'data: complete\n\ndata: incomplete',
+      ]))
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      expect(lines).toEqual(['complete'])
     })
 
     it('collapses dyno+type into a single dyno field for cedar-generation apps', async () => {
