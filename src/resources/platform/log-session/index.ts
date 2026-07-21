@@ -236,11 +236,12 @@ export async function * streamLogs(
             while (boundary !== -1) {
               const frame = pending.slice(0, boundary)
               pending = pending.slice(boundary + 2)
+              // Any complete SSE frame — including heartbeats with no
+              // data — is proof the transport is healthy, so reset the
+              // retry counter here rather than only on yielded lines.
+              consecutiveTransportErrors = 0
               const line = extractSseData(frame)
-              if (line.length > 0) {
-                consecutiveTransportErrors = 0
-                yield line
-              }
+              if (line.length > 0) yield line
 
               boundary = pending.indexOf('\n\n')
             }

@@ -71,6 +71,25 @@ function streamThatErrors(message: string): ReadableStream<Uint8Array> {
   })
 }
 
+function streamOfChunksThenError(
+  chunks: string[],
+  message: string,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  const queue = [...chunks]
+  return new ReadableStream({
+    pull(controller) {
+      const next = queue.shift()
+      if (next === undefined) {
+        controller.error(new Error(message))
+        return
+      }
+
+      controller.enqueue(encoder.encode(next))
+    },
+  })
+}
+
 function sseResponse(chunks: string[]): Response {
   return new Response(streamFromChunks(chunks), {
     headers: {'content-type': 'text/event-stream'},
@@ -276,6 +295,42 @@ describe('log-session resource', () => {
       // then on the 6th error the check fails and we throw) = 11
       // create calls.
       expect(create).toHaveBeenCalledTimes(11)
+    })
+
+    it('resets the consecutive-error counter after any complete SSE frame, including heartbeats', async () => {
+      // Fir sends periodic keepalive frames (`:heartbeat\n\n`) with no
+      // `data:` field, so extractSseData yields an empty string. A
+      // session that parses a heartbeat and then dies mid-stream has
+      // proven its transport is healthy, so the retry counter must
+      // reset on any complete frame — not only on yielded log lines.
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
+      const stream = vi.fn()
+      const heartbeatResponse = () => new Response(
+        streamOfChunksThenError([':heartbeat\n\n'], 'blip'),
+        {headers: {'content-type': 'text/event-stream'}},
+      )
+
+      for (let i = 0; i < 6; i++) stream.mockResolvedValueOnce(heartbeatResponse())
+      stream.mockResolvedValueOnce(new Response(
+        streamFromChunks(['data: recovered\n\n']),
+        {headers: {'content-type': 'text/event-stream'}},
+      ))
+      vi.mocked(HerokuApiClient).mockImplementation(function (this: {stream: typeof stream}) {
+        this.stream = stream
+      } as never)
+
+      const iter = streamLogs(ctx, 'my-app', {...FAST_RETRY, recreateSession: true, tail: true})
+      const collected: string[] = []
+      for await (const line of iter) {
+        collected.push(line)
+        await iter.return()
+      }
+
+      expect(collected).toEqual(['recovered'])
+      // 6 sessions that each parsed a heartbeat then errored + 1
+      // success = 7 create calls. Without reset-on-frame the 6th error
+      // would exceed MAX (5) and throw.
+      expect(create).toHaveBeenCalledTimes(7)
     })
 
     it('does not retry transport errors when recreateSession is false', async () => {
