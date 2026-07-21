@@ -8,7 +8,7 @@ export {
 } from '../platform/domain/index.js'
 export {
   dynoExtensions,
-  DynoNotReadyError, type DynoState, waitForInfo, type WaitForInfoOptions,
+  DynoNotReadyError, type DynoState, runDyno, type RunDynoOptions, waitForInfo, type WaitForInfoOptions,
 } from '../platform/dyno/index.js'
 export {
   type AttachmentAttachedEvent,

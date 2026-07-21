@@ -4,8 +4,10 @@ import type {StickyRouteOptions} from '../../../core/create-client.js'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {runDyno, type RunDynoOptions} from './run.js'
 import {waitForInfo, type WaitForInfoOptions} from './wait-for-info.js'
 
+export {runDyno, type RunDynoOptions} from './run.js'
 export {
   DynoNotReadyError, type DynoState, waitForInfo, type WaitForInfoOptions,
 } from './wait-for-info.js'
@@ -88,6 +90,10 @@ export async function restartDynos(
 export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
   restart: (appIdentity: string, target?: RestartDynosTarget, options?: DynoOptions) => (
     restartDynos(ctx, appIdentity, target, options)
+  ),
+
+  run: (appIdentity: string, command: string, options?: RunDynoOptions) => (
+    runDyno(ctx, appIdentity, command, options)
   ),
 
   scale: ((appIdentity: string, updates: never, options?: DynoOptions) =>
