@@ -92,7 +92,7 @@
   },
   "dependencies": {
     "@heroku/heroku-fetch": "^0.1.1-beta",
-    "@heroku/types": "^4.0.0",
+    "@heroku/types": "^4.0.1",
     "debug": "^4.4.0"
   }
 }
