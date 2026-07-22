@@ -45,7 +45,7 @@ describe('resolveRedisByApp', () => {
   it('filters out non-redis add-ons', async () => {
     const pg = redisAddon({
       // eslint-disable-next-line camelcase
-      addon_service: {name: 'heroku-postgresql'}, id: 'pg-1', name: 'pg-blue-1',
+      addon_service: {id: 'svc-pg', name: 'heroku-postgresql'}, id: 'pg-1', name: 'pg-blue-1',
     })
     const redis = redisAddon()
     const list = vi.fn().mockResolvedValue([pg, redis])
@@ -60,7 +60,7 @@ describe('resolveRedisByApp', () => {
     const list = vi.fn().mockResolvedValue([])
     const ctx = buildCtx(list)
 
-    const error = await resolveRedisByApp(ctx, 'my-app').catch((e: unknown) => e)
+    const error = await resolveRedisByApp(ctx, 'my-app').catch((error_: unknown) => error_)
     expect(error).toBeInstanceOf(RedisAddonNotFoundError)
     expect(error).toBeInstanceOf(AddonNotFoundError)
     expect((error as Error).message).toBe('No Redis instances found.')
@@ -72,7 +72,7 @@ describe('resolveRedisByApp', () => {
     const list = vi.fn().mockResolvedValue([a, b])
     const ctx = buildCtx(list)
 
-    const error = await resolveRedisByApp(ctx, 'my-app').catch((e: unknown) => e)
+    const error = await resolveRedisByApp(ctx, 'my-app').catch((error_: unknown) => error_)
     expect(error).toBeInstanceOf(RedisAddonAmbiguousError)
     expect(error).toBeInstanceOf(AddonAmbiguousError)
     expect((error as Error).message).toBe('Please specify a single instance. Found: redis-a, redis-b')
@@ -116,7 +116,7 @@ describe('resolveRedisByApp', () => {
   it('respects addonServiceName override for the addon_service prefix filter', async () => {
     const kv = redisAddon({
       // eslint-disable-next-line camelcase
-      addon_service: {name: 'heroku-key-value-store'}, id: 'kv-1', name: 'kv-alpha',
+      addon_service: {id: 'svc-kv', name: 'heroku-key-value-store'}, id: 'kv-1', name: 'kv-alpha',
     })
     const redis = redisAddon()
     const list = vi.fn().mockResolvedValue([kv, redis])
