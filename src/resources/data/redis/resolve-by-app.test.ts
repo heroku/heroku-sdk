@@ -7,6 +7,7 @@ import {
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {AddonAmbiguousError, AddonNotFoundError} from '../../platform/add-on/index.js'
+import {RedisAddonAmbiguousError, RedisAddonNotFoundError} from './errors.js'
 import {resolveRedisByApp} from './resolve-by-app.js'
 
 function buildCtx(listByApp: ReturnType<typeof vi.fn>): ResourceCtx {
@@ -55,20 +56,26 @@ describe('resolveRedisByApp', () => {
     expect(result.id).toBe('addon-id')
   })
 
-  it('throws AddonNotFoundError when zero add-ons match', async () => {
+  it('throws RedisAddonNotFoundError when zero add-ons match', async () => {
     const list = vi.fn().mockResolvedValue([])
     const ctx = buildCtx(list)
 
-    await expect(resolveRedisByApp(ctx, 'my-app')).rejects.toBeInstanceOf(AddonNotFoundError)
+    const error = await resolveRedisByApp(ctx, 'my-app').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(RedisAddonNotFoundError)
+    expect(error).toBeInstanceOf(AddonNotFoundError)
+    expect((error as Error).message).toBe('No Redis instances found.')
   })
 
-  it('throws AddonAmbiguousError when more than one add-on matches', async () => {
+  it('throws RedisAddonAmbiguousError when more than one add-on matches', async () => {
     const a = redisAddon({id: 'a', name: 'redis-a'})
     const b = redisAddon({id: 'b', name: 'redis-b'})
     const list = vi.fn().mockResolvedValue([a, b])
     const ctx = buildCtx(list)
 
-    await expect(resolveRedisByApp(ctx, 'my-app')).rejects.toBeInstanceOf(AddonAmbiguousError)
+    const error = await resolveRedisByApp(ctx, 'my-app').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(RedisAddonAmbiguousError)
+    expect(error).toBeInstanceOf(AddonAmbiguousError)
+    expect((error as Error).message).toBe('Please specify a single instance. Found: redis-a, redis-b')
   })
 
   it('narrows via the database filter by add-on name substring (case-insensitive)', async () => {
@@ -99,11 +106,11 @@ describe('resolveRedisByApp', () => {
     expect(result.id).toBe('b')
   })
 
-  it('throws AddonNotFoundError when the database filter matches nothing', async () => {
+  it('throws RedisAddonNotFoundError when the database filter matches nothing', async () => {
     const list = vi.fn().mockResolvedValue([redisAddon()])
     const ctx = buildCtx(list)
 
-    await expect(resolveRedisByApp(ctx, 'my-app', {database: 'nope'})).rejects.toBeInstanceOf(AddonNotFoundError)
+    await expect(resolveRedisByApp(ctx, 'my-app', {database: 'nope'})).rejects.toBeInstanceOf(RedisAddonNotFoundError)
   })
 
   it('respects addonServiceName override for the addon_service prefix filter', async () => {

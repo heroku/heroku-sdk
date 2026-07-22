@@ -5,6 +5,7 @@ import {extendResource} from '../../../core/extend-resource.js'
 import {resolveRedisByApp} from './resolve-by-app.js'
 import {waitForRedisReady} from './wait-for-ready.js'
 
+export {RedisAddonAmbiguousError, RedisAddonNotFoundError} from './errors.js'
 export {resolveRedisByApp, type ResolveRedisByAppOptions} from './resolve-by-app.js'
 export {waitForRedisReady, type WaitForRedisReadyOptions} from './wait-for-ready.js'
 

@@ -5,7 +5,7 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedAddOn} from '../../platform/add-on/index.js'
 
-import {AddonAmbiguousError, AddonNotFoundError} from '../../platform/add-on/index.js'
+import {RedisAddonAmbiguousError, RedisAddonNotFoundError} from './errors.js'
 
 const debug = createDebug('heroku:sdk:resources:redis')
 
@@ -39,8 +39,10 @@ export type ResolveRedisByAppOptions = {
  * filter using the same case-insensitive substring match the CLI has
  * always used.
  *
- * Throws `AddonNotFoundError` if no add-ons remain after filtering,
- * `AddonAmbiguousError` if more than one remains.
+ * Throws `RedisAddonNotFoundError` if no add-ons remain after filtering,
+ * `RedisAddonAmbiguousError` if more than one remains. Both subclass the
+ * generic add-on errors so callers doing `instanceof AddonNotFoundError`
+ * still match.
  */
 export async function resolveRedisByApp(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -66,11 +68,11 @@ export async function resolveRedisByApp(
   debug('resolveByApp app=%s candidates=%d matches=%d', appIdentity, addons.length, matches.length)
 
   if (matches.length === 0) {
-    throw new AddonNotFoundError()
+    throw new RedisAddonNotFoundError()
   }
 
   if (matches.length > 1) {
-    throw new AddonAmbiguousError(matches)
+    throw new RedisAddonAmbiguousError(matches)
   }
 
   const match = matches[0]
