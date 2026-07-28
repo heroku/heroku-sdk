@@ -100,6 +100,21 @@ describe('releaseDockerImages', () => {
     expect(result).toEqual({newRelease, oldRelease})
   })
 
+  it('handles empty list of releases', async () => {
+    const newRelease: Partial<Release> = {
+      id: 'rel-new', output_stream_url: 'https://stream', status: 'pending', version: 11,
+    }
+    const ctx = buildCtx({
+      appInfo: vi.fn().mockResolvedValue(CONTAINER_APP),
+      releaseList: vi.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([newRelease]),
+    })
+
+    const result = await releaseDockerImages(ctx, 'my-app', [{docker_image: 'sha256:abc', type: 'web'}])
+    expect(result).toEqual({newRelease, oldRelease: undefined})
+  })
+
   it('throws NotAContainerAppError when the app is not a container app', async () => {
     const ctx = buildCtx({
       appInfo: vi.fn().mockResolvedValue({

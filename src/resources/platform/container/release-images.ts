@@ -17,8 +17,8 @@ export type DockerReleasesBatchUpdateOpts = {
 }
 
 export type ReleaseDockerImagesResult = {
-  newRelease: Release
-  oldRelease: Release
+  newRelease: Release | undefined
+  oldRelease: Release | undefined
 }
 
 /**
