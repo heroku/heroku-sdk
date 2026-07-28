@@ -1,6 +1,12 @@
 export {addOnExtensions} from '../platform/add-on/index.js'
 export {appExtensions, type AppInfo, type PipelineCouplingDetail} from '../platform/app/index.js'
 export {
+  containerExtensions,
+  type DockerReleasesBatchUpdateOpts,
+  NotAContainerAppError,
+  type ReleaseDockerImagesResult,
+} from '../platform/container/index.js'
+export {
   type CreateAndWaitOptions,
   domainExtensions,
   type DomainOptions,
