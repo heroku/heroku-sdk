@@ -30,6 +30,12 @@ export type UpgradeAddOnOptions = ResolveAddonOptions & {
 
 export type DestroyAndWaitOptions = {
   /**
+   * When true, sends `{force: true}` as the delete body — allows
+   * destruction even if the add-on is attached to other apps. Mirrors
+   * the CLI's `--force` flag. Defaults to false.
+   */
+  force?: boolean
+  /**
    * Fires once after the initial delete returns and the add-on is still
    * deprovisioning, before the first poll. Useful for two-phase UX:
    * e.g. "Destroying…" followed by "Waiting for deprovisioning…".

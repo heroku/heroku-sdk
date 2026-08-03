@@ -1,8 +1,8 @@
 import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient, HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
+import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 import {
-  afterEach, beforeEach, describe, expect, it, vi,
+  afterEach, describe, expect, it, vi,
 } from 'vitest'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
@@ -177,6 +177,38 @@ function buildWaitCtx({
     info,
     infoByApp,
     withHeaders: platform.withHeaders,
+  }
+}
+
+function buildDestroyCtx({infoByAppResponses = []}: {
+  infoByAppResponses?: Array<AddOn | Error>
+} = {}): {
+  addOnDelete: ReturnType<typeof vi.fn>
+  ctx: ResourceCtx
+  infoByApp: ReturnType<typeof vi.fn>
+  withOptions: ReturnType<typeof vi.fn>
+} {
+  const infoByApp = vi.fn()
+  for (const response of infoByAppResponses) {
+    if (response instanceof Error) {
+      infoByApp.mockRejectedValueOnce(response)
+    } else {
+      infoByApp.mockResolvedValueOnce(response)
+    }
+  }
+
+  const addOnDelete = vi.fn()
+  const platform = {
+    addOn: {delete: addOnDelete, infoByApp},
+    withOptions: vi.fn(),
+  }
+  platform.withOptions.mockReturnValue(platform)
+
+  return {
+    addOnDelete,
+    ctx: {data: {} as never, platform: platform as never},
+    infoByApp,
+    withOptions: platform.withOptions,
   }
 }
 
@@ -950,70 +982,26 @@ describe('add-on resource', () => {
   })
 
   describe('destroyAndWait', () => {
-    let clientDelete: ReturnType<typeof vi.fn>
-
-    function buildDestroyCtx({infoByAppResponses = []}: {
-      infoByAppResponses?: Array<AddOn | Error>
-    } = {}): {
-      ctx: ResourceCtx
-      infoByApp: ReturnType<typeof vi.fn>
-      withHeaders: ReturnType<typeof vi.fn>
-    } {
-      const infoByApp = vi.fn()
-      for (const response of infoByAppResponses) {
-        if (response instanceof Error) {
-          infoByApp.mockRejectedValueOnce(response)
-        } else {
-          infoByApp.mockResolvedValueOnce(response)
-        }
-      }
-
-      const platform = {
-        addOn: {infoByApp},
-        withHeaders: vi.fn(),
-      }
-      platform.withHeaders.mockReturnValue(platform)
-
-      return {
-        ctx: {data: {} as never, platform: platform as never},
-        infoByApp,
-        withHeaders: platform.withHeaders,
-      }
-    }
-
-    beforeEach(() => {
-      clientDelete = vi.fn()
-      vi.spyOn(HerokuApiClient.prototype, 'delete').mockImplementation(clientDelete)
-    })
-
     afterEach(() => {
       vi.restoreAllMocks()
     })
 
     it('issues DELETE with Accept-Expansion: plan and returns the response body', async () => {
       const deleted = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
-      clientDelete.mockResolvedValue(new Response(JSON.stringify(deleted), {
-        headers: {'content-type': 'application/json'},
-        status: 200,
-      }))
-      const {ctx} = buildDestroyCtx()
+      const {addOnDelete, ctx, withOptions} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deleted)
 
       const result = await destroyAndWait(ctx, 'my-app', 'my-postgres')
 
-      expect(clientDelete).toHaveBeenCalledExactlyOnceWith(
-        '/apps/my-app/addons/my-postgres',
-        expect.objectContaining({headers: {'Accept-Expansion': 'plan'}}),
-      )
+      expect(addOnDelete).toHaveBeenCalledExactlyOnceWith('my-app', 'my-postgres')
+      expect(withOptions).toHaveBeenCalledWith(expect.objectContaining({headers: {'Accept-Expansion': 'plan'}}))
       expect(result.state).toBe('deprovisioned')
     })
 
     it('returns immediately without polling when wait is not requested', async () => {
       const deprovisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
-      clientDelete.mockResolvedValue(new Response(JSON.stringify(deprovisioning), {
-        headers: {'content-type': 'application/json'},
-        status: 200,
-      }))
-      const {ctx, infoByApp} = buildDestroyCtx()
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioning)
 
       await destroyAndWait(ctx, 'my-app', 'my-postgres')
 
@@ -1023,13 +1011,10 @@ describe('add-on resource', () => {
     it('polls infoByApp until the add-on leaves deprovisioning', async () => {
       const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
       const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
-      clientDelete.mockResolvedValue(new Response(JSON.stringify(deprovisioning), {
-        headers: {'content-type': 'application/json'},
-        status: 200,
-      }))
-      const {ctx, infoByApp} = buildDestroyCtx({
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx({
         infoByAppResponses: [deprovisioning, deprovisioned],
       })
+      addOnDelete.mockResolvedValue(deprovisioning)
 
       const result = await destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})
 
@@ -1040,13 +1025,10 @@ describe('add-on resource', () => {
     it('treats a 404 during polling as successful deprovisioning', async () => {
       const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
       const notFound = Object.assign(new Error('not found'), {statusCode: 404})
-      clientDelete.mockResolvedValue(new Response(JSON.stringify(deprovisioning), {
-        headers: {'content-type': 'application/json'},
-        status: 200,
-      }))
-      const {ctx, infoByApp} = buildDestroyCtx({
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx({
         infoByAppResponses: [notFound],
       })
+      addOnDelete.mockResolvedValue(deprovisioning)
 
       const result = await destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})
 
@@ -1061,11 +1043,8 @@ describe('add-on resource', () => {
       const onDeprovisioning = vi.fn(() => {
         calls.push('onDeprovisioning')
       })
-      clientDelete.mockResolvedValue(new Response(JSON.stringify(deprovisioning), {
-        headers: {'content-type': 'application/json'},
-        status: 200,
-      }))
-      const {ctx, infoByApp} = buildDestroyCtx()
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioning)
       infoByApp.mockImplementation(async () => {
         calls.push('poll')
         return deprovisioned
@@ -1079,11 +1058,8 @@ describe('add-on resource', () => {
     it('does not fire onDeprovisioning when the delete response is already terminal', async () => {
       const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
       const onDeprovisioning = vi.fn()
-      clientDelete.mockResolvedValue(new Response(JSON.stringify(deprovisioned), {
-        headers: {'content-type': 'application/json'},
-        status: 200,
-      }))
-      const {ctx} = buildDestroyCtx()
+      const {addOnDelete, ctx} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioned)
 
       await destroyAndWait(ctx, 'my-app', 'my-postgres', {onDeprovisioning, wait: true})
 
@@ -1093,45 +1069,80 @@ describe('add-on resource', () => {
     it('rethrows non-404 errors from infoByApp during polling', async () => {
       const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
       const boom = new Error('network error')
-      clientDelete.mockResolvedValue(new Response(JSON.stringify(deprovisioning), {
-        headers: {'content-type': 'application/json'},
-        status: 200,
-      }))
-      const {ctx} = buildDestroyCtx({infoByAppResponses: [boom]})
+      const {addOnDelete, ctx} = buildDestroyCtx({infoByAppResponses: [boom]})
+      addOnDelete.mockResolvedValue(deprovisioning)
 
       await expect(destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})).rejects.toBe(boom)
     })
 
-    it('sets Accept-Expansion: plan on poll requests via withHeaders', async () => {
+    it('sets Accept-Expansion: plan on poll requests via withOptions', async () => {
       const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
       const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
-      clientDelete.mockResolvedValue(new Response(JSON.stringify(deprovisioning), {
-        headers: {'content-type': 'application/json'},
-        status: 200,
-      }))
-      const {ctx, withHeaders} = buildDestroyCtx({infoByAppResponses: [deprovisioned]})
+      const {addOnDelete, ctx, withOptions} = buildDestroyCtx({infoByAppResponses: [deprovisioned]})
+      addOnDelete.mockResolvedValue(deprovisioning)
 
       await destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})
 
-      expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'plan'})
+      expect(withOptions).toHaveBeenCalledWith(expect.objectContaining({headers: {'Accept-Expansion': 'plan'}}))
+    })
+
+    it('returns an empty object without polling when the delete response is empty (204)', async () => {
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue()
+
+      const result = await destroyAndWait(ctx, 'my-app', 'my-postgres')
+
+      expect(result).toEqual({})
+      expect(infoByApp).not.toHaveBeenCalled()
+    })
+
+    it('sends force in the delete body when force is true', async () => {
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {addOnDelete, ctx, withOptions} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioned)
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres', {force: true})
+
+      expect(withOptions).toHaveBeenCalledWith(expect.objectContaining({body: {force: true}}))
+      expect(addOnDelete).toHaveBeenCalledWith('my-app', 'my-postgres')
+    })
+
+    it('does not send a body when force is not set', async () => {
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {addOnDelete, ctx, withOptions} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioned)
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres')
+
+      // No withOptions call should carry a body when force is absent.
+      expect(withOptions.mock.calls.every(([opts]) => !('body' in (opts ?? {})))).toBe(true)
+    })
+
+    it('does not carry the force body on poll requests', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {addOnDelete, ctx, withOptions} = buildDestroyCtx({infoByAppResponses: [deprovisioned]})
+      addOnDelete.mockResolvedValue(deprovisioning)
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres', {force: true, wait: true, waitIntervalMs: 1})
+
+      // The force body must scope to the delete client only, never the GET
+      // poll client. The poll client is derived from the base
+      // `withOptions({headers, signal})` call (no body); the delete client is
+      // a SEPARATE `withOptions({body: {force: true}})` call. Assert both
+      // exist so a regression that folds force into the shared poll setup —
+      // leaking the body onto every poll request — fails here.
+      expect(withOptions).toHaveBeenCalledWith(expect.objectContaining({body: {force: true}}))
+      expect(withOptions.mock.calls.some(([opts]) => !('body' in (opts ?? {})))).toBe(true)
     })
 
     it('throws if the abort signal is already aborted', async () => {
       const controller = new AbortController()
       controller.abort()
-      const {ctx} = buildDestroyCtx()
+      const {addOnDelete, ctx} = buildDestroyCtx()
 
       await expect(destroyAndWait(ctx, 'my-app', 'my-postgres', {signal: controller.signal})).rejects.toThrow()
-      expect(clientDelete).not.toHaveBeenCalled()
-    })
-
-    it('handles a 204 response with no body', async () => {
-      clientDelete.mockResolvedValue(new Response(null, {status: 204}))
-      const {ctx} = buildDestroyCtx()
-
-      const result = await destroyAndWait(ctx, 'my-app', 'my-postgres')
-
-      expect(result).toBeDefined()
+      expect(addOnDelete).not.toHaveBeenCalled()
     })
   })
 

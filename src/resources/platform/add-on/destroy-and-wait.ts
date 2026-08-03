@@ -1,7 +1,5 @@
 import type {AddOn} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/heroku-fetch'
-
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {DestroyAndWaitOptions} from './types.js'
 
@@ -29,12 +27,10 @@ type AddOnWithDeprovisioning = Omit<AddOn, 'state'> & {
  *     when polling is about to begin, letting callers surface a
  *     two-phase status display.
  *
- * Note: the Heroku Platform API accepts a `force` body on
- * `DELETE /apps/:app/addons/:addon` but `@heroku/types` lacks
- * `hasRequestBody` on that route, so the SDK dispatcher cannot
- * forward it. The extension calls `HerokuApiClient` directly for
- * the delete step. The `Accept-Expansion: plan` header is set to
- * match the existing CLI behaviour.
+ * When `options.force` is set, the delete request sends `{force: true}`
+ * as its body (scoped to the delete call only, not the poll requests).
+ *
+ * Both the delete and the poll requests send `Accept-Expansion: plan`.
  */
 export async function destroyAndWait(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -44,18 +40,18 @@ export async function destroyAndWait(
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
 
-  const client = new HerokuApiClient()
-  const response = await client.delete(
-    `/apps/${encodeURIComponent(appIdentity)}/addons/${encodeURIComponent(addonIdentity)}`,
-    {
-      headers: {'Accept-Expansion': 'plan'},
-      signal: options.signal,
-    },
-  )
+  const platform = ctx.platform.withOptions({
+    headers: {'Accept-Expansion': 'plan'},
+    signal: options.signal,
+  })
 
-  let addon: AddOnWithDeprovisioning = response.status === 204 || response.headers.get('content-length') === '0'
-    ? {} as AddOnWithDeprovisioning
-    : await response.json() as AddOnWithDeprovisioning
+  // The force body is scoped to the delete call only — a sticky body on the
+  // shared client would leak onto the GET poll requests below.
+  const deleteClient = options.force
+    ? platform.withOptions({body: {force: true}})
+    : platform
+  const deleted = await deleteClient.addOn.delete(appIdentity, addonIdentity) as AddOnWithDeprovisioning | undefined
+  let addon: AddOnWithDeprovisioning = deleted ?? {} as AddOnWithDeprovisioning
 
   if (!options.wait || (addon.state !== 'deprovisioning' && addon.state !== 'provisioning')) {
     return addon as AddOn
@@ -64,7 +60,6 @@ export async function destroyAndWait(
   await options.onDeprovisioning?.(addon as AddOn)
 
   const intervalMs = options.waitIntervalMs ?? DEFAULT_DESTROY_WAIT_INTERVAL_MS
-  const platform = ctx.platform.withHeaders({'Accept-Expansion': 'plan'})
 
   /* eslint-disable no-await-in-loop */
   while (addon.state === 'deprovisioning' || addon.state === 'provisioning') {

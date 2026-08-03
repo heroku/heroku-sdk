@@ -210,6 +210,35 @@ describe('createClient', () => {
       })
     })
 
+    it('forwards a body as RequestOptions on a DELETE call', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const scoped = client.withOptions({body: {force: true}})
+
+      await scoped.app.delete('my-app')
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.delete).toHaveBeenCalledWith('/apps/my-app', {body: {force: true}})
+    })
+
+    it('replaces an earlier body and preserves an unset body across chained calls', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const layered = client
+        .withOptions({body: {force: false}, timeout: 1000})
+        .withOptions({body: {force: true}})
+        .withOptions({headers: {Accept: 'b'}})
+
+      await layered.app.delete('my-app')
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.delete).toHaveBeenCalledWith('/apps/my-app', {
+        body: {force: true},
+        headers: {Accept: 'b'},
+        timeout: 1000,
+      })
+    })
+
     it('composes withOptions and withHeaders', async () => {
       apiClientInstances.length = 0
       const client = createClient<any>(fakeRoutes, {token: 'test-token'})
