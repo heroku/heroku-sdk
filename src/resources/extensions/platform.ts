@@ -35,3 +35,6 @@ export {pipelinePromotionExtensions} from '../platform/pipeline/promotion.js'
 export {privateToShield, shieldToPrivate} from '../platform/shield.js'
 export {createAndAssociate, type CreateAndAssociateOptions, sniEndpointExtensions} from '../platform/sni-endpoint/index.js'
 export {telemetryDrainExtensions, type TelemetryDrainOptions, type TelemetryDrainTarget} from '../platform/telemetry-drain/index.js'
+export {
+  testRunExtensions, TestRunNotReadyError, type TestRunStatus, waitForState, type WaitForStateOptions,
+} from '../platform/test-run/index.js'
