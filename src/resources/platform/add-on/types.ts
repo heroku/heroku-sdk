@@ -28,6 +28,43 @@ export type UpgradeAddOnOptions = ResolveAddonOptions & {
   onResolved?: (addon: ResolvedAddOn) => Promise<void> | void
 }
 
+export type DestroyAndWaitOptions = {
+  /**
+   * When true, sends `{force: true}` as the delete body — allows
+   * destruction even if the add-on is attached to other apps. Mirrors
+   * the CLI's `--force` flag. Defaults to false.
+   */
+  force?: boolean
+  /**
+   * Fires once after the initial delete returns and the add-on is still
+   * deprovisioning, before the first poll. Useful for two-phase UX:
+   * e.g. "Destroying…" followed by "Waiting for deprovisioning…".
+   *
+   * Only invoked when `wait: true` and the delete response state is
+   * `deprovisioning`.
+   */
+  onDeprovisioning?: (addon: AddOn) => Promise<void> | void
+  /**
+   * If true, poll until the add-on leaves `deprovisioning`. If the
+   * terminal state is not `deprovisioned`, throws `AddonProvisioningFailedError`.
+   *
+   * If false (the default), returns immediately after the delete call.
+   */
+  wait?: boolean
+  /** Polling interval in milliseconds. Defaults to 5000. */
+  waitIntervalMs?: number
+} & AddOnOptions
+
+export type WaitForProvisioningOptions = AddOnOptions & {
+  /**
+   * When provided, polls `GET /apps/:app/addons/:addon` (app-scoped).
+   * Without it, polls `GET /addons/:addon` (global).
+   */
+  appIdentity?: string
+  /** Polling interval in milliseconds. Defaults to 5000. */
+  waitIntervalMs?: number
+}
+
 export type CreateAndWaitOptions = {
   /**
    * Fires once after the initial create returns and the add-on is

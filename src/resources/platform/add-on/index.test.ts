@@ -15,6 +15,7 @@ import {
   AddonProvisioningFailedError,
   createAndWait,
   describeAddon,
+  destroyAndWait,
   formatPlanPriceLabel,
   listPlans,
   listPlansForAddon,
@@ -22,6 +23,7 @@ import {
   resolveAddon,
   resolveAddonByAttachment,
   upgrade,
+  waitForProvisioning,
 } from './index.js'
 
 function buildAddon(overrides: Partial<AddOn> = {}): AddOn {
@@ -139,6 +141,80 @@ function buildCreateCtx({
     ctx: {data: {} as never, platform: platform as never},
     infoByApp,
     withHeaders: platform.withHeaders,
+  }
+}
+
+function buildWaitCtx({
+  infoByAppResponses = [],
+  infoResponses = [],
+}: {
+  infoByAppResponses?: AddOn[]
+  infoResponses?: AddOn[]
+} = {}): {
+  ctx: ResourceCtx
+  info: ReturnType<typeof vi.fn>
+  infoByApp: ReturnType<typeof vi.fn>
+  withHeaders: ReturnType<typeof vi.fn>
+} {
+  const infoByApp = vi.fn()
+  for (const response of infoByAppResponses) {
+    infoByApp.mockResolvedValueOnce(response)
+  }
+
+  const info = vi.fn()
+  for (const response of infoResponses) {
+    info.mockResolvedValueOnce(response)
+  }
+
+  const platform = {
+    addOn: {info, infoByApp},
+    withHeaders: vi.fn(),
+  }
+  platform.withHeaders.mockReturnValue(platform)
+
+  return {
+    ctx: {data: {} as never, platform: platform as never},
+    info,
+    infoByApp,
+    withHeaders: platform.withHeaders,
+  }
+}
+
+function buildDestroyCtx({infoByAppResponses = []}: {
+  infoByAppResponses?: Array<AddOn | Error>
+} = {}): {
+  addOnDelete: ReturnType<typeof vi.fn>
+  ctx: ResourceCtx
+  infoByApp: ReturnType<typeof vi.fn>
+  withHeaders: ReturnType<typeof vi.fn>
+  withOptions: ReturnType<typeof vi.fn>
+} {
+  const infoByApp = vi.fn()
+  for (const response of infoByAppResponses) {
+    if (response instanceof Error) {
+      infoByApp.mockRejectedValueOnce(response)
+    } else {
+      infoByApp.mockResolvedValueOnce(response)
+    }
+  }
+
+  const addOnDelete = vi.fn()
+  const platform = {
+    addOn: {delete: addOnDelete, infoByApp},
+    withHeaders: vi.fn(),
+    withOptions: vi.fn(),
+  }
+  // Both decorators return a same-shaped client; the mocks are self-referential
+  // so the `.withHeaders(...).withOptions(...)` chain resolves back to platform.
+  platform.withHeaders.mockReturnValue(platform)
+  platform.withOptions.mockReturnValue(platform)
+
+  return {
+    addOnDelete,
+    ctx: {data: {} as never, platform: platform as never},
+    infoByApp,
+    withHeaders: platform.withHeaders,
+    withOptions: platform.withOptions,
   }
 }
 
@@ -911,6 +987,250 @@ describe('add-on resource', () => {
     })
   })
 
+  describe('destroyAndWait', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('issues DELETE with Accept-Expansion: plan and returns the response body', async () => {
+      const deleted = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {addOnDelete, ctx, withHeaders} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deleted)
+
+      const result = await destroyAndWait(ctx, 'my-app', 'my-postgres')
+
+      expect(addOnDelete).toHaveBeenCalledExactlyOnceWith('my-app', 'my-postgres')
+      expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'plan'})
+      expect(result.state).toBe('deprovisioned')
+    })
+
+    it('returns immediately without polling when wait is not requested', async () => {
+      const deprovisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioning)
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres')
+
+      expect(infoByApp).not.toHaveBeenCalled()
+    })
+
+    it('polls infoByApp until the add-on leaves deprovisioning', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx({
+        infoByAppResponses: [deprovisioning, deprovisioned],
+      })
+      addOnDelete.mockResolvedValue(deprovisioning)
+
+      const result = await destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})
+
+      expect(infoByApp).toHaveBeenCalledTimes(2)
+      expect(result.state).toBe('deprovisioned')
+    })
+
+    it('treats a 404 during polling as successful deprovisioning', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const notFound = Object.assign(new Error('not found'), {statusCode: 404})
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx({
+        infoByAppResponses: [notFound],
+      })
+      addOnDelete.mockResolvedValue(deprovisioning)
+
+      const result = await destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})
+
+      expect(infoByApp).toHaveBeenCalledTimes(1)
+      expect(result.state).toBe('deprovisioned')
+    })
+
+    it('fires onDeprovisioning once after delete, before polling', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const calls: string[] = []
+      const onDeprovisioning = vi.fn(() => {
+        calls.push('onDeprovisioning')
+      })
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioning)
+      infoByApp.mockImplementation(async () => {
+        calls.push('poll')
+        return deprovisioned
+      })
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres', {onDeprovisioning, wait: true, waitIntervalMs: 1})
+
+      expect(calls).toEqual(['onDeprovisioning', 'poll'])
+    })
+
+    it('does not fire onDeprovisioning when the delete response is already terminal', async () => {
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const onDeprovisioning = vi.fn()
+      const {addOnDelete, ctx} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioned)
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres', {onDeprovisioning, wait: true})
+
+      expect(onDeprovisioning).not.toHaveBeenCalled()
+    })
+
+    it('rethrows non-404 errors from infoByApp during polling', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const boom = new Error('network error')
+      const {addOnDelete, ctx} = buildDestroyCtx({infoByAppResponses: [boom]})
+      addOnDelete.mockResolvedValue(deprovisioning)
+
+      await expect(destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})).rejects.toBe(boom)
+    })
+
+    it('sets Accept-Expansion: plan on poll requests via withHeaders', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {addOnDelete, ctx, withHeaders} = buildDestroyCtx({infoByAppResponses: [deprovisioned]})
+      addOnDelete.mockResolvedValue(deprovisioning)
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})
+
+      expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'plan'})
+    })
+
+    it('returns an empty object without polling when the delete response is empty (204)', async () => {
+      const {addOnDelete, ctx, infoByApp} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue()
+
+      const result = await destroyAndWait(ctx, 'my-app', 'my-postgres')
+
+      expect(result).toEqual({})
+      expect(infoByApp).not.toHaveBeenCalled()
+    })
+
+    it('sends force in the delete body when force is true', async () => {
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {addOnDelete, ctx, withOptions} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioned)
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres', {force: true})
+
+      expect(withOptions).toHaveBeenCalledWith(expect.objectContaining({body: {force: true}}))
+      expect(addOnDelete).toHaveBeenCalledWith('my-app', 'my-postgres')
+    })
+
+    it('does not send a body when force is not set', async () => {
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {addOnDelete, ctx, withOptions} = buildDestroyCtx()
+      addOnDelete.mockResolvedValue(deprovisioned)
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres')
+
+      // No withOptions call should carry a body when force is absent.
+      expect(withOptions.mock.calls.every(([opts]) => !('body' in (opts ?? {})))).toBe(true)
+    })
+
+    it('does not carry the force body on poll requests', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {addOnDelete, ctx, withOptions} = buildDestroyCtx({infoByAppResponses: [deprovisioned]})
+      addOnDelete.mockResolvedValue(deprovisioning)
+
+      await destroyAndWait(ctx, 'my-app', 'my-postgres', {force: true, wait: true, waitIntervalMs: 1})
+
+      // The force body must scope to the delete client only, never the GET
+      // poll client. The poll client is derived from the base
+      // `withOptions({headers, signal})` call (no body); the delete client is
+      // a SEPARATE `withOptions({body: {force: true}})` call. Assert both
+      // exist so a regression that folds force into the shared poll setup —
+      // leaking the body onto every poll request — fails here.
+      expect(withOptions).toHaveBeenCalledWith(expect.objectContaining({body: {force: true}}))
+      expect(withOptions.mock.calls.some(([opts]) => !('body' in (opts ?? {})))).toBe(true)
+    })
+
+    it('throws if the abort signal is already aborted', async () => {
+      const controller = new AbortController()
+      controller.abort()
+      const {addOnDelete, ctx} = buildDestroyCtx()
+
+      await expect(destroyAndWait(ctx, 'my-app', 'my-postgres', {signal: controller.signal})).rejects.toThrow()
+      expect(addOnDelete).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('waitForProvisioning', () => {
+    it('returns immediately when the addon is already provisioned', async () => {
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const {ctx, infoByApp} = buildWaitCtx()
+
+      const result = await waitForProvisioning(ctx, provisioned)
+
+      expect(infoByApp).not.toHaveBeenCalled()
+      expect(result).toBe(provisioned)
+    })
+
+    it('polls infoByApp until provisioned when appIdentity is provided', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const {ctx, infoByApp} = buildWaitCtx({
+        infoByAppResponses: [provisioning, provisioned],
+      })
+
+      const result = await waitForProvisioning(ctx, provisioning, {appIdentity: 'my-app', waitIntervalMs: 1})
+
+      expect(infoByApp).toHaveBeenCalledTimes(2)
+      expect(infoByApp).toHaveBeenCalledWith('my-app', provisioning.name)
+      expect(result.state).toBe('provisioned')
+    })
+
+    it('polls info (global) when no appIdentity is provided', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const {ctx, info, infoByApp} = buildWaitCtx({
+        infoResponses: [provisioned],
+      })
+
+      await waitForProvisioning(ctx, provisioning, {waitIntervalMs: 1})
+
+      expect(info).toHaveBeenCalledExactlyOnceWith(provisioning.name)
+      expect(infoByApp).not.toHaveBeenCalled()
+    })
+
+    it('throws AddonProvisioningFailedError when terminal state is deprovisioned', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const failed = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {ctx} = buildWaitCtx({infoByAppResponses: [failed]})
+
+      await expect(waitForProvisioning(ctx, provisioning, {appIdentity: 'my-app', waitIntervalMs: 1})).rejects.toBeInstanceOf(AddonProvisioningFailedError)
+    })
+
+    it('polls through deprovisioning until deprovisioned', async () => {
+      const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
+      const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
+      const {ctx, infoByApp} = buildWaitCtx({
+        infoByAppResponses: [deprovisioning as AddOn, deprovisioned],
+      })
+
+      await expect(waitForProvisioning(ctx, deprovisioning as AddOn, {appIdentity: 'my-app', waitIntervalMs: 1})).rejects.toBeInstanceOf(AddonProvisioningFailedError)
+
+      expect(infoByApp).toHaveBeenCalledTimes(2)
+    })
+
+    it('sets Accept-Expansion: addon_service,plan on poll requests via withHeaders', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const {ctx, withHeaders} = buildWaitCtx({infoByAppResponses: [provisioned]})
+
+      await waitForProvisioning(ctx, provisioning, {appIdentity: 'my-app', waitIntervalMs: 1})
+
+      expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'addon_service,plan'})
+    })
+
+    it('throws if the abort signal is already aborted', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const controller = new AbortController()
+      controller.abort()
+      const {ctx, infoByApp} = buildWaitCtx()
+
+      await expect(waitForProvisioning(ctx, provisioning, {signal: controller.signal})).rejects.toThrow()
+      expect(infoByApp).not.toHaveBeenCalled()
+    })
+  })
+
   describe('addOnExtensions', () => {
     it('declares service: platform, resource: addOn', () => {
       expect(addOnExtensions.service).toBe('platform')
@@ -922,6 +1242,7 @@ describe('add-on resource', () => {
       const methods = addOnExtensions.factory(ctx)
       expect(typeof methods.createAndWait).toBe('function')
       expect(typeof methods.describe).toBe('function')
+      expect(typeof methods.destroyAndWait).toBe('function')
       expect(typeof methods.formatPlanPriceLabel).toBe('function')
       expect(typeof methods.listPlans).toBe('function')
       expect(typeof methods.listPlansForAddon).toBe('function')
@@ -929,6 +1250,7 @@ describe('add-on resource', () => {
       expect(typeof methods.resolve).toBe('function')
       expect(typeof methods.resolveByAttachment).toBe('function')
       expect(typeof methods.upgrade).toBe('function')
+      expect(typeof methods.waitForProvisioning).toBe('function')
     })
 
     it('upgrade delegates to the named function', async () => {

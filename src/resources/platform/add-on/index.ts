@@ -1,21 +1,24 @@
-import type {AddOnCreateOpts} from '@heroku/types/3.sdk'
+import type {AddOn, AddOnCreateOpts} from '@heroku/types/3.sdk'
 
 import type {ListPlansForAddonOptions} from './list-plans.js'
 import type {
-  AddOnOptions, CreateAndWaitOptions, ResolveAddonOptions, UpgradeAddOnOptions,
+  AddOnOptions, CreateAndWaitOptions, DestroyAndWaitOptions, ResolveAddonOptions, UpgradeAddOnOptions, WaitForProvisioningOptions,
 } from './types.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
 import {createAndWait} from './create-and-wait.js'
 import {describeAddon} from './describe.js'
+import {destroyAndWait} from './destroy-and-wait.js'
 import {listPlans, listPlansForAddon} from './list-plans.js'
 import {formatPlanPriceLabel, priceForPlan} from './pricing.js'
 import {resolveAddon, resolveAddonByAttachment} from './resolve.js'
 import {upgrade} from './upgrade.js'
+import {waitForProvisioning} from './wait-for-provisioning.js'
 
 export {createAndWait} from './create-and-wait.js'
-
 export {describeAddon} from './describe.js'
+
+export {destroyAndWait} from './destroy-and-wait.js'
 
 export {
   AddonAmbiguousError,
@@ -35,17 +38,22 @@ export type {
   AddOnOptions,
   CreateAndWaitOptions,
   DescribedAddOn,
+  DestroyAndWaitOptions,
   ResolveAddonOptions,
   ResolvedAddOn,
   UpgradeAddOnOptions,
+  WaitForProvisioningOptions,
 } from './types.js'
 export {upgrade} from './upgrade.js'
+export {waitForProvisioning} from './wait-for-provisioning.js'
 
 export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
   createAndWait: (appIdentity: string, body: AddOnCreateOpts, options?: CreateAndWaitOptions) =>
     createAndWait(ctx, appIdentity, body, options),
   describe: (addonIdentity: string, options?: ResolveAddonOptions) =>
     describeAddon(ctx, addonIdentity, options),
+  destroyAndWait: (appIdentity: string, addonIdentity: string, options?: DestroyAndWaitOptions) =>
+    destroyAndWait(ctx, appIdentity, addonIdentity, options),
   formatPlanPriceLabel,
   listPlans: (serviceIdentity: string, options?: AddOnOptions) =>
     listPlans(ctx, serviceIdentity, options),
@@ -58,4 +66,6 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
     resolveAddonByAttachment(ctx, appIdentity, attachmentName, options),
   upgrade: (addonIdentity: string, plan: string, options?: UpgradeAddOnOptions) =>
     upgrade(ctx, addonIdentity, plan, options),
+  waitForProvisioning: (addon: AddOn, options?: WaitForProvisioningOptions) =>
+    waitForProvisioning(ctx, addon, options),
 }))

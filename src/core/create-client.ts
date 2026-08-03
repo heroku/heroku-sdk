@@ -16,7 +16,15 @@ type RoutesModule = Record<string, Record<string, RouteDefinition>>
  * and `stream` are deliberately excluded — those belong on the
  * individual route call, not on the client wrapper.
  */
-export type StickyRouteOptions = Pick<RequestOptions, 'headers' | 'signal' | 'timeout'>
+export type StickyRouteOptions = Pick<RequestOptions, 'headers' | 'signal' | 'timeout'> & {
+  /**
+   * Request body applied to write calls on the derived client. Primarily
+   * for methods whose route metadata lacks `hasRequestBody` (e.g. DELETE
+   * with a `force` payload) where the body cannot be passed positionally.
+   * The underlying client forwards this as the JSON payload.
+   */
+  body?: unknown
+}
 
 /**
  * Methods available on every routes-generated client in addition to
@@ -54,10 +62,11 @@ function mergeStickyOptions(
     merged.headers = {...base?.headers, ...next.headers}
   }
 
-  // signal and timeout are not additive — last wins, but only if the
-  // caller actually set them. Otherwise the previous value persists.
+  // signal, timeout, and body are not additive — last wins, but only if
+  // the caller actually set them. Otherwise the previous value persists.
   if (next.signal !== undefined) merged.signal = next.signal
   if (next.timeout !== undefined) merged.timeout = next.timeout
+  if (next.body !== undefined) merged.body = next.body
   return merged
 }
 
