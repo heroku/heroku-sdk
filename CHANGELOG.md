@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.1...sdk-v0.5.2) (2026-08-03)
+
+
+### Features
+
+* add certs SDK extensions (waitForACMCertificates + sniEndpoint.createAndAssociate) ([#73](https://github.com/heroku/heroku-sdk/issues/73)) ([c4ed431](https://github.com/heroku/heroku-sdk/commit/c4ed4312ade44c217f9d8c9e655e588473a96852))
+* add container extensions ([#83](https://github.com/heroku/heroku-sdk/issues/83)) ([de9993d](https://github.com/heroku/heroku-sdk/commit/de9993dd90a7717db56ccfd2faddda3f4d0a0bb2))
+* add platform.testRun.waitForState extension (W-23374354) ([#82](https://github.com/heroku/heroku-sdk/issues/82)) ([bfe6a85](https://github.com/heroku/heroku-sdk/commit/bfe6a85dd0d21e72c4d2c306b9b03b6279b1bd71))
+* add redis SDK extensions (resolveByApp + waitForReady) ([#81](https://github.com/heroku/heroku-sdk/issues/81)) ([7caff28](https://github.com/heroku/heroku-sdk/commit/7caff2882af34bff45d1c3bf3914cfad5994fac6))
+* add telemetry drains extension ([#78](https://github.com/heroku/heroku-sdk/issues/78)) ([934615c](https://github.com/heroku/heroku-sdk/commit/934615c95ebbe7520ca9361108e1afd7a886c868))
+* **add-on:** add destroyAndWait and waitForProvisioning extensions ([#72](https://github.com/heroku/heroku-sdk/issues/72)) ([92932d8](https://github.com/heroku/heroku-sdk/commit/92932d816440d24363cb106d0829f80fee88d9a4))
+* **dyno:** add runDyno helper; fix log-session SSE parsing for Fir ([#77](https://github.com/heroku/heroku-sdk/issues/77)) ([26993a4](https://github.com/heroku/heroku-sdk/commit/26993a4607f1eabc01a974e63ac4b263ba28b354))
+
+
+### Bug Fixes
+
+* **ci:** pass PR title via env var in pr-title-check workflow ([#70](https://github.com/heroku/heroku-sdk/issues/70)) ([9cb5e3e](https://github.com/heroku/heroku-sdk/commit/9cb5e3e3f1a3cbc7850eb32c253510a4804cd9fb))
+
+
+### Dependencies
+
+* bump @heroku/types from 3.0.0-beta.0 to 4.0.0 ([#76](https://github.com/heroku/heroku-sdk/issues/76)) ([350a12d](https://github.com/heroku/heroku-sdk/commit/350a12de5d8a639e099d495fee087c03f1a587dc))
+* bump @heroku/types from 4.0.0 to 4.0.1 ([#80](https://github.com/heroku/heroku-sdk/issues/80)) ([9485eca](https://github.com/heroku/heroku-sdk/commit/9485ecaf56486f0dd71cc96b89696fe13f80125c))
+
 ## [0.5.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.0...sdk-v0.5.1) (2026-07-16)
 
 
