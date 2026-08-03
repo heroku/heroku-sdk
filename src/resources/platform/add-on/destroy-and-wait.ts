@@ -40,10 +40,9 @@ export async function destroyAndWait(
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
 
-  const platform = ctx.platform.withOptions({
-    headers: {'Accept-Expansion': 'plan'},
-    signal: options.signal,
-  })
+  const platform = ctx.platform
+    .withHeaders({'Accept-Expansion': 'plan'})
+    .withOptions({signal: options.signal})
 
   // The force body is scoped to the delete call only — a sticky body on the
   // shared client would leak onto the GET poll requests below.

@@ -186,6 +186,7 @@ function buildDestroyCtx({infoByAppResponses = []}: {
   addOnDelete: ReturnType<typeof vi.fn>
   ctx: ResourceCtx
   infoByApp: ReturnType<typeof vi.fn>
+  withHeaders: ReturnType<typeof vi.fn>
   withOptions: ReturnType<typeof vi.fn>
 } {
   const infoByApp = vi.fn()
@@ -200,14 +201,19 @@ function buildDestroyCtx({infoByAppResponses = []}: {
   const addOnDelete = vi.fn()
   const platform = {
     addOn: {delete: addOnDelete, infoByApp},
+    withHeaders: vi.fn(),
     withOptions: vi.fn(),
   }
+  // Both decorators return a same-shaped client; the mocks are self-referential
+  // so the `.withHeaders(...).withOptions(...)` chain resolves back to platform.
+  platform.withHeaders.mockReturnValue(platform)
   platform.withOptions.mockReturnValue(platform)
 
   return {
     addOnDelete,
     ctx: {data: {} as never, platform: platform as never},
     infoByApp,
+    withHeaders: platform.withHeaders,
     withOptions: platform.withOptions,
   }
 }
@@ -988,13 +994,13 @@ describe('add-on resource', () => {
 
     it('issues DELETE with Accept-Expansion: plan and returns the response body', async () => {
       const deleted = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
-      const {addOnDelete, ctx, withOptions} = buildDestroyCtx()
+      const {addOnDelete, ctx, withHeaders} = buildDestroyCtx()
       addOnDelete.mockResolvedValue(deleted)
 
       const result = await destroyAndWait(ctx, 'my-app', 'my-postgres')
 
       expect(addOnDelete).toHaveBeenCalledExactlyOnceWith('my-app', 'my-postgres')
-      expect(withOptions).toHaveBeenCalledWith(expect.objectContaining({headers: {'Accept-Expansion': 'plan'}}))
+      expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'plan'})
       expect(result.state).toBe('deprovisioned')
     })
 
@@ -1075,15 +1081,15 @@ describe('add-on resource', () => {
       await expect(destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})).rejects.toBe(boom)
     })
 
-    it('sets Accept-Expansion: plan on poll requests via withOptions', async () => {
+    it('sets Accept-Expansion: plan on poll requests via withHeaders', async () => {
       const deprovisioning = {...buildAddon(), state: 'deprovisioning'} as unknown as AddOn
       const deprovisioned = buildAddon({state: 'deprovisioned'} as Partial<AddOn>)
-      const {addOnDelete, ctx, withOptions} = buildDestroyCtx({infoByAppResponses: [deprovisioned]})
+      const {addOnDelete, ctx, withHeaders} = buildDestroyCtx({infoByAppResponses: [deprovisioned]})
       addOnDelete.mockResolvedValue(deprovisioning)
 
       await destroyAndWait(ctx, 'my-app', 'my-postgres', {wait: true, waitIntervalMs: 1})
 
-      expect(withOptions).toHaveBeenCalledWith(expect.objectContaining({headers: {'Accept-Expansion': 'plan'}}))
+      expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'plan'})
     })
 
     it('returns an empty object without polling when the delete response is empty (204)', async () => {
