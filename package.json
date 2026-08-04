@@ -99,7 +99,7 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
-    "@heroku/heroku-fetch": "^0.1.1-beta",
+    "@heroku/heroku-fetch": "^0.1.3",
     "@heroku/types": "^4.0.1",
     "debug": "^4.4.0"
   }
