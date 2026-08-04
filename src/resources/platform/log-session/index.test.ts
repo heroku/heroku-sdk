@@ -366,6 +366,53 @@ describe('log-session resource', () => {
       expect(create).toHaveBeenCalledTimes(1)
     })
 
+    it('aborts a tail parked on an open-but-quiet stream (no new lines)', async () => {
+      // Regression: a tail stream that stays open but sends nothing parks on
+      // `await reader.read()`. Previously the signal was only checked at
+      // session-create and between retries, never around the parked read, so
+      // an abort could not unblock it and the iterator hung indefinitely.
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(new Response(streamThatTimesOut()))
+      const controller = new AbortController()
+
+      const iter = streamLogs(ctx, 'my-app', {
+        recreateSession: true,
+        signal: controller.signal,
+        tail: true,
+      })
+      const next = iter.next()
+      // Abort while the read is parked (the stream never enqueues).
+      setTimeout(() => controller.abort(), 30)
+      await expect(next).rejects.toThrow()
+      // The parked read was cancelled by the abort; the session was NOT
+      // recreated (which would have happened had we treated the cancel as a
+      // remote close).
+      expect(create).toHaveBeenCalledTimes(1)
+    })
+
+    it('stops a tail when the consumer calls return() (no recreate after teardown)', async () => {
+      // A consumer that stops early via `return()` while suspended at a yield
+      // must not trigger the recreate path — the generator's finally runs and
+      // the follow ends cleanly instead of opening another session.
+      const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
+      mockStream(new Response(streamFromChunks(['one line\n'])), new Response(streamThatTimesOut()))
+      const controller = new AbortController()
+
+      const iter = streamLogs(ctx, 'my-app', {
+        recreateSession: true,
+        signal: controller.signal,
+        tail: true,
+      })
+      const first = await iter.next()
+      expect(first.value).toBe('one line')
+      // Consumer is done: abort and close the iterator while it's suspended
+      // at the yield, before it resumes into the recreate loop.
+      controller.abort()
+      await iter.return?.()
+      // Only the first session was ever created; teardown did not recreate.
+      expect(create).toHaveBeenCalledTimes(1)
+    })
+
     it('does not recreate when recreateSession is false (single tail iteration)', async () => {
       const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
       mockStream(new Response(streamFromChunks(['one line\n'])))
