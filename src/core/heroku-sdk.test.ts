@@ -4,15 +4,17 @@ import {
 
 const platformConstructorSpy = vi.fn()
 const dataConstructorSpy = vi.fn()
+const metricsConstructorSpy = vi.fn()
 
 vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: class {
     constructor(options: unknown) {
       // The same constructor is used for platform and data; spies are
       // distinguished by the service field in options.
-      const {service} = (options as {service?: string})
+      const {baseUrl, service} = (options as {baseUrl?: string; service?: string})
       if (service === 'platform') platformConstructorSpy(options)
       else if (service === 'data') dataConstructorSpy(options)
+      else if (service === 'custom' && baseUrl?.includes('metrics')) metricsConstructorSpy(options)
     }
   },
 }))
@@ -29,10 +31,20 @@ vi.mock('@heroku/types/data/routes', () => ({
   },
 }))
 
+vi.mock('@heroku/types/metrics/routes', () => ({
+  formationMetric: {
+    errors: {method: 'GET', path: '/apps/{app}/formation/{formationType}/metrics/errors', query: ['start_time']},
+  },
+  routerMetric: {
+    latency: {method: 'GET', path: '/apps/{app}/router-metrics/latency', query: ['start_time']},
+  },
+}))
+
 describe('HerokuSDK', () => {
   afterEach(() => {
     platformConstructorSpy.mockClear()
     dataConstructorSpy.mockClear()
+    metricsConstructorSpy.mockClear()
     vi.resetModules()
   })
 
@@ -143,5 +155,42 @@ describe('HerokuSDK', () => {
 
     expect(a).toBe(b)
     expect(dataConstructorSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('constructs no metrics client eagerly', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+
+    const sdk = new HerokuSDK()
+    expect(sdk).toBeDefined()
+
+    expect(metricsConstructorSpy).not.toHaveBeenCalled()
+  })
+
+  it('lazily constructs the metrics client on first access, passing clientOptions', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({clientOptions: {token: 'abc'}})
+
+    const _touch = sdk.metrics
+    expect(_touch).toBeDefined()
+
+    expect(metricsConstructorSpy).toHaveBeenCalledTimes(1)
+    expect(metricsConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: 'https://api.metrics.heroku.com',
+      service: 'custom',
+      token: 'abc',
+    }))
+    expect(platformConstructorSpy).not.toHaveBeenCalled()
+    expect(dataConstructorSpy).not.toHaveBeenCalled()
+  })
+
+  it('memoizes the metrics service client across repeated access', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK()
+
+    const a = sdk.metrics
+    const b = sdk.metrics
+
+    expect(a).toBe(b)
+    expect(metricsConstructorSpy).toHaveBeenCalledTimes(1)
   })
 })

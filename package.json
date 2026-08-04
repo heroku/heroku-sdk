@@ -18,6 +18,10 @@
       "types": "./dist/services/data.d.ts",
       "default": "./dist/services/data.js"
     },
+    "./metrics": {
+      "types": "./dist/services/metrics.d.ts",
+      "default": "./dist/services/metrics.js"
+    },
     "./extensions/platform": {
       "types": "./dist/resources/extensions/platform.d.ts",
       "default": "./dist/resources/extensions/platform.js"
@@ -100,7 +104,7 @@
   },
   "dependencies": {
     "@heroku/heroku-fetch": "^0.1.1-beta",
-    "@heroku/types": "^4.0.1",
+    "@heroku/types": "^4.1.0",
     "debug": "^4.4.0"
   }
 }

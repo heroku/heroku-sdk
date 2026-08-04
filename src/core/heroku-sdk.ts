@@ -1,6 +1,7 @@
 import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 
 import type {DataClient} from '../services/data.js'
+import type {MetricsClient} from '../services/metrics.js'
 import type {PlatformClient} from '../services/platform.js'
 import type {
   ApplyExtensions,
@@ -11,6 +12,7 @@ import type {
 } from './extend-resource.js'
 
 import {createDataClient} from '../services/data.js'
+import {createMetricsClient} from '../services/metrics.js'
 import {createPlatformClient} from '../services/platform.js'
 import {mergeExtensions} from './extensions-proxy.js'
 
@@ -37,8 +39,10 @@ export class HerokuSDK<
   #ctx: ResourceCtx | undefined
   #data: unknown
   readonly #extensionsByService: Map<ServiceName, ResourceExtension[]>
+  #metrics: unknown
   #platform: unknown
   #rawData: DataClient | undefined
+  #rawMetrics: MetricsClient | undefined
   #rawPlatform: PlatformClient | undefined
 
   constructor(options: HerokuSDKOptions<Exts> = {}) {
@@ -54,6 +58,16 @@ export class HerokuSDK<
     )
 
     return this.#data as ApplyExtensions<DataClient, ExtensionsFor<Exts, 'data'>>
+  }
+
+  get metrics(): ApplyExtensions<MetricsClient, ExtensionsFor<Exts, 'metrics'>> {
+    this.#metrics ??= mergeExtensions(
+      this.#getRawMetrics(),
+      this.#extensionsByService.get('metrics') ?? [],
+      this.#getCtx(),
+    )
+
+    return this.#metrics as ApplyExtensions<MetricsClient, ExtensionsFor<Exts, 'metrics'>>
   }
 
   get platform(): ApplyExtensions<PlatformClient, ExtensionsFor<Exts, 'platform'>> {
@@ -72,6 +86,10 @@ export class HerokuSDK<
         enumerable: true,
         get: () => this.#getRawData(),
       },
+      metrics: {
+        enumerable: true,
+        get: () => this.#getRawMetrics(),
+      },
       platform: {
         enumerable: true,
         get: () => this.#getRawPlatform(),
@@ -84,6 +102,11 @@ export class HerokuSDK<
   #getRawData(): DataClient {
     this.#rawData ??= createDataClient(this.#clientOptions)
     return this.#rawData
+  }
+
+  #getRawMetrics(): MetricsClient {
+    this.#rawMetrics ??= createMetricsClient(this.#clientOptions)
+    return this.#rawMetrics
   }
 
   #getRawPlatform(): PlatformClient {
