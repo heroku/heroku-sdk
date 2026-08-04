@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.4](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.3...sdk-v0.5.4) (2026-08-04)
+
+
+### Bug Fixes
+
+* **log-session:** honor abort during a parked read and close the socket ([#87](https://github.com/heroku/heroku-sdk/issues/87)) ([e1659d9](https://github.com/heroku/heroku-sdk/commit/e1659d9e2ae581040d96efb063bde36619c398e3))
+
+
+### Dependencies
+
+* bump @heroku/heroku-fetch from 0.1.1-beta.0 to 0.1.3 ([#75](https://github.com/heroku/heroku-sdk/issues/75)) ([85b2da3](https://github.com/heroku/heroku-sdk/commit/85b2da3a5ad785c45d9d51fcf2fd9f7fa66f4c51))
+* bump undici from 6.27.0 to 6.28.0 ([#86](https://github.com/heroku/heroku-sdk/issues/86)) ([b3516f3](https://github.com/heroku/heroku-sdk/commit/b3516f3e6cca22a03d1f381ef9fff7c723b7f5d7))
+
 ## [0.5.3](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.2...sdk-v0.5.3) (2026-08-04)
 
 
