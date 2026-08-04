@@ -1,9 +1,26 @@
+/* eslint-disable no-await-in-loop */
 import type {Formation, FormationUpdateOpts} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ContainerOptions} from './index.js'
 
 import {ensureContainerStack} from './ensure-container-stack.js'
+
+export type RemoveProcessTypesOpts = {
+  /**
+   * Fires `onStart` immediately before, and `onStop` immediately after,
+   * each process type's `formation.update` call. Process types are
+   * removed one at a time (not concurrently) so a caller can drive a
+   * single shared UI element (e.g. a CLI spinner) across the whole
+   * batch. If an update rejects, its `onStart` has already fired but
+   * `onStop` never will — the rejection propagates immediately and any
+   * remaining process types are not attempted.
+   */
+  onProgress?: {
+    onStart?: (processType: string) => void
+    onStop?: (processType: string) => void
+  }
+} & ContainerOptions
 
 /**
  * Extends `FormationUpdateOpts` to support the `3.docker-releases` API variant.
@@ -22,7 +39,7 @@ export async function removeProcessTypes(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   processTypes: string[],
-  options: ContainerOptions = {},
+  options: RemoveProcessTypesOpts = {},
 ): Promise<Formation[]> {
   await ensureContainerStack(ctx, appIdentity, options)
 
@@ -31,9 +48,17 @@ export async function removeProcessTypes(
   // eslint-disable-next-line camelcase
   const requestBody: DockerReleasesUpdateOpts = {docker_image: null}
 
-  const updatedFormations = await Promise.all(processTypes.map(processType => platform
-    .withHeaders({Accept: 'application/vnd.heroku+json; version=3.docker-releases'})
-    .formation.update(appIdentity, processType, requestBody)))
+  const updatedFormations: Formation[] = []
+
+  for (const processType of processTypes) {
+    options.onProgress?.onStart?.(processType)
+    const formation = await platform
+      .withHeaders({Accept: 'application/vnd.heroku+json; version=3.docker-releases'})
+      .formation.update(appIdentity, processType, requestBody)
+    options.onProgress?.onStop?.(processType)
+
+    updatedFormations.push(formation)
+  }
 
   return updatedFormations
 }
