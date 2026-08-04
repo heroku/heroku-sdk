@@ -1,6 +1,6 @@
 {
   "name": "@heroku/sdk",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Heroku SDK",
   "author": "Heroku",
   "type": "module",
