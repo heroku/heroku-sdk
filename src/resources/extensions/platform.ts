@@ -5,6 +5,7 @@ export {
   type DockerReleasesBatchUpdateOpts,
   NotAContainerAppError,
   type ReleaseDockerImagesResult,
+  type RemoveProcessTypesOpts,
 } from '../platform/container/index.js'
 export {
   type CreateAndWaitOptions,
