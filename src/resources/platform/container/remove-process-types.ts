@@ -6,12 +6,21 @@ import type {ContainerOptions} from './index.js'
 
 import {ensureContainerStack} from './ensure-container-stack.js'
 
-export type RemoveProcessTypesOpts = ContainerOptions & {
+export type RemoveProcessTypesOpts = {
+  /**
+   * Fires `onStart` immediately before, and `onStop` immediately after,
+   * each process type's `formation.update` call. Process types are
+   * removed one at a time (not concurrently) so a caller can drive a
+   * single shared UI element (e.g. a CLI spinner) across the whole
+   * batch. If an update rejects, its `onStart` has already fired but
+   * `onStop` never will — the rejection propagates immediately and any
+   * remaining process types are not attempted.
+   */
   onProgress?: {
     onStart?: (processType: string) => void
     onStop?: (processType: string) => void
   }
-}
+} & ContainerOptions
 
 /**
  * Extends `FormationUpdateOpts` to support the `3.docker-releases` API variant.

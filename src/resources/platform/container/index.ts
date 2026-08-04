@@ -1,7 +1,7 @@
 import {extendResource} from '../../../core/extend-resource.js'
 import {ensureContainerStack} from './ensure-container-stack.js'
 import {type DockerReleasesBatchUpdateOpts, releaseDockerImages} from './release-images.js'
-import {removeProcessTypes, RemoveProcessTypesOpts} from './remove-process-types.js'
+import {removeProcessTypes, type RemoveProcessTypesOpts} from './remove-process-types.js'
 
 export {ensureContainerStack, NotAContainerAppError} from './ensure-container-stack.js'
 export {type DockerReleasesBatchUpdateOpts, releaseDockerImages, type ReleaseDockerImagesResult} from './release-images.js'
