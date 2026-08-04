@@ -1,3 +1,4 @@
+/* eslint-disable camelcase */
 import type {RouteDefinition} from '@heroku/types/types'
 
 import {
@@ -239,10 +240,10 @@ describe('dispatch', () => {
         query: ['start_time', 'process_type'],
       }
 
-      await dispatch(client as any, route, ['my-app', { start_time: '2016-04-17T19:00:00Z', process_type: 'web' }])
+      await dispatch(client as any, route, ['my-app', {process_type: 'web', start_time: '2016-04-17T19:00:00Z'}])
 
       expect(client.get).toHaveBeenCalledWith('/apps/my-app/router-metrics/latency', {
-        searchParams: { start_time: '2016-04-17T19:00:00Z', process_type: 'web' },
+        searchParams: {process_type: 'web', start_time: '2016-04-17T19:00:00Z'},
       })
     })
 
@@ -254,10 +255,10 @@ describe('dispatch', () => {
         query: ['start_time', 'process_type'],
       }
 
-      await dispatch(client as any, route, ['my-app', { start_time: '2016-04-17T19:00:00Z', process_type: undefined }])
+      await dispatch(client as any, route, ['my-app', {process_type: undefined, start_time: '2016-04-17T19:00:00Z'}])
 
       expect(client.get).toHaveBeenCalledWith('/apps/my-app/router-metrics/errors', {
-        searchParams: { start_time: '2016-04-17T19:00:00Z' },
+        searchParams: {start_time: '2016-04-17T19:00:00Z'},
       })
     })
 
@@ -269,30 +270,30 @@ describe('dispatch', () => {
         query: ['start_time', 'process_type'],
       }
 
-      await dispatch(client as any, route, ['my-app', { start_time: '2016-04-17T19:00:00Z', process_type: null }])
+      await dispatch(client as any, route, ['my-app', {process_type: null, start_time: '2016-04-17T19:00:00Z'}])
 
       expect(client.get).toHaveBeenCalledWith('/apps/my-app/router-metrics/errors', {
-        searchParams: { start_time: '2016-04-17T19:00:00Z' },
+        searchParams: {start_time: '2016-04-17T19:00:00Z'},
       })
     })
 
     it('merges query searchParams with inherited requestOptions', async () => {
       const client = mockClient()
-      const route: RouteDefinition = { method: 'GET', path: '/apps/{app}/router-metrics/status', query: ['step'] }
+      const route: RouteDefinition = {method: 'GET', path: '/apps/{app}/router-metrics/status', query: ['step']}
 
-      await dispatch(client as any, route, ['my-app', { step: '1h' }], undefined, { timeout: 5000 })
+      await dispatch(client as any, route, ['my-app', {step: '1h'}], undefined, {timeout: 5000})
 
       expect(client.get).toHaveBeenCalledWith('/apps/my-app/router-metrics/status', {
+        searchParams: {step: '1h'},
         timeout: 5000,
-        searchParams: { step: '1h' },
       })
     })
 
     it('does NOT treat a trailing object as searchParams when route has no query (regression)', async () => {
       const client = mockClient()
-      const route: RouteDefinition = { method: 'GET', path: '/apps' }
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
 
-      await dispatch(client as any, route, [{ ignored: 'x' }])
+      await dispatch(client as any, route, [{ignored: 'x'}])
 
       // unchanged behavior: no options object synthesized
       expect(client.get).toHaveBeenCalledWith('/apps')
