@@ -206,6 +206,21 @@ export async function * streamLogs(
       const decoder = new TextDecoder()
       let pending = ''
 
+      // Wire the caller's abort signal into the reader. `await reader.read()`
+      // parks until the next chunk arrives; a bare `signal.aborted` check
+      // between reads never runs while it's parked, so on a quiet tail the
+      // read would block indefinitely past an abort. Cancelling the reader
+      // settles the pending `read()` promise, letting the loop below observe
+      // the abort and terminate — which also closes the underlying socket.
+      const onAbort = () => {
+        reader.cancel().catch(() => {})
+      }
+
+      if (signal) {
+        if (signal.aborted) reader.cancel().catch(() => {})
+        else signal.addEventListener('abort', onAbort, {once: true})
+      }
+
       // Force a recreate after sessionTimeoutMs of silence; ignored
       // when not tailing.
       const armTimeout = () => {
@@ -224,6 +239,10 @@ export async function * streamLogs(
         while (true) {
           const {done, value} = await reader.read()
           if (done) break
+          // A cancel triggered by the caller's signal also resolves the read
+          // as `done`; stop rather than treating it as a remote close and
+          // recreating the session.
+          if (signal?.aborted) break
 
           armTimeout()
           pending += decoder.decode(value, {stream: true})
@@ -272,7 +291,26 @@ export async function * streamLogs(
         }
       } finally {
         if (timeoutHandle) clearTimeout(timeoutHandle)
+        signal?.removeEventListener('abort', onAbort)
+        // Tear the reader down. If a consumer stops early — `break`/`return()`
+        // out of a `for await`, or an explicit `.return()` — this finally runs
+        // while the stream is still open, and `releaseLock()` alone would leak
+        // the underlying socket (plus, when tailing, the session-recreate
+        // loop). `cancel()` closes the body; fire-and-forget because on an
+        // errored/already-closed stream it rejects with the stored error,
+        // which we don't act on. It does not release the lock, so we always
+        // `releaseLock()` afterward — otherwise the next recreate's
+        // `getReader()` throws "ReadableStream is locked". No pending read
+        // exists once the loop above has exited, so `releaseLock()` is safe.
+        reader.cancel().catch(() => {})
         reader.releaseLock()
+      }
+
+      // The caller aborted (or their signal fired mid-read): terminate the
+      // whole stream, throwing the abort reason so `for await` consumers see
+      // an AbortError rather than a silent end.
+      if (signal?.aborted) {
+        throw signal.reason ?? new DOMException('The operation was aborted.', 'AbortError')
       }
 
       if (timedOut) {
