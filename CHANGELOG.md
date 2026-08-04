@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.2...sdk-v0.5.3) (2026-08-04)
+
+
+### Features
+
+* add onProgress callback to removeProcessTypes container extension ([#85](https://github.com/heroku/heroku-sdk/issues/85)) ([36c849d](https://github.com/heroku/heroku-sdk/commit/36c849dba08db4190019109618bb15a818ac1147))
+
 ## [0.5.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.1...sdk-v0.5.2) (2026-08-03)
 
 
