@@ -15,6 +15,7 @@ import {
   AddonProvisioningFailedError,
   createAndWait,
   describeAddon,
+  describeAttachment,
   destroyAndWait,
   formatPlanPriceLabel,
   listPlans,
@@ -58,6 +59,7 @@ function buildCtx({
   resolutionByAttachment: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
   withHeaders: ReturnType<typeof vi.fn>
+  withOptions: ReturnType<typeof vi.fn>
 } {
   const resolution = vi.fn()
   for (const response of resolveResponses) {
@@ -78,9 +80,11 @@ function buildCtx({
     addOnAttachment: {listByAddOn, resolution: resolutionByAttachment},
     plan: {listByAddOn: listByAddOnService},
     withHeaders: vi.fn(),
+    withOptions: vi.fn(),
   }
-  // withHeaders should return a same-shaped client; our mock is self-referential.
+  // withHeaders/withOptions should return a same-shaped client; our mock is self-referential.
   platform.withHeaders.mockReturnValue(platform)
+  platform.withOptions.mockReturnValue(platform)
 
   return {
     ctx: {
@@ -93,6 +97,7 @@ function buildCtx({
     resolutionByAttachment,
     update,
     withHeaders: platform.withHeaders,
+    withOptions: platform.withOptions,
   }
 }
 
@@ -885,6 +890,104 @@ describe('add-on resource', () => {
     })
   })
 
+  describe('describeAttachment', () => {
+    it('returns the full attachment including web_url', async () => {
+      const {ctx, resolutionByAttachment} = buildCtx({
+        resolveByAttachmentResponses: [
+          // eslint-disable-next-line camelcase
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}, web_url: 'https://addons-sso.heroku.com/apps/my-app/addons/addon-id'} as AddOnAttachment,
+        ],
+      })
+
+      const result = await describeAttachment(ctx, 'my-app', 'DATABASE_URL')
+
+      expect(resolutionByAttachment).toHaveBeenCalledWith({
+        // eslint-disable-next-line camelcase
+        addon_attachment: 'DATABASE_URL',
+        app: 'my-app',
+      })
+      expect(result.web_url).toBe('https://addons-sso.heroku.com/apps/my-app/addons/addon-id')
+      expect(result.addon.id).toBe('addon-id')
+      expect(result.addon.app.id).toBe('app-uuid')
+    })
+
+    it('resolves successfully with a null web_url (add-on with no web dashboard)', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [
+          // eslint-disable-next-line camelcase
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'no-dashboard-addon'}, web_url: null} as AddOnAttachment,
+        ],
+      })
+
+      // null web_url is a valid result, not a not-found: resolve, don't throw.
+      const result = await describeAttachment(ctx, 'my-app', 'DATABASE_URL')
+
+      expect(result.web_url).toBeNull()
+      expect(result.addon.id).toBe('addon-id')
+    })
+
+    it('throws AddonNotFoundError when no attachment matches', async () => {
+      const {ctx} = buildCtx({resolveByAttachmentResponses: []})
+
+      await expect(describeAttachment(ctx, 'my-app', 'NONEXISTENT')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws AddonNotFoundError when the matched attachment lacks an addon id', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {name: 'my-app'}, name: 'incomplete'}} as AddOnAttachment,
+        ],
+      })
+
+      await expect(describeAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws AddonNotFoundError when the matched attachment\'s addon lacks app.id', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {name: 'my-app'}, id: 'addon-id', name: 'x'}} as AddOnAttachment,
+        ],
+      })
+
+      await expect(describeAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const {ctx, resolutionByAttachment, withOptions} = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(describeAttachment(ctx, 'my-app', 'DATABASE_URL', {signal: controller.signal})).rejects.toThrow()
+      expect(resolutionByAttachment).not.toHaveBeenCalled()
+      expect(withOptions).not.toHaveBeenCalled()
+    })
+
+    it('forwards the signal to the resolution call via withOptions', async () => {
+      const {ctx, withOptions} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}} as AddOnAttachment,
+        ],
+      })
+      const controller = new AbortController()
+
+      await describeAttachment(ctx, 'my-app', 'DATABASE_URL', {signal: controller.signal})
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+    })
+
+    it('does not call withOptions when no signal is provided', async () => {
+      const {ctx, withOptions} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}} as AddOnAttachment,
+        ],
+      })
+
+      await describeAttachment(ctx, 'my-app', 'DATABASE_URL')
+
+      expect(withOptions).not.toHaveBeenCalled()
+    })
+  })
+
   describe('createAndWait', () => {
     it('returns the created add-on when wait is not requested', async () => {
       const created = buildAddon({state: 'provisioning'} as Partial<AddOn>)
@@ -1289,8 +1392,29 @@ describe('add-on resource', () => {
       expect(typeof methods.priceForPlan).toBe('function')
       expect(typeof methods.resolve).toBe('function')
       expect(typeof methods.resolveByAttachment).toBe('function')
+      expect(typeof methods.describeAttachment).toBe('function')
       expect(typeof methods.upgrade).toBe('function')
       expect(typeof methods.waitForProvisioning).toBe('function')
+    })
+
+    it('describeAttachment delegates to the named function', async () => {
+      const {ctx, resolutionByAttachment} = buildCtx({
+        resolveByAttachmentResponses: [
+          // eslint-disable-next-line camelcase
+          {addon: {app: {id: 'app-1', name: 'my-app'}, id: 'addon-1', name: 'postgres-addon'}, web_url: 'https://addons-sso.heroku.com/apps/my-app/addons/addon-1'} as AddOnAttachment,
+        ],
+      })
+      const methods = addOnExtensions.factory(ctx)
+
+      const result = await methods.describeAttachment('my-app', 'DATABASE_URL')
+
+      expect(resolutionByAttachment).toHaveBeenCalledWith({
+        // eslint-disable-next-line camelcase
+        addon_attachment: 'DATABASE_URL',
+        app: 'my-app',
+      })
+      expect(result.web_url).toBe('https://addons-sso.heroku.com/apps/my-app/addons/addon-1')
+      expect(result.addon.id).toBe('addon-1')
     })
 
     it('upgrade delegates to the named function', async () => {

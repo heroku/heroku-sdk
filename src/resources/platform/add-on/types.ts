@@ -20,6 +20,20 @@ export type ResolvedAddOn = AddOn & {
   id: string
 }
 
+/**
+ * An attachment whose add-on `id`/`app.id` are guaranteed non-null (as the
+ * resolver enforces at runtime). `web_url` is scoped to the attached app's
+ * context — the dashboard URL for opening this add-on *from this app*, which
+ * differs from the add-on's own (billing-app) `web_url`.
+ *
+ * `web_url` remains `string | null` by design (inherited from
+ * `AddOnAttachment`): it is `null` for add-ons that expose no web dashboard.
+ * The resolver does not guarantee a URL — callers must handle the `null` case.
+ */
+export type ResolvedAddOnAttachment = AddOnAttachment & {
+  addon: NonNullable<AddOnAttachment['addon']> & {app: {id: string}; id: string}
+}
+
 export type DescribedAddOn = ResolvedAddOn & {
   attachments: AddOnAttachment[]
 }

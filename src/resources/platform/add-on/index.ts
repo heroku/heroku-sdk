@@ -11,7 +11,7 @@ import {describeAddon} from './describe.js'
 import {destroyAndWait} from './destroy-and-wait.js'
 import {listPlans, listPlansForAddon} from './list-plans.js'
 import {formatPlanPriceLabel, priceForPlan} from './pricing.js'
-import {resolveAddon, resolveAddonByAttachment} from './resolve.js'
+import {describeAttachment, resolveAddon, resolveAddonByAttachment} from './resolve.js'
 import {upgrade} from './upgrade.js'
 import {waitForProvisioning} from './wait-for-provisioning.js'
 
@@ -34,7 +34,7 @@ export {
   type PlanPriceKind,
   priceForPlan,
 } from './pricing.js'
-export {resolveAddon, resolveAddonByAttachment} from './resolve.js'
+export {describeAttachment, resolveAddon, resolveAddonByAttachment} from './resolve.js'
 export type {
   AddOnOptions,
   CreateAndWaitOptions,
@@ -42,6 +42,7 @@ export type {
   DestroyAndWaitOptions,
   ResolveAddonOptions,
   ResolvedAddOn,
+  ResolvedAddOnAttachment,
   UpgradeAddOnOptions,
   WaitForProvisioningOptions,
 } from './types.js'
@@ -53,6 +54,8 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
     createAndWait(ctx, appIdentity, body, options),
   describe: (addonIdentity: string, options?: ResolveAddonOptions) =>
     describeAddon(ctx, addonIdentity, options),
+  describeAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
+    describeAttachment(ctx, appIdentity, attachmentName, options),
   destroyAndWait: (appIdentity: string, addonIdentity: string, options?: DestroyAndWaitOptions) =>
     destroyAndWait(ctx, appIdentity, addonIdentity, options),
   formatPlanPriceLabel,

@@ -4,7 +4,9 @@ import {NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {PlatformClient} from '../../../services/platform.js'
-import type {AddOnOptions, ResolveAddonOptions, ResolvedAddOn} from './types.js'
+import type {
+  AddOnOptions, ResolveAddonOptions, ResolvedAddOn, ResolvedAddOnAttachment,
+} from './types.js'
 
 import {debug} from './debug.js'
 import {AddonAmbiguousError, AddonNotFoundError} from './errors.js'
@@ -43,14 +45,56 @@ export async function resolveAddon(
 }
 
 /**
- * Resolve a Platform add-on via one of its attachments on a given app.
+ * Describe an add-on *attachment* via its name on a given app.
  *
  * Use this when you have an attachment name (e.g. `DATABASE_URL`,
- * `HEROKU_POSTGRESQL_GREEN`) on a known app, rather than an add-on
- * identity. Calls `addOnAttachment.resolution` and returns the add-on
- * the matched attachment points to.
+ * `HEROKU_POSTGRESQL_GREEN`) on a known app and need the attachment
+ * itself — including its context-scoped `web_url` (the dashboard URL for
+ * opening the add-on *from this app*, which differs from the add-on's own
+ * billing-app `web_url`). Calls `addOnAttachment.resolution` and returns
+ * the matched attachment with its resolved add-on.
  *
- * For resolving by add-on identity, use `resolveAddon`.
+ * `web_url` is `string | null` by design: it is `null` for add-ons that
+ * expose no web dashboard. A `null` here is a valid result, not a
+ * not-found — callers who need a URL must handle it (e.g. fall back to
+ * the add-on's own `web_url` via `resolveAddon`).
+ *
+ * To resolve just the add-on the attachment points to, use
+ * `resolveAddonByAttachment`. For resolving by add-on identity, use
+ * `resolveAddon`.
+ */
+export async function describeAttachment(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  attachmentName: string,
+  options: AddOnOptions = {},
+): Promise<ResolvedAddOnAttachment> {
+  options.signal?.throwIfAborted()
+  debug('describeAttachment app=%s attachment=%s', appIdentity, attachmentName)
+  // Scope the in-flight resolution call to the caller's signal so an abort
+  // mid-request is honored, not just before it starts.
+  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const matches = await platform.addOnAttachment.resolution({
+    // eslint-disable-next-line camelcase
+    addon_attachment: attachmentName,
+    app: appIdentity,
+  })
+
+  const attachment = matches[0]
+  if (!attachment?.addon?.id || !attachment.addon.app?.id) {
+    debug('describeAttachment matches=%d (no usable add-on returned)', matches.length)
+    throw new AddonNotFoundError()
+  }
+
+  debug('describeAttachment resolved addon=%s app=%s', attachment.addon.id, attachment.addon.app.id)
+  return attachment as ResolvedAddOnAttachment
+}
+
+/**
+ * Resolve the add-on that an attachment points to, by attachment name on a
+ * given app. A thin wrapper over `describeAttachment` that returns only the
+ * resolved add-on (not the attachment). Use `describeAttachment` when you
+ * need the attachment's context-scoped `web_url`.
  */
 export async function resolveAddonByAttachment(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -58,23 +102,7 @@ export async function resolveAddonByAttachment(
   attachmentName: string,
   options: AddOnOptions = {},
 ): Promise<ResolvedAddOn> {
-  options.signal?.throwIfAborted()
-  debug('resolveByAttachment app=%s attachment=%s', appIdentity, attachmentName)
-  const matches = await ctx.platform.addOnAttachment.resolution({
-    // eslint-disable-next-line camelcase
-    addon_attachment: attachmentName,
-    app: appIdentity,
-  })
-
-  const attachment = matches[0]
-  const addon = attachment?.addon
-  if (!addon?.id || !addon.app?.id) {
-    debug('resolveByAttachment matches=%d (no usable add-on returned)', matches.length)
-    throw new AddonNotFoundError()
-  }
-
-  debug('resolveByAttachment resolved addon=%s app=%s', addon.id, addon.app.id)
-  return addon as ResolvedAddOn
+  return (await describeAttachment(ctx, appIdentity, attachmentName, options)).addon as ResolvedAddOn
 }
 
 export async function resolveAddonInternal(
