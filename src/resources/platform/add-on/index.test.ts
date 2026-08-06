@@ -460,6 +460,7 @@ describe('add-on resource', () => {
       expect(result).toEqual({
         cents: 7200,
         contract: false,
+        kind: 'flat',
         metered: false,
         // 7200 / (24 * 30) = 10
         perHourCents: 10,
@@ -487,6 +488,7 @@ describe('add-on resource', () => {
       expect(result).toEqual({
         cents: 5,
         contract: false,
+        kind: 'flat',
         metered: false,
         perHourCents: 5,
         // 5 * 24 * 30 = 3600
@@ -499,7 +501,8 @@ describe('add-on resource', () => {
       expect(priceForPlan({} as Plan)).toBeUndefined()
     })
 
-    it('returns undefined when cents is not a number', () => {
+    it('returns undefined when there is no cents and no contract/metered signal', () => {
+      // No usable pricing signal at all — nothing to classify from.
       expect(priceForPlan({price: {unit: 'month'} as never} as Plan)).toBeUndefined()
     })
 
@@ -510,10 +513,12 @@ describe('add-on resource', () => {
 
       // The breakdown still exists (caller may want `cents` and
       // `unit`), but per-month and per-hour are undefined so the
-      // caller can omit those labels.
+      // caller can omit those labels. A priced plan on an unknown unit
+      // is still a flat plan.
       expect(result).toEqual({
         cents: 1000,
         contract: false,
+        kind: 'flat',
         metered: false,
         perHourCents: undefined,
         perMonthCents: undefined,
@@ -521,20 +526,55 @@ describe('add-on resource', () => {
       })
     })
 
-    it('reports contract=true when set', () => {
-      const plan = {price: {cents: 0, contract: true, unit: 'month'}} as Plan
+    it('classifies a genuinely free flat plan as kind "free"', () => {
+      const plan = {price: {cents: 0, unit: 'month'}} as Plan
 
-      expect(priceForPlan(plan)?.contract).toBe(true)
+      const result = priceForPlan(plan)
+
+      expect(result?.kind).toBe('free')
+      // A free plan still gets its per-month / per-hour equivalents (both 0).
+      expect(result?.perMonthCents).toBe(0)
+      expect(result?.perHourCents).toBe(0)
     })
 
-    it('reports metered=true when set', () => {
+    it('classifies a contract plan as kind "contract" even when cents is 0', () => {
+      const plan = {price: {cents: 0, contract: true, unit: 'month'}} as Plan
+
+      const result = priceForPlan(plan)
+
+      // The whole point: a 0-cent contract plan must NOT be "free".
+      expect(result?.kind).toBe('contract')
+      expect(result?.contract).toBe(true)
+      // No flat cadence label for a contract plan.
+      expect(result?.perMonthCents).toBeUndefined()
+      expect(result?.perHourCents).toBeUndefined()
+    })
+
+    it('classifies a metered plan as kind "metered" even when cents is 0', () => {
       const plan = {
         price: {
           cents: 0, contract: false, metered: true, unit: 'month',
         },
       } as Plan
 
-      expect(priceForPlan(plan)?.metered).toBe(true)
+      const result = priceForPlan(plan)
+
+      // Same trap as contract: a 0-cent metered plan must NOT be "free".
+      expect(result?.kind).toBe('metered')
+      expect(result?.metered).toBe(true)
+      expect(result?.perMonthCents).toBeUndefined()
+      expect(result?.perHourCents).toBeUndefined()
+    })
+
+    it('classifies a contract plan with no cents (cents undefined)', () => {
+      // Contract pricing is negotiated elsewhere, so the API may omit cents
+      // entirely. The contract flag is enough to classify.
+      const plan = {price: {contract: true, unit: 'month'} as never} as Plan
+
+      const result = priceForPlan(plan)
+
+      expect(result?.kind).toBe('contract')
+      expect(result?.cents).toBeUndefined()
     })
   })
 

@@ -31,6 +31,7 @@ export {
   formatPlanPriceLabel,
   type FormatPlanPriceLabelOptions,
   type PlanPriceBreakdown,
+  type PlanPriceKind,
   priceForPlan,
 } from './pricing.js'
 export {resolveAddon, resolveAddonByAttachment} from './resolve.js'
