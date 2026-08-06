@@ -59,6 +59,7 @@ function buildCtx({
   resolutionByAttachment: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
   withHeaders: ReturnType<typeof vi.fn>
+  withOptions: ReturnType<typeof vi.fn>
 } {
   const resolution = vi.fn()
   for (const response of resolveResponses) {
@@ -79,9 +80,11 @@ function buildCtx({
     addOnAttachment: {listByAddOn, resolution: resolutionByAttachment},
     plan: {listByAddOn: listByAddOnService},
     withHeaders: vi.fn(),
+    withOptions: vi.fn(),
   }
-  // withHeaders should return a same-shaped client; our mock is self-referential.
+  // withHeaders/withOptions should return a same-shaped client; our mock is self-referential.
   platform.withHeaders.mockReturnValue(platform)
+  platform.withOptions.mockReturnValue(platform)
 
   return {
     ctx: {
@@ -94,6 +97,7 @@ function buildCtx({
     resolutionByAttachment,
     update,
     withHeaders: platform.withHeaders,
+    withOptions: platform.withOptions,
   }
 }
 
@@ -867,6 +871,21 @@ describe('add-on resource', () => {
       expect(result.addon.app.id).toBe('app-uuid')
     })
 
+    it('resolves successfully with a null web_url (add-on with no web dashboard)', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [
+          // eslint-disable-next-line camelcase
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'no-dashboard-addon'}, web_url: null} as AddOnAttachment,
+        ],
+      })
+
+      // null web_url is a valid result, not a not-found: resolve, don't throw.
+      const result = await resolveAttachment(ctx, 'my-app', 'DATABASE_URL')
+
+      expect(result.web_url).toBeNull()
+      expect(result.addon.id).toBe('addon-id')
+    })
+
     it('throws AddonNotFoundError when no attachment matches', async () => {
       const {ctx} = buildCtx({resolveByAttachmentResponses: []})
 
@@ -894,12 +913,38 @@ describe('add-on resource', () => {
     })
 
     it('throws if the signal is already aborted', async () => {
-      const {ctx, resolutionByAttachment} = buildCtx()
+      const {ctx, resolutionByAttachment, withOptions} = buildCtx()
       const controller = new AbortController()
       controller.abort()
 
       await expect(resolveAttachment(ctx, 'my-app', 'DATABASE_URL', {signal: controller.signal})).rejects.toThrow()
       expect(resolutionByAttachment).not.toHaveBeenCalled()
+      expect(withOptions).not.toHaveBeenCalled()
+    })
+
+    it('forwards the signal to the resolution call via withOptions', async () => {
+      const {ctx, withOptions} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}} as AddOnAttachment,
+        ],
+      })
+      const controller = new AbortController()
+
+      await resolveAttachment(ctx, 'my-app', 'DATABASE_URL', {signal: controller.signal})
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+    })
+
+    it('does not call withOptions when no signal is provided', async () => {
+      const {ctx, withOptions} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}} as AddOnAttachment,
+        ],
+      })
+
+      await resolveAttachment(ctx, 'my-app', 'DATABASE_URL')
+
+      expect(withOptions).not.toHaveBeenCalled()
     })
   })
 

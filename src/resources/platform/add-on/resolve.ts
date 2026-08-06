@@ -54,6 +54,11 @@ export async function resolveAddon(
  * billing-app `web_url`). Calls `addOnAttachment.resolution` and returns
  * the matched attachment with its resolved add-on.
  *
+ * `web_url` is `string | null` by design: it is `null` for add-ons that
+ * expose no web dashboard. A `null` here is a valid result, not a
+ * not-found — callers who need a URL must handle it (e.g. fall back to
+ * the add-on's own `web_url` via `resolveAddon`).
+ *
  * To resolve just the add-on the attachment points to, use
  * `resolveAddonByAttachment`. For resolving by add-on identity, use
  * `resolveAddon`.
@@ -66,7 +71,10 @@ export async function resolveAttachment(
 ): Promise<ResolvedAddOnAttachment> {
   options.signal?.throwIfAborted()
   debug('resolveAttachment app=%s attachment=%s', appIdentity, attachmentName)
-  const matches = await ctx.platform.addOnAttachment.resolution({
+  // Scope the in-flight resolution call to the caller's signal so an abort
+  // mid-request is honored, not just before it starts.
+  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const matches = await platform.addOnAttachment.resolution({
     // eslint-disable-next-line camelcase
     addon_attachment: attachmentName,
     app: appIdentity,
