@@ -11,7 +11,7 @@ import {describeAddon} from './describe.js'
 import {destroyAndWait} from './destroy-and-wait.js'
 import {listPlans, listPlansForAddon} from './list-plans.js'
 import {formatPlanPriceLabel, priceForPlan} from './pricing.js'
-import {resolveAddon, resolveAddonByAttachment} from './resolve.js'
+import {resolveAddon, resolveAddonByAttachment, resolveAttachment} from './resolve.js'
 import {upgrade} from './upgrade.js'
 import {waitForProvisioning} from './wait-for-provisioning.js'
 
@@ -33,7 +33,7 @@ export {
   type PlanPriceBreakdown,
   priceForPlan,
 } from './pricing.js'
-export {resolveAddon, resolveAddonByAttachment} from './resolve.js'
+export {resolveAddon, resolveAddonByAttachment, resolveAttachment} from './resolve.js'
 export type {
   AddOnOptions,
   CreateAndWaitOptions,
@@ -41,6 +41,7 @@ export type {
   DestroyAndWaitOptions,
   ResolveAddonOptions,
   ResolvedAddOn,
+  ResolvedAddOnAttachment,
   UpgradeAddOnOptions,
   WaitForProvisioningOptions,
 } from './types.js'
@@ -64,6 +65,8 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
     resolveAddon(ctx, addonIdentity, options),
   resolveByAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
     resolveAddonByAttachment(ctx, appIdentity, attachmentName, options),
+  resolveAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
+    resolveAttachment(ctx, appIdentity, attachmentName, options),
   upgrade: (addonIdentity: string, plan: string, options?: UpgradeAddOnOptions) =>
     upgrade(ctx, addonIdentity, plan, options),
   waitForProvisioning: (addon: AddOn, options?: WaitForProvisioningOptions) =>

@@ -22,6 +22,7 @@ import {
   priceForPlan,
   resolveAddon,
   resolveAddonByAttachment,
+  resolveAttachment,
   upgrade,
   waitForProvisioning,
 } from './index.js'
@@ -845,6 +846,62 @@ describe('add-on resource', () => {
     })
   })
 
+  describe('resolveAttachment', () => {
+    it('returns the full attachment including web_url', async () => {
+      const {ctx, resolutionByAttachment} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}, web_url: 'https://addons-sso.heroku.com/apps/my-app/addons/addon-id'} as AddOnAttachment,
+        ],
+      })
+
+      const result = await resolveAttachment(ctx, 'my-app', 'DATABASE_URL')
+
+      expect(resolutionByAttachment).toHaveBeenCalledWith({
+        // eslint-disable-next-line camelcase
+        addon_attachment: 'DATABASE_URL',
+        app: 'my-app',
+      })
+      expect(result.web_url).toBe('https://addons-sso.heroku.com/apps/my-app/addons/addon-id')
+      expect(result.addon.id).toBe('addon-id')
+      expect(result.addon.app.id).toBe('app-uuid')
+    })
+
+    it('throws AddonNotFoundError when no attachment matches', async () => {
+      const {ctx} = buildCtx({resolveByAttachmentResponses: []})
+
+      await expect(resolveAttachment(ctx, 'my-app', 'NONEXISTENT')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws AddonNotFoundError when the matched attachment lacks an addon id', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {name: 'my-app'}, name: 'incomplete'}} as AddOnAttachment,
+        ],
+      })
+
+      await expect(resolveAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws AddonNotFoundError when the matched attachment\'s addon lacks app.id', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [
+          {addon: {app: {name: 'my-app'}, id: 'addon-id', name: 'x'}} as AddOnAttachment,
+        ],
+      })
+
+      await expect(resolveAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('throws if the signal is already aborted', async () => {
+      const {ctx, resolutionByAttachment} = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(resolveAttachment(ctx, 'my-app', 'DATABASE_URL', {signal: controller.signal})).rejects.toThrow()
+      expect(resolutionByAttachment).not.toHaveBeenCalled()
+    })
+  })
+
   describe('createAndWait', () => {
     it('returns the created add-on when wait is not requested', async () => {
       const created = buildAddon({state: 'provisioning'} as Partial<AddOn>)
@@ -1249,6 +1306,7 @@ describe('add-on resource', () => {
       expect(typeof methods.priceForPlan).toBe('function')
       expect(typeof methods.resolve).toBe('function')
       expect(typeof methods.resolveByAttachment).toBe('function')
+      expect(typeof methods.resolveAttachment).toBe('function')
       expect(typeof methods.upgrade).toBe('function')
       expect(typeof methods.waitForProvisioning).toBe('function')
     })

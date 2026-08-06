@@ -4,7 +4,7 @@ import {NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {PlatformClient} from '../../../services/platform.js'
-import type {AddOnOptions, ResolveAddonOptions, ResolvedAddOn} from './types.js'
+import type {AddOnOptions, ResolveAddonOptions, ResolvedAddOn, ResolvedAddOnAttachment} from './types.js'
 
 import {debug} from './debug.js'
 import {AddonAmbiguousError, AddonNotFoundError} from './errors.js'
@@ -43,23 +43,27 @@ export async function resolveAddon(
 }
 
 /**
- * Resolve a Platform add-on via one of its attachments on a given app.
+ * Resolve an add-on *attachment* via its name on a given app.
  *
  * Use this when you have an attachment name (e.g. `DATABASE_URL`,
- * `HEROKU_POSTGRESQL_GREEN`) on a known app, rather than an add-on
- * identity. Calls `addOnAttachment.resolution` and returns the add-on
- * the matched attachment points to.
+ * `HEROKU_POSTGRESQL_GREEN`) on a known app and need the attachment
+ * itself — including its context-scoped `web_url` (the dashboard URL for
+ * opening the add-on *from this app*, which differs from the add-on's own
+ * billing-app `web_url`). Calls `addOnAttachment.resolution` and returns
+ * the matched attachment with its resolved add-on.
  *
- * For resolving by add-on identity, use `resolveAddon`.
+ * To resolve just the add-on the attachment points to, use
+ * `resolveAddonByAttachment`. For resolving by add-on identity, use
+ * `resolveAddon`.
  */
-export async function resolveAddonByAttachment(
+export async function resolveAttachment(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   attachmentName: string,
   options: AddOnOptions = {},
-): Promise<ResolvedAddOn> {
+): Promise<ResolvedAddOnAttachment> {
   options.signal?.throwIfAborted()
-  debug('resolveByAttachment app=%s attachment=%s', appIdentity, attachmentName)
+  debug('resolveAttachment app=%s attachment=%s', appIdentity, attachmentName)
   const matches = await ctx.platform.addOnAttachment.resolution({
     // eslint-disable-next-line camelcase
     addon_attachment: attachmentName,
@@ -67,14 +71,27 @@ export async function resolveAddonByAttachment(
   })
 
   const attachment = matches[0]
-  const addon = attachment?.addon
-  if (!addon?.id || !addon.app?.id) {
-    debug('resolveByAttachment matches=%d (no usable add-on returned)', matches.length)
+  if (!attachment?.addon?.id || !attachment.addon.app?.id) {
+    debug('resolveAttachment matches=%d (no usable add-on returned)', matches.length)
     throw new AddonNotFoundError()
   }
 
-  debug('resolveByAttachment resolved addon=%s app=%s', addon.id, addon.app.id)
-  return addon as ResolvedAddOn
+  return attachment as ResolvedAddOnAttachment
+}
+
+/**
+ * Resolve the add-on that an attachment points to, by attachment name on a
+ * given app. A thin wrapper over `resolveAttachment` that returns only the
+ * resolved add-on (not the attachment). Use `resolveAttachment` when you
+ * need the attachment's context-scoped `web_url`.
+ */
+export async function resolveAddonByAttachment(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  attachmentName: string,
+  options: AddOnOptions = {},
+): Promise<ResolvedAddOn> {
+  return (await resolveAttachment(ctx, appIdentity, attachmentName, options)).addon as ResolvedAddOn
 }
 
 export async function resolveAddonInternal(

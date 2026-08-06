@@ -20,6 +20,16 @@ export type ResolvedAddOn = AddOn & {
   id: string
 }
 
+/**
+ * An attachment whose add-on `id`/`app.id` are guaranteed non-null (as the
+ * resolver enforces at runtime). `web_url` is scoped to the attached app's
+ * context — the dashboard URL for opening this add-on *from this app*, which
+ * differs from the add-on's own (billing-app) `web_url`.
+ */
+export type ResolvedAddOnAttachment = AddOnAttachment & {
+  addon: NonNullable<AddOnAttachment['addon']> & {app: {id: string}; id: string}
+}
+
 export type DescribedAddOn = ResolvedAddOn & {
   attachments: AddOnAttachment[]
 }
