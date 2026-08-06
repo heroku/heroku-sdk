@@ -18,5 +18,17 @@ export function createMetricsClient(options: HerokuApiClientOptions = {}): Metri
   // service, so we use `service: 'custom'` with an explicit base URL. Auth (bearer
   // token) is resolved by heroku-fetch exactly as for platform/data — same
   // HEROKU_API_KEY / netrc source, shared across services on one SDK instance.
-  return createClient<HerokuClient>(routes, {baseUrl, service: 'custom', ...options})
+  //
+  // Unlike platform/data, `service: 'custom'` sends no default Accept header, so we
+  // set `application/vnd.heroku+json; version=3` explicitly to match what meetas
+  // expects — the same versioned vendor type platform/data get automatically via
+  // heroku-fetch's `defaultAccept`. A caller can still override it via `headers`:
+  // `...options` first, then an explicit `headers` key whose `...options.headers`
+  // spread lands AFTER the literal Accept, so caller headers win for any key they set.
+  return createClient<HerokuClient>(routes, {
+    baseUrl,
+    service: 'custom',
+    ...options,
+    headers: {Accept: 'application/vnd.heroku+json; version=3', ...options.headers},
+  })
 }

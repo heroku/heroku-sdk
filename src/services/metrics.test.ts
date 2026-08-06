@@ -43,6 +43,30 @@ describe('createMetricsClient', () => {
     }))
   })
 
+  it('forwards the versioned Accept header by default', async () => {
+    delete process.env.HEROKU_METRICS_HOST
+    constructorSpy.mockClear()
+    const {createMetricsClient} = await import('./metrics.js')
+
+    createMetricsClient({token: 'test-token'})
+
+    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      headers: expect.objectContaining({Accept: 'application/vnd.heroku+json; version=3'}),
+    }))
+  })
+
+  it('lets a caller override the Accept header', async () => {
+    delete process.env.HEROKU_METRICS_HOST
+    constructorSpy.mockClear()
+    const {createMetricsClient} = await import('./metrics.js')
+
+    createMetricsClient({headers: {Accept: 'application/vnd.heroku+json; version=4'}, token: 't'})
+
+    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      headers: expect.objectContaining({Accept: 'application/vnd.heroku+json; version=4'}),
+    }))
+  })
+
   it('honors HEROKU_METRICS_HOST as a base-URL override', async () => {
     process.env.HEROKU_METRICS_HOST = 'https://api.metrics.herokai.com'
     constructorSpy.mockClear()
