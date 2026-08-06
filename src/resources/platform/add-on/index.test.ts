@@ -850,6 +850,7 @@ describe('add-on resource', () => {
     it('returns the full attachment including web_url', async () => {
       const {ctx, resolutionByAttachment} = buildCtx({
         resolveByAttachmentResponses: [
+          // eslint-disable-next-line camelcase
           {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}, web_url: 'https://addons-sso.heroku.com/apps/my-app/addons/addon-id'} as AddOnAttachment,
         ],
       })

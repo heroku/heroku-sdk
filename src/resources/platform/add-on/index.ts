@@ -63,10 +63,10 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
   priceForPlan,
   resolve: (addonIdentity: string, options?: ResolveAddonOptions) =>
     resolveAddon(ctx, addonIdentity, options),
-  resolveByAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
-    resolveAddonByAttachment(ctx, appIdentity, attachmentName, options),
   resolveAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
     resolveAttachment(ctx, appIdentity, attachmentName, options),
+  resolveByAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
+    resolveAddonByAttachment(ctx, appIdentity, attachmentName, options),
   upgrade: (addonIdentity: string, plan: string, options?: UpgradeAddOnOptions) =>
     upgrade(ctx, addonIdentity, plan, options),
   waitForProvisioning: (addon: AddOn, options?: WaitForProvisioningOptions) =>

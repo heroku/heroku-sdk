@@ -4,7 +4,9 @@ import {NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {PlatformClient} from '../../../services/platform.js'
-import type {AddOnOptions, ResolveAddonOptions, ResolvedAddOn, ResolvedAddOnAttachment} from './types.js'
+import type {
+  AddOnOptions, ResolveAddonOptions, ResolvedAddOn, ResolvedAddOnAttachment,
+} from './types.js'
 
 import {debug} from './debug.js'
 import {AddonAmbiguousError, AddonNotFoundError} from './errors.js'
