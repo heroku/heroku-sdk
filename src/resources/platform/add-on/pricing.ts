@@ -8,11 +8,39 @@ import type {Plan} from '@heroku/types/3.sdk'
  */
 const HOURS_PER_MONTH = 24 * 30
 
+/**
+ * How a plan is priced, classified once so every consumer agrees. The
+ * classification — not the raw `cents`/`contract`/`metered` fields — is what
+ * a caller should branch on to decide how to present a plan:
+ *
+ * - `'contract'` — negotiated outside monthly add-on billing. `cents` is not a
+ *   meaningful price and may be absent.
+ * - `'metered'`  — billed per use. A flat `cents` (often `0`) does NOT reflect
+ *   real cost; per-use rates live on the plan's meters (fetched separately).
+ * - `'free'`     — a flat plan that genuinely costs nothing (`cents === 0`).
+ * - `'flat'`     — a fixed recurring price of `cents` per `unit`.
+ *
+ * The precedence (contract, then metered, then free, then flat) matches the
+ * Heroku CLI's long-standing production behavior: a contract- or metered-billed
+ * plan is reported as such even when its flat `cents` reads `0`, so a `cents: 0`
+ * metered/contract plan is never mistaken for free.
+ */
+export type PlanPriceKind = 'contract' | 'flat' | 'free' | 'metered'
+
 export type PlanPriceBreakdown = {
-  /** raw price as reported by the API, in cents */
-  cents: number
+  /**
+   * Raw price as reported by the API, in cents. `undefined` for a contract
+   * plan that reports no `cents` (the price is negotiated elsewhere).
+   */
+  cents: number | undefined
   /** True when the price is negotiated outside monthly add-on billing */
   contract: boolean
+  /**
+   * The price classification. Branch on this rather than re-deriving it from
+   * `cents`/`contract`/`metered` at each call site — that re-derivation is the
+   * source of the "0 cents ⇒ free" bug this field exists to prevent.
+   */
+  kind: PlanPriceKind
   /** True when the price is billed per use rather than at a fixed cadence */
   metered: boolean
   /**
@@ -41,15 +69,17 @@ export type PlanPriceBreakdown = {
  * keeps the 30-day-month assumption (Heroku's documented convention)
  * in one place.
  *
- * Returns `undefined` if the plan has no usable `price.cents` value.
- * `Plan.price` is typed as optional in `@heroku/types`, and consumers
- * occasionally receive partial responses depending on the Accept
- * variant.
+ * Returns `undefined` only when the plan carries no pricing signal at
+ * all — no `price`, and no `cents`/`contract`/`metered` to classify
+ * from. A contract- or metered-billed plan still classifies (its flag
+ * is the signal) even when `cents` is absent. `Plan.price` is typed as
+ * optional in `@heroku/types`, and consumers occasionally receive
+ * partial responses depending on the Accept variant.
  *
- * `perMonthCents` and `perHourCents` are themselves `undefined` when
- * the API reports a unit other than `'month'` or `'hour'` — callers
- * should omit those parts of their label rather than show fabricated
- * numbers.
+ * `perMonthCents` and `perHourCents` are populated only for a flat or
+ * free plan on a `'month'`/`'hour'` cadence; they are `undefined` for
+ * metered/contract plans and for unknown units, so callers omit those
+ * parts of their label rather than show fabricated numbers.
  *
  * @param plan The plan to break down. Pass the whole `Plan` rather
  *   than just `plan.price` so the helper can pick up future fields
@@ -57,39 +87,62 @@ export type PlanPriceBreakdown = {
  */
 export function priceForPlan(plan: Plan): PlanPriceBreakdown | undefined {
   const {price} = plan
-  if (!price || typeof price.cents !== 'number') return undefined
+  if (!price) return undefined
 
-  const {cents} = price
+  const contract = Boolean(price.contract)
+  const metered = Boolean(price.metered)
+  const hasCents = typeof price.cents === 'number'
+
+  // A plan with no `cents` and no contract/metered flag carries no usable
+  // pricing signal at all — treat it as unknown (undefined) rather than
+  // guessing. Contract/metered plans, by contrast, are fully classifiable
+  // without a `cents` value: the flag IS the price signal.
+  if (!hasCents && !contract && !metered) return undefined
+
+  const cents = hasCents ? (price.cents as number) : undefined
   const unit = price.unit ?? ''
 
+  // Precedence matches the CLI's production formatter: contract and metered
+  // win over the raw cents, so a `cents: 0` contract/metered plan is never
+  // classified as free. `free` is a flat plan that genuinely costs nothing.
+  let kind: PlanPriceKind
+  if (contract) kind = 'contract'
+  else if (metered) kind = 'metered'
+  else if (cents === 0) kind = 'free'
+  else kind = 'flat'
+
+  // Per-month / per-hour equivalents are only meaningful for a flat recurring
+  // price on a known cadence. Metered/contract plans (and unknown units) leave
+  // them undefined so callers omit those labels instead of rendering
+  // fabricated numbers.
   let perMonthCents: number | undefined
   let perHourCents: number | undefined
-  switch (unit) {
-    case 'hour': {
-      perHourCents = cents
-      perMonthCents = cents * HOURS_PER_MONTH
-      break
-    }
+  if ((kind === 'flat' || kind === 'free') && cents !== undefined) {
+    switch (unit) {
+      case 'hour': {
+        perHourCents = cents
+        perMonthCents = cents * HOURS_PER_MONTH
+        break
+      }
 
-    case 'month': {
-      perMonthCents = cents
-      perHourCents = cents / HOURS_PER_MONTH
-      break
-    }
+      case 'month': {
+        perMonthCents = cents
+        perHourCents = cents / HOURS_PER_MONTH
+        break
+      }
 
-    default: {
-      // Unknown billing unit — leave per-month / per-hour undefined
-      // so callers can omit those labels instead of rendering
-      // fabricated numbers.
-      perMonthCents = undefined
-      perHourCents = undefined
+      default: {
+        perMonthCents = undefined
+        perHourCents = undefined
+      }
     }
   }
 
   return {
     cents,
-    contract: Boolean(price.contract),
-    metered: Boolean(price.metered),
+    contract,
+    kind,
+    metered,
     perHourCents,
     perMonthCents,
     unit,
