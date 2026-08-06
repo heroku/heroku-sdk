@@ -45,7 +45,7 @@ export async function resolveAddon(
 }
 
 /**
- * Resolve an add-on *attachment* via its name on a given app.
+ * Describe an add-on *attachment* via its name on a given app.
  *
  * Use this when you have an attachment name (e.g. `DATABASE_URL`,
  * `HEROKU_POSTGRESQL_GREEN`) on a known app and need the attachment
@@ -63,14 +63,14 @@ export async function resolveAddon(
  * `resolveAddonByAttachment`. For resolving by add-on identity, use
  * `resolveAddon`.
  */
-export async function resolveAttachment(
+export async function describeAttachment(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   attachmentName: string,
   options: AddOnOptions = {},
 ): Promise<ResolvedAddOnAttachment> {
   options.signal?.throwIfAborted()
-  debug('resolveAttachment app=%s attachment=%s', appIdentity, attachmentName)
+  debug('describeAttachment app=%s attachment=%s', appIdentity, attachmentName)
   // Scope the in-flight resolution call to the caller's signal so an abort
   // mid-request is honored, not just before it starts.
   const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
@@ -82,17 +82,18 @@ export async function resolveAttachment(
 
   const attachment = matches[0]
   if (!attachment?.addon?.id || !attachment.addon.app?.id) {
-    debug('resolveAttachment matches=%d (no usable add-on returned)', matches.length)
+    debug('describeAttachment matches=%d (no usable add-on returned)', matches.length)
     throw new AddonNotFoundError()
   }
 
+  debug('describeAttachment resolved addon=%s app=%s', attachment.addon.id, attachment.addon.app.id)
   return attachment as ResolvedAddOnAttachment
 }
 
 /**
  * Resolve the add-on that an attachment points to, by attachment name on a
- * given app. A thin wrapper over `resolveAttachment` that returns only the
- * resolved add-on (not the attachment). Use `resolveAttachment` when you
+ * given app. A thin wrapper over `describeAttachment` that returns only the
+ * resolved add-on (not the attachment). Use `describeAttachment` when you
  * need the attachment's context-scoped `web_url`.
  */
 export async function resolveAddonByAttachment(
@@ -101,7 +102,7 @@ export async function resolveAddonByAttachment(
   attachmentName: string,
   options: AddOnOptions = {},
 ): Promise<ResolvedAddOn> {
-  return (await resolveAttachment(ctx, appIdentity, attachmentName, options)).addon as ResolvedAddOn
+  return (await describeAttachment(ctx, appIdentity, attachmentName, options)).addon as ResolvedAddOn
 }
 
 export async function resolveAddonInternal(
