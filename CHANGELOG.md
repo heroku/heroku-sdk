@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.5](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.4...sdk-v0.5.5) (2026-08-07)
+
+
+### Features
+
+* add describeAttachment resolver returning context-scoped web_url ([#93](https://github.com/heroku/heroku-sdk/issues/93)) ([9c803e2](https://github.com/heroku/heroku-sdk/commit/9c803e208caa16d326637473c7959eee6bd0e155))
+* add metrics service surface ([#92](https://github.com/heroku/heroku-sdk/issues/92)) ([7a4bcd8](https://github.com/heroku/heroku-sdk/commit/7a4bcd854dffbeb594c361ea8dabfa4c331fe496))
+* add poller option to waitForReady, createAndWait, and createAndAssociate ([#96](https://github.com/heroku/heroku-sdk/issues/96)) ([6785d04](https://github.com/heroku/heroku-sdk/commit/6785d04b470b2ccdac6a419f031c6cf0f212e848))
+* classify add-on plan pricing so consumers never mislabel $0 plans ([#94](https://github.com/heroku/heroku-sdk/issues/94)) ([1149d8d](https://github.com/heroku/heroku-sdk/commit/1149d8dd0fb680452202b981db133416d2fddf87))
+
 ## [0.5.4](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.3...sdk-v0.5.4) (2026-08-04)
 
 
