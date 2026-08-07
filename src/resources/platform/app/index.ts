@@ -1,16 +1,24 @@
 import type {App} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {CreateAndSetupInput, CreateAndSetupOptions} from './create-and-setup.js'
 import type {DescribeAppOptions} from './info.js'
+import type {TransferOptions} from './transfer.js'
 import type {WaitForACMCertificatesOptions} from './wait-for-acm-certificates.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {createAndSetup} from './create-and-setup.js'
 import {describeApp} from './info.js'
+import {transferApp} from './transfer.js'
 import {waitForACMCertificates} from './wait-for-acm-certificates.js'
 
 export {
+  createAndSetup, type CreateAndSetupInput, type CreateAndSetupOptions, type SetupStep,
+} from './create-and-setup.js'
+export {
   type AppInfo, describeApp, type DescribeAppOptions, type PipelineCouplingDetail,
 } from './info.js'
+export {transferApp, type TransferOptions} from './transfer.js'
 export {waitForACMCertificates, type WaitForACMCertificatesOptions} from './wait-for-acm-certificates.js'
 
 export type AppMaintenanceOptions = {
@@ -115,6 +123,8 @@ export async function getProcessTier(
 }
 
 export const appExtensions = extendResource('platform', 'app', ctx => ({
+  createAndSetup: (input: CreateAndSetupInput, options?: CreateAndSetupOptions) =>
+    createAndSetup(ctx, input, options),
   describe: (appIdentity: string, options?: DescribeAppOptions) =>
     describeApp(ctx, appIdentity, options),
   disableMaintenance: (appIdentity: string, options?: AppMaintenanceOptions) =>
@@ -127,6 +137,8 @@ export const appExtensions = extendResource('platform', 'app', ctx => ({
     getProcessTier(ctx, appIdentity, options),
   isShielded: (appIdentity: string, options?: IsShieldedOptions) =>
     isShielded(ctx, appIdentity, options),
+  transfer: (appIdentity: string, recipient: string, options?: TransferOptions) =>
+    transferApp(ctx, appIdentity, recipient, options),
   waitForACMCertificates: (appIdentity: string, options?: WaitForACMCertificatesOptions) =>
     waitForACMCertificates(ctx, appIdentity, options),
 }))
