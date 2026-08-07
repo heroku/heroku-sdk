@@ -32,9 +32,25 @@ export async function dispatch(
     body = remaining[0]
   }
 
+  let effectiveOptions = requestOptions
+  if (route.query && route.query.length > 0 && remaining.length > 0) {
+    const raw = remaining[0]
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const searchParams: Record<string, boolean | number | string> = {}
+      for (const key of route.query) {
+        const value = (raw as Record<string, unknown>)[key]
+        if (value !== undefined && value !== null) {
+          searchParams[key] = value as boolean | number | string
+        }
+      }
+
+      effectiveOptions = {...requestOptions, searchParams}
+    }
+  }
+
   debug('%s %s %s -> %s hasBody=%s', invocation ?? 'dispatch', route.method, route.path, path, body !== undefined)
 
-  const response = await callMethod(client, route.method, path, body, requestOptions)
+  const response = await callMethod(client, route.method, path, body, effectiveOptions)
 
   const contentLength = response.headers.get('content-length')
   if (response.status === 204 || contentLength === '0') {
@@ -51,7 +67,7 @@ export async function dispatch(
   const nextRange = response.headers.get('next-range')
   if (!nextRange) return result
 
-  return followPages(client, path, result, nextRange, invocation, requestOptions)
+  return followPages(client, path, result, nextRange, invocation, effectiveOptions)
 }
 
 /* eslint-disable no-await-in-loop -- pagination is inherently sequential; each page depends on the previous next-range header */

@@ -1,4 +1,5 @@
-import type {RouteDefinition} from '@heroku/types/3.sdk/routes'
+/* eslint-disable camelcase */
+import type {RouteDefinition} from '@heroku/types/types'
 
 import {
   describe, expect, it, vi,
@@ -227,6 +228,98 @@ describe('dispatch', () => {
       expect(Array.isArray(result)).toBe(true)
       expect((result as unknown[]).length).toBe(500)
       expect(client.get).toHaveBeenCalledTimes(500)
+    })
+  })
+
+  describe('query params', () => {
+    it('forwards a trailing object as searchParams for routes declaring query', async () => {
+      const client = mockClient()
+      const route: RouteDefinition = {
+        method: 'GET',
+        path: '/apps/{app}/router-metrics/latency',
+        query: ['start_time', 'process_type'],
+      }
+
+      await dispatch(client as any, route, ['my-app', {process_type: 'web', start_time: '2016-04-17T19:00:00Z'}])
+
+      expect(client.get).toHaveBeenCalledWith('/apps/my-app/router-metrics/latency', {
+        searchParams: {process_type: 'web', start_time: '2016-04-17T19:00:00Z'},
+      })
+    })
+
+    it('omits undefined query values', async () => {
+      const client = mockClient()
+      const route: RouteDefinition = {
+        method: 'GET',
+        path: '/apps/{app}/router-metrics/errors',
+        query: ['start_time', 'process_type'],
+      }
+
+      await dispatch(client as any, route, ['my-app', {process_type: undefined, start_time: '2016-04-17T19:00:00Z'}])
+
+      expect(client.get).toHaveBeenCalledWith('/apps/my-app/router-metrics/errors', {
+        searchParams: {start_time: '2016-04-17T19:00:00Z'},
+      })
+    })
+
+    it('omits null query values', async () => {
+      const client = mockClient()
+      const route: RouteDefinition = {
+        method: 'GET',
+        path: '/apps/{app}/router-metrics/errors',
+        query: ['start_time', 'process_type'],
+      }
+
+      await dispatch(client as any, route, ['my-app', {process_type: null, start_time: '2016-04-17T19:00:00Z'}])
+
+      expect(client.get).toHaveBeenCalledWith('/apps/my-app/router-metrics/errors', {
+        searchParams: {start_time: '2016-04-17T19:00:00Z'},
+      })
+    })
+
+    it('merges query searchParams with inherited requestOptions', async () => {
+      const client = mockClient()
+      const route: RouteDefinition = {method: 'GET', path: '/apps/{app}/router-metrics/status', query: ['step']}
+
+      await dispatch(client as any, route, ['my-app', {step: '1h'}], undefined, {timeout: 5000})
+
+      expect(client.get).toHaveBeenCalledWith('/apps/my-app/router-metrics/status', {
+        searchParams: {step: '1h'},
+        timeout: 5000,
+      })
+    })
+
+    it('does NOT treat a trailing object as searchParams when route has no query (regression)', async () => {
+      const client = mockClient()
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
+
+      await dispatch(client as any, route, [{ignored: 'x'}])
+
+      // unchanged behavior: no options object synthesized
+      expect(client.get).toHaveBeenCalledWith('/apps')
+    })
+
+    it('propagates searchParams to all paginated requests', async () => {
+      const page1 = mockResponse([{id: '1'}, {id: '2'}], 200, {'next-range': 'id 3..'})
+      const page2 = mockResponse([{id: '3'}, {id: '4'}], 200)
+      const client = {...mockClient(), get: vi.fn().mockResolvedValueOnce(page1).mockResolvedValueOnce(page2)}
+      const route: RouteDefinition = {
+        method: 'GET',
+        path: '/apps/{app}/router-metrics/latency',
+        query: ['start_time'],
+      }
+
+      const result = await dispatch(client as any, route, ['my-app', {start_time: '2016-04-17T19:00:00Z'}])
+
+      expect(result).toEqual([{id: '1'}, {id: '2'}, {id: '3'}, {id: '4'}])
+      expect(client.get).toHaveBeenCalledTimes(2)
+      expect(client.get).toHaveBeenNthCalledWith(1, '/apps/my-app/router-metrics/latency', {
+        searchParams: {start_time: '2016-04-17T19:00:00Z'},
+      })
+      expect(client.get).toHaveBeenNthCalledWith(2, '/apps/my-app/router-metrics/latency', {
+        headers: {Range: 'id 3..'},
+        searchParams: {start_time: '2016-04-17T19:00:00Z'},
+      })
     })
   })
 })

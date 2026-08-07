@@ -1,6 +1,6 @@
 # Heroku SDK
 
-A TypeScript SDK for the [Heroku Platform API](https://devcenter.heroku.com/articles/platform-api-reference) and [Heroku Data API](https://devcenter.heroku.com/articles/heroku-postgres-api-reference). It generates fully-typed clients at runtime from route definitions — no hand-written method per endpoint.
+A TypeScript SDK for the [Heroku Platform API](https://devcenter.heroku.com/articles/platform-api-reference), [Heroku Data API](https://devcenter.heroku.com/articles/heroku-postgres-api-reference), and the Heroku Metrics API. It generates fully-typed clients at runtime from route definitions — no hand-written method per endpoint.
 
 ## Installation
 
@@ -40,9 +40,11 @@ If you only need one service (and want the smallest possible bundle), import the
 ```ts
 import { createPlatformClient } from '@heroku/sdk/platform'
 import { createDataClient }     from '@heroku/sdk/data'
+import { createMetricsClient }  from '@heroku/sdk/metrics'
 
 const platform = createPlatformClient()
 const data     = createDataClient()
+const metrics  = createMetricsClient()
 
 const apps = await platform.app.list()
 ```
@@ -54,6 +56,7 @@ const apps = await platform.app.list()
 | `HerokuSDK`, `extendResource`, types     | `@heroku/sdk`                     |
 | `createPlatformClient`, `PlatformClient` | `@heroku/sdk/platform`            |
 | `createDataClient`, `DataClient`         | `@heroku/sdk/data`                |
+| `createMetricsClient`, `MetricsClient`   | `@heroku/sdk/metrics`             |
 | `appExtensions`, `dynoExtensions`, …     | `@heroku/sdk/extensions/platform` |
 | `databaseExtensions`, …                  | `@heroku/sdk/extensions/data`     |
 
