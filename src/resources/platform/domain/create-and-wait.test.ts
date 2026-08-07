@@ -302,4 +302,29 @@ describe('createAndWait', () => {
     expect(ctx.platform.withOptions).toHaveBeenNthCalledWith(1, {signal: controller.signal})
     expect(ctx.platform.withOptions).toHaveBeenNthCalledWith(2, {signal: controller.signal})
   })
+
+  it('propagates onPoll to waitForReady when wait is true', async () => {
+    const sniEndpoint = buildSniEndpoint()
+    const pending = buildDomain({status: 'pending'})
+    const ready = buildDomain({status: 'succeeded'})
+
+    const ctx = buildCtx({
+      domainCreate: vi.fn().mockResolvedValue(pending),
+      domainInfo: vi.fn().mockResolvedValue(ready),
+      sniEndpointList: vi.fn().mockResolvedValue([sniEndpoint]),
+    })
+
+    const onStart = vi.fn()
+    const onStop = vi.fn()
+
+    const result = await createAndWait(ctx, 'test-app', 'example.com', {
+      onPoll: {onStart, onStop},
+      wait: true,
+      waitIntervalMs: WAIT_INTERVAL_MS,
+    })
+
+    expect(onStart).toHaveBeenCalledOnce()
+    expect(onStop).toHaveBeenCalledOnce()
+    expect(result).toEqual(ready)
+  })
 })

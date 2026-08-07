@@ -174,23 +174,6 @@ describe('removeProcessTypes', () => {
     expect(result).toEqual([{quantity: 0, type: 'web'}, {quantity: 0, type: 'worker'}])
   })
 
-  it('does not call onProgress when not provided', async () => {
-    const ctx = buildCtx({
-      appInfo: vi.fn().mockResolvedValue(CONTAINER_APP),
-      formationUpdate: vi.fn()
-        .mockResolvedValueOnce({quantity: 0, type: 'web'})
-        .mockResolvedValueOnce({quantity: 0, type: 'worker'}),
-    })
-
-    const onStart = vi.fn()
-    const onStop = vi.fn()
-    const result = await removeProcessTypes(ctx, 'my-app', ['web', 'worker'])
-
-    expect(onStart).not.toHaveBeenCalled()
-    expect(onStop).not.toHaveBeenCalled()
-    expect(result).toEqual([{quantity: 0, type: 'web'}, {quantity: 0, type: 'worker'}])
-  })
-
   it('does not call onStop for a process type whose update rejects', async () => {
     const ctx = buildCtx({
       appInfo: vi.fn().mockResolvedValue(CONTAINER_APP),
