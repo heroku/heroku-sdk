@@ -241,7 +241,7 @@ describe('waitForReady', () => {
       await expect(waitForReady(ctx, 'test-app')).rejects.toThrow('List API error')
     })
 
-    it('calls onPoll for each domain', async () => {
+    it('calls poller for each domain', async () => {
       const calls: string[] = []
 
       const pending1 = buildDomain({id: 'domain-1', status: 'pending'})
@@ -262,7 +262,7 @@ describe('waitForReady', () => {
       const onStop = vi.fn((domain: Domain) => calls.push(`stop:${domain.id}`))
 
       const result = await waitForReady(ctx, 'test-app', {
-        onPoll: {onStart, onStop},
+        poller: {onStart, onStop},
         waitIntervalMs: WAIT_INTERVAL_MS,
       })
 

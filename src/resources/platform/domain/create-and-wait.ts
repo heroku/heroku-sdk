@@ -21,7 +21,7 @@ export async function createAndWait(
   options: CreateAndWaitOptions = {},
 ): Promise<Domain> {
   const {
-    onPoll,
+    poller,
     resolveSniEndpoint,
     signal,
     sniEndpoint,
@@ -62,7 +62,7 @@ export async function createAndWait(
   if (shouldWait && domain.status !== 'none') {
     const [readyDomain] = await waitForReady(ctx, appIdentity, {
       domain,
-      onPoll,
+      poller,
       signal,
       timeoutMs,
       waitIntervalMs,

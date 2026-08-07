@@ -1,5 +1,7 @@
 import type {Domain, SniEndpoint} from '@heroku/types/3.sdk'
 
+import type {Poller} from '../../../utils/poller.js'
+
 export type DomainOptions = {
   /**
    * Abort signal to cancel the operation.
@@ -19,14 +21,11 @@ export type WaitForReadyOptions = DomainOptions & {
   hostname?: string
 
   /**
-   * Callback invoked once per domain being waited for:
-   * - `onStart` before polling begins
-   * - `onStop` after the domain becomes ready
+   * Progress hooks fired once per domain being waited for:
+   * `poller.onStart(domain)` before polling begins, `poller.onStop(domain)`
+   * after the domain becomes ready.
    */
-  onPoll?: {
-    onStart?: (domain: Domain) => void
-    onStop?: (domain: Domain) => void
-  }
+  poller?: Poller<Domain>
 
   /**
    * Maximum time in milliseconds to wait before giving up.
@@ -42,14 +41,11 @@ export type WaitForReadyOptions = DomainOptions & {
 
 export type CreateAndWaitOptions = DomainOptions & {
   /**
-   * Callback invoked once per domain being waited for:
-   * - `onStart` before polling begins
-   * - `onStop` after the domain becomes ready
+   * Progress hooks fired once per domain being waited for:
+   * `poller.onStart(domain)` before polling begins, `poller.onStop(domain)`
+   * after the domain becomes ready.
    */
-  onPoll?: {
-    onStart?: (domain: Domain) => void
-    onStop?: (domain: Domain) => void
-  }
+  poller?: Poller<Domain>
 
   /**
    * Callback to resolve which SNI endpoint to use

@@ -24,7 +24,7 @@ export async function waitForReady(
   const {
     domain,
     hostname,
-    onPoll,
+    poller,
     signal,
     timeoutMs,
     waitIntervalMs = DEFAULT_WAIT_INTERVAL_MS,
@@ -47,9 +47,9 @@ export async function waitForReady(
 
   const readyDomains: Domain[] = []
   for (const domain of domains) {
-    onPoll?.onStart?.(domain)
+    poller?.onStart?.(domain)
     const readyDomain = await waitForDomain(platform, appIdentity, domain, waitIntervalMs, timeoutMs, signal)
-    onPoll?.onStop?.(domain)
+    poller?.onStop?.(domain)
 
     readyDomains.push(readyDomain)
   }

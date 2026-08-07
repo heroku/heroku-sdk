@@ -2,24 +2,22 @@
 import type {Formation, FormationUpdateOpts} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {Poller} from '../../../utils/poller.js'
 import type {ContainerOptions} from './index.js'
 
 import {ensureContainerStack} from './ensure-container-stack.js'
 
 export type RemoveProcessTypesOpts = {
   /**
-   * Fires `onStart` immediately before, and `onStop` immediately after,
-   * each process type's `formation.update` call. Process types are
-   * removed one at a time (not concurrently) so a caller can drive a
-   * single shared UI element (e.g. a CLI spinner) across the whole
+   * Fires `poller.onStart` immediately before, and `poller.onStop`
+   * immediately after, each process type's `formation.update` call. Process
+   * types are removed one at a time (not concurrently) so a caller can
+   * drive a single shared UI element (e.g. a CLI spinner) across the whole
    * batch. If an update rejects, its `onStart` has already fired but
    * `onStop` never will — the rejection propagates immediately and any
    * remaining process types are not attempted.
    */
-  onProgress?: {
-    onStart?: (processType: string) => void
-    onStop?: (processType: string) => void
-  }
+  poller?: Poller<string>
 } & ContainerOptions
 
 /**
@@ -51,11 +49,11 @@ export async function removeProcessTypes(
   const updatedFormations: Formation[] = []
 
   for (const processType of processTypes) {
-    options.onProgress?.onStart?.(processType)
+    options.poller?.onStart?.(processType)
     const formation = await platform
       .withHeaders({Accept: 'application/vnd.heroku+json; version=3.docker-releases'})
       .formation.update(appIdentity, processType, requestBody)
-    options.onProgress?.onStop?.(processType)
+    options.poller?.onStop?.(processType)
 
     updatedFormations.push(formation)
   }

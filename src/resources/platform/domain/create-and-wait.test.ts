@@ -303,7 +303,7 @@ describe('createAndWait', () => {
     expect(ctx.platform.withOptions).toHaveBeenNthCalledWith(2, {signal: controller.signal})
   })
 
-  it('propagates onPoll to waitForReady when wait is true', async () => {
+  it('propagates poller to waitForReady when wait is true', async () => {
     const sniEndpoint = buildSniEndpoint()
     const pending = buildDomain({status: 'pending'})
     const ready = buildDomain({status: 'succeeded'})
@@ -318,7 +318,7 @@ describe('createAndWait', () => {
     const onStop = vi.fn()
 
     const result = await createAndWait(ctx, 'test-app', 'example.com', {
-      onPoll: {onStart, onStop},
+      poller: {onStart, onStop},
       wait: true,
       waitIntervalMs: WAIT_INTERVAL_MS,
     })

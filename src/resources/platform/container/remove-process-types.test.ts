@@ -143,7 +143,7 @@ describe('removeProcessTypes', () => {
     expect(ctx.platform.app.info).not.toHaveBeenCalled()
   })
 
-  it('calls onProgress for each process type', async () => {
+  it('calls poller for each process type', async () => {
     const calls: string[] = []
 
     const ctx = buildCtx({
@@ -158,7 +158,7 @@ describe('removeProcessTypes', () => {
     const onStop = vi.fn((processType: string) => calls.push(`stop:${processType}`))
 
     const result = await removeProcessTypes(ctx, 'my-app', ['web', 'worker'], {
-      onProgress: {onStart, onStop},
+      poller: {onStart, onStop},
     })
 
     expect(calls).toEqual([
@@ -186,7 +186,7 @@ describe('removeProcessTypes', () => {
     const onStop = vi.fn()
 
     await expect(removeProcessTypes(ctx, 'my-app', ['web', 'worker'], {
-      onProgress: {onStart, onStop},
+      poller: {onStart, onStop},
     })).rejects.toThrow('something went wrong')
 
     expect(onStart).toHaveBeenCalledTimes(1)

@@ -2,6 +2,7 @@
 import type {SniEndpoint} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {Poller} from '../../../utils/poller.js'
 
 import {waitForReady} from '../domain/wait-for-ready.js'
 
@@ -9,16 +10,13 @@ const DEFAULT_WAIT_INTERVAL_MS = 1000
 const DEFAULT_TIMEOUT_MS = 30_000
 
 export type CreateAndAssociateOptions = {
-  intervalMs?: number
   /**
-   * Callback invoked for the domain being waited for:
-   * - `onStart` before polling begins
-   * - `onStop` after the domain becomes ready
+   * Progress hooks for the domain readiness wait:
+   * `domainPoller.onStart()` before polling begins, `domainPoller.onStop()`
+   * once the app's domains reach ready status.
    */
-  onDomainPoll?: {
-    onStart?: () => void
-    onStop?: () => void
-  }
+  domainPoller?: Poller
+  intervalMs?: number
   /** Required. Given the wildcard-matched candidate hostnames, returns the subset to associate. */
   resolveDomains: (candidates: string[]) => Promise<string[]>
   signal?: AbortSignal
@@ -64,8 +62,8 @@ export async function createAndAssociate(
   options: CreateAndAssociateOptions,
 ): Promise<SniEndpoint> {
   const {
+    domainPoller,
     intervalMs = DEFAULT_WAIT_INTERVAL_MS,
-    onDomainPoll,
     resolveDomains,
     signal,
     timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -80,9 +78,9 @@ export async function createAndAssociate(
     private_key: privateKey,
   })
 
-  onDomainPoll?.onStart?.()
+  domainPoller?.onStart?.()
   await waitForReady(ctx, appIdentity, {signal, timeoutMs, waitIntervalMs: intervalMs})
-  onDomainPoll?.onStop?.()
+  domainPoller?.onStop?.()
 
   const apiDomains = await platform.domain.list(appIdentity)
   const appDomains = apiDomains.map(d => d.hostname)

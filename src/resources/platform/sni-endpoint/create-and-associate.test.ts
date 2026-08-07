@@ -359,7 +359,7 @@ describe('createAndAssociate', () => {
     expect(update).toHaveBeenCalledExactlyOnceWith('my-app', 'www.example.com', {sni_endpoint: 'tokyo-1234'})
   })
 
-  it('uses onDomainPoll when provided', async () => {
+  it('uses domainPoller when provided', async () => {
     const calls: string[] = []
 
     const sniEndpoint = buildSniEndpoint()
@@ -382,8 +382,8 @@ describe('createAndAssociate', () => {
     const onStop = vi.fn(() => calls.push('stop'))
 
     const result = await createAndAssociate(ctx, 'my-app', 'CERT_CHAIN', 'PRIVATE_KEY', {
+      domainPoller: {onStart, onStop},
       intervalMs: 1,
-      onDomainPoll: {onStart, onStop},
       resolveDomains,
     })
 
