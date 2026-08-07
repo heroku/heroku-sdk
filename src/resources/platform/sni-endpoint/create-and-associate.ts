@@ -10,6 +10,15 @@ const DEFAULT_TIMEOUT_MS = 30_000
 
 export type CreateAndAssociateOptions = {
   intervalMs?: number
+  /**
+   * Callback invoked for the domain being waited for:
+   * - `onStart` before polling begins
+   * - `onStop` after the domain becomes ready
+   */
+  onDomainPoll?: {
+    onStart?: () => void
+    onStop?: () => void
+  }
   /** Required. Given the wildcard-matched candidate hostnames, returns the subset to associate. */
   resolveDomains: (candidates: string[]) => Promise<string[]>
   signal?: AbortSignal
@@ -56,6 +65,7 @@ export async function createAndAssociate(
 ): Promise<SniEndpoint> {
   const {
     intervalMs = DEFAULT_WAIT_INTERVAL_MS,
+    onDomainPoll,
     resolveDomains,
     signal,
     timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -70,7 +80,9 @@ export async function createAndAssociate(
     private_key: privateKey,
   })
 
+  onDomainPoll?.onStart?.()
   await waitForReady(ctx, appIdentity, {signal, timeoutMs, waitIntervalMs: intervalMs})
+  onDomainPoll?.onStop?.()
 
   const apiDomains = await platform.domain.list(appIdentity)
   const appDomains = apiDomains.map(d => d.hostname)

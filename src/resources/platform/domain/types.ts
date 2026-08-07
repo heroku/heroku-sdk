@@ -19,6 +19,16 @@ export type WaitForReadyOptions = DomainOptions & {
   hostname?: string
 
   /**
+   * Callback invoked once per domain being waited for:
+   * - `onStart` before polling begins
+   * - `onStop` after the domain becomes ready
+   */
+  onPoll?: {
+    onStart?: (domain: Domain) => void
+    onStop?: (domain: Domain) => void
+  }
+
+  /**
    * Maximum time in milliseconds to wait before giving up.
    * If undefined, waits indefinitely (until signal aborted).
    */
@@ -31,6 +41,16 @@ export type WaitForReadyOptions = DomainOptions & {
 }
 
 export type CreateAndWaitOptions = DomainOptions & {
+  /**
+   * Callback invoked once per domain being waited for:
+   * - `onStart` before polling begins
+   * - `onStop` after the domain becomes ready
+   */
+  onPoll?: {
+    onStart?: (domain: Domain) => void
+    onStop?: (domain: Domain) => void
+  }
+
   /**
    * Callback to resolve which SNI endpoint to use
    * when one is not provided.

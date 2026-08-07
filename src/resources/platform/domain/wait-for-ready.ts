@@ -21,7 +21,14 @@ export async function waitForReady(
   appIdentity: string,
   options: WaitForReadyOptions = {},
 ): Promise<Domain[]> {
-  const {domain, hostname, signal, timeoutMs, waitIntervalMs = DEFAULT_WAIT_INTERVAL_MS} = options
+  const {
+    domain,
+    hostname,
+    onPoll,
+    signal,
+    timeoutMs,
+    waitIntervalMs = DEFAULT_WAIT_INTERVAL_MS,
+  } = options
 
   signal?.throwIfAborted()
 
@@ -38,11 +45,16 @@ export async function waitForReady(
     domains = apiDomains.filter(domain => domain.status === 'pending')
   }
 
-  for (let i = 0; i < domains.length; i++) {
-    domains[i] = await waitForDomain(platform, appIdentity, domains[i], waitIntervalMs, timeoutMs, signal)
+  const readyDomains: Domain[] = []
+  for (const domain of domains) {
+    onPoll?.onStart?.(domain)
+    const readyDomain = await waitForDomain(platform, appIdentity, domain, waitIntervalMs, timeoutMs, signal)
+    onPoll?.onStop?.(domain)
+
+    readyDomains.push(readyDomain)
   }
 
-  return domains
+  return readyDomains
 }
 
 async function waitForDomain(
@@ -60,7 +72,7 @@ async function waitForDomain(
     const updatedDomain = await platform.domain.info(appIdentity, domain.id)
     domain = updatedDomain
 
-    if (deadline !== undefined && Date.now() >= deadline) {
+    if (domain.status === 'pending' && deadline !== undefined && Date.now() >= deadline) {
       throw new Error(`Timed out waiting for domain ${domain.hostname}`)
     }
   }
