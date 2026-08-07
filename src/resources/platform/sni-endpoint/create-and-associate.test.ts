@@ -304,7 +304,6 @@ describe('createAndAssociate', () => {
 
     await createAndAssociate(ctx, 'my-app', 'CERT_CHAIN', 'PRIVATE_KEY', {resolveDomains, signal: controller.signal})
 
-    // @ts-expect-error — withOptions is on the mocked platform but not in the public type.
     expect(ctx.platform.withOptions).toHaveBeenCalledWith({signal: controller.signal})
   })
 
@@ -358,5 +357,43 @@ describe('createAndAssociate', () => {
 
     expect(info).toHaveBeenCalled()
     expect(update).toHaveBeenCalledExactlyOnceWith('my-app', 'www.example.com', {sni_endpoint: 'tokyo-1234'})
+  })
+
+  it('uses domainPoller when provided', async () => {
+    const calls: string[] = []
+
+    const sniEndpoint = buildSniEndpoint()
+    const pending = buildDomain({status: 'pending'})
+    const ready = buildDomain({status: 'succeeded'})
+
+    const ctx = buildCtx({
+      domainInfo: vi.fn().mockImplementation(async () => {
+        calls.push('info')
+        return ready
+      }),
+      domainList: vi.fn().mockResolvedValue([pending]),
+      domainUpdate: vi.fn().mockResolvedValue({}),
+      sniEndpointCreate: vi.fn().mockResolvedValue(sniEndpoint),
+    })
+
+    const resolveDomains = vi.fn().mockResolvedValue(['www.example.com'])
+
+    const onStart = vi.fn(() => calls.push('start'))
+    const onStop = vi.fn(() => calls.push('stop'))
+
+    const result = await createAndAssociate(ctx, 'my-app', 'CERT_CHAIN', 'PRIVATE_KEY', {
+      domainPoller: {onStart, onStop},
+      intervalMs: 1,
+      resolveDomains,
+    })
+
+    expect(calls).toEqual([
+      'start',
+      'info',
+      'stop',
+    ])
+    expect(onStart).toHaveBeenCalledOnce()
+    expect(onStop).toHaveBeenCalledOnce()
+    expect(result).toEqual(sniEndpoint)
   })
 })

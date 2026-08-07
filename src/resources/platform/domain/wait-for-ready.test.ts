@@ -1,3 +1,4 @@
+import {Domain} from '@heroku/types/3.sdk'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -238,6 +239,44 @@ describe('waitForReady', () => {
       })
 
       await expect(waitForReady(ctx, 'test-app')).rejects.toThrow('List API error')
+    })
+
+    it('calls poller for each domain', async () => {
+      const calls: string[] = []
+
+      const pending1 = buildDomain({id: 'domain-1', status: 'pending'})
+      const pending2 = buildDomain({id: 'domain-2', status: 'pending'})
+      const ready1 = buildDomain({id: 'domain-1', status: 'succeeded'})
+      const ready2 = buildDomain({id: 'domain-2', status: 'succeeded'})
+
+      const ctx = buildCtx({
+        domainInfo: vi.fn()
+          .mockImplementation(async (_appIdentity: string, domainId: string) => {
+            calls.push(`info:${domainId}`)
+            return buildDomain({id: domainId, status: 'succeeded'})
+          }),
+        domainList: vi.fn().mockResolvedValue([pending1, pending2]),
+      })
+
+      const onStart = vi.fn((domain: Domain) => calls.push(`start:${domain.id}`))
+      const onStop = vi.fn((domain: Domain) => calls.push(`stop:${domain.id}`))
+
+      const result = await waitForReady(ctx, 'test-app', {
+        poller: {onStart, onStop},
+        waitIntervalMs: WAIT_INTERVAL_MS,
+      })
+
+      expect(calls).toEqual([
+        'start:domain-1',
+        'info:domain-1',
+        'stop:domain-1',
+        'start:domain-2',
+        'info:domain-2',
+        'stop:domain-2',
+      ])
+      expect(onStart).toHaveBeenCalledTimes(2)
+      expect(onStop).toHaveBeenCalledTimes(2)
+      expect(result).toEqual([ready1, ready2])
     })
   })
 })
