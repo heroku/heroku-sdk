@@ -121,6 +121,73 @@ describe('createAndSetup', () => {
     await expect(createAndSetup(ctx({app: {create: vi.fn()}}), {name: 'app'}, {signal: ac.signal})).rejects.toThrow()
   })
 
+  it('threads the signal into requests via withOptions', async () => {
+    const app = {name: 'example'}
+    const create = vi.fn().mockResolvedValue(app)
+    const addOnCreate = vi.fn().mockResolvedValue({})
+    const scoped = {
+      addOn: {create: addOnCreate},
+      app: {create},
+      buildpackInstallation: {update: vi.fn()},
+      configVar: {update: vi.fn()},
+      teamApp: {create: vi.fn()},
+    }
+    const withOptions = vi.fn().mockReturnValue(scoped)
+    const ac = new AbortController()
+
+    await createAndSetup(
+      ctx({withOptions}),
+      {addons: [{plan: 'heroku-postgresql:mini'}], name: 'example'},
+      {signal: ac.signal},
+    )
+
+    expect(withOptions).toHaveBeenCalledWith({signal: ac.signal})
+    // Requests route through the scoped client, not the base one.
+    expect(create).toHaveBeenCalledOnce()
+    expect(addOnCreate).toHaveBeenCalledWith('example', {attachment: undefined, plan: 'heroku-postgresql:mini'})
+  })
+
+  it('fires onStart before any setup request is dispatched', async () => {
+    const calls: string[] = []
+    const onStart = vi.fn(() => calls.push('onStart'))
+    const onStop = vi.fn(() => calls.push('onStop'))
+    const addOnCreate = vi.fn(async () => {
+      calls.push('addOn.create')
+      return {}
+    })
+    await createAndSetup(
+      ctx({
+        addOn: {create: addOnCreate},
+        app: {create: vi.fn().mockResolvedValue({name: 'app'})},
+        buildpackInstallation: {update: vi.fn()},
+        configVar: {update: vi.fn()},
+        teamApp: {create: vi.fn()},
+      }),
+      {addons: [{plan: 'heroku-postgresql:mini'}], name: 'app'},
+      {poller: {onStart, onStop}},
+    )
+    expect(calls).toEqual(['onStart', 'addOn.create', 'onStop'])
+  })
+
+  it('does not call onStop when a setup step rejects', async () => {
+    const onStart = vi.fn()
+    const onStop = vi.fn()
+    await expect(createAndSetup(
+      ctx({
+        addOn: {create: vi.fn().mockRejectedValue(new Error('boom'))},
+        app: {create: vi.fn().mockResolvedValue({name: 'app'})},
+        buildpackInstallation: {update: vi.fn()},
+        configVar: {update: vi.fn()},
+        teamApp: {create: vi.fn()},
+      }),
+      {addons: [{plan: 'heroku-postgresql:mini'}], name: 'app'},
+      {poller: {onStart, onStop}},
+    )).rejects.toThrow('boom')
+
+    expect(onStart).toHaveBeenCalledOnce()
+    expect(onStop).not.toHaveBeenCalled()
+  })
+
   it('exposed on appExtensions.factory', async () => {
     const {appExtensions} = await import('./index.js')
     const methods = appExtensions.factory(ctx({app: {create: vi.fn()}}))

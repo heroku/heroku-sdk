@@ -24,7 +24,10 @@ describe('transferApp', () => {
   })
 
   it('team-involved transfer to a team name uses teamApp.transferToTeam with owner', async () => {
-    const transferToTeam = vi.fn().mockResolvedValue({state: 'accepted'})
+    // A real PATCH /teams/apps/{name} response is a TeamApp ({name, owner}),
+    // not an AppTransfer — TeamApp has no `state`.
+    const teamApp = {name: 'myapp', owner: {email: 'team@herokumanager.com'}}
+    const transferToTeam = vi.fn().mockResolvedValue(teamApp)
     const transferToAccount = vi.fn()
     const res = await transferApp(
       ctx({teamApp: {transferToAccount, transferToTeam}}),
@@ -34,13 +37,15 @@ describe('transferApp', () => {
     )
     expect(transferToTeam).toHaveBeenCalledWith('myapp', {owner: 'acme-widgets'})
     expect(transferToAccount).not.toHaveBeenCalled()
-    expect(res).toEqual({state: 'accepted'})
+    expect(res).toEqual(teamApp)
   })
 
   it('team-app transfer to a personal email uses teamApp.transferToAccount with owner', async () => {
     // The ambiguous case: source is a team app, recipient is a personal email →
     // personalToPersonal is false, but the target is an ACCOUNT, not a team.
-    const transferToAccount = vi.fn().mockResolvedValue({state: 'accepted'})
+    // Response is still a TeamApp ({name, owner}) — the app now belongs to the account.
+    const teamApp = {name: 'myapp', owner: {email: 'person@example.com'}}
+    const transferToAccount = vi.fn().mockResolvedValue(teamApp)
     const transferToTeam = vi.fn()
     const res = await transferApp(
       ctx({teamApp: {transferToAccount, transferToTeam}}),
@@ -50,7 +55,7 @@ describe('transferApp', () => {
     )
     expect(transferToAccount).toHaveBeenCalledWith('myapp', {owner: 'person@example.com'})
     expect(transferToTeam).not.toHaveBeenCalled()
-    expect(res).toEqual({state: 'accepted'})
+    expect(res).toEqual(teamApp)
   })
 
   it('passes silent through to appTransfer.create when set', async () => {
@@ -63,6 +68,35 @@ describe('transferApp', () => {
     const ac = new AbortController()
     ac.abort()
     await expect(transferApp(ctx({}), 'myapp', 'p@x.com', {signal: ac.signal})).rejects.toThrow()
+  })
+
+  it('threads the signal into requests via platform.withOptions', async () => {
+    const ac = new AbortController()
+    const create = vi.fn().mockResolvedValue({state: 'pending'})
+    const scoped = {appTransfer: {create}}
+    const withOptions = vi.fn().mockReturnValue(scoped)
+    const platform = {appTransfer: {create: vi.fn()}, withOptions}
+
+    await transferApp(ctx(platform), 'myapp', 'p@x.com', {personalToPersonal: true, signal: ac.signal})
+
+    expect(withOptions).toHaveBeenCalledWith({signal: ac.signal})
+    expect(create).toHaveBeenCalledWith({app: 'myapp', recipient: 'p@x.com'})
+    // Requests route through the scoped client, not the bare one.
+    expect(platform.appTransfer.create).not.toHaveBeenCalled()
+  })
+
+  it('threads the signal into team-transfer requests via platform.withOptions', async () => {
+    const ac = new AbortController()
+    const transferToTeam = vi.fn().mockResolvedValue({name: 'myapp', owner: {email: 'team@herokumanager.com'}})
+    const scoped = {teamApp: {transferToAccount: vi.fn(), transferToTeam}}
+    const withOptions = vi.fn().mockReturnValue(scoped)
+    const platform = {teamApp: {transferToAccount: vi.fn(), transferToTeam: vi.fn()}, withOptions}
+
+    await transferApp(ctx(platform), 'myapp', 'acme-widgets', {personalToPersonal: false, signal: ac.signal})
+
+    expect(withOptions).toHaveBeenCalledWith({signal: ac.signal})
+    expect(transferToTeam).toHaveBeenCalledWith('myapp', {owner: 'acme-widgets'})
+    expect(platform.teamApp.transferToTeam).not.toHaveBeenCalled()
   })
 
   it('exposed on appExtensions.factory', async () => {

@@ -29,10 +29,14 @@ export async function transferApp(
 ): Promise<AppTransfer | TeamApp> {
   options.signal?.throwIfAborted()
 
+  // Thread the caller's AbortSignal into every HTTP request so an abort
+  // cancels the in-flight transfer, not just the pre-flight check above.
+  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+
   if (options.personalToPersonal) {
     const body: {app: string; recipient: string; silent?: boolean} = {app: appIdentity, recipient}
     if (options.silent !== undefined) body.silent = options.silent
-    return ctx.platform.appTransfer.create(body)
+    return platform.appTransfer.create(body)
   }
 
   // Team-involved (personalToPersonal=false): both routes are PATCH /teams/apps/{name}
@@ -44,6 +48,6 @@ export async function transferApp(
   // this is a spec-faithful split with no functional regression.
   const looksLikeEmail = recipient.includes('@')
   return looksLikeEmail
-    ? ctx.platform.teamApp.transferToAccount(appIdentity, {owner: recipient})
-    : ctx.platform.teamApp.transferToTeam(appIdentity, {owner: recipient})
+    ? platform.teamApp.transferToAccount(appIdentity, {owner: recipient})
+    : platform.teamApp.transferToTeam(appIdentity, {owner: recipient})
 }
