@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.5...sdk-v0.5.6) (2026-08-10)
+
+
+### Features
+
+* add platform.app.transfer and createAndSetup ([#104](https://github.com/heroku/heroku-sdk/issues/104)) ([141a275](https://github.com/heroku/heroku-sdk/commit/141a2756fb9ac7509e447f2ba308e5e9f835b2cc))
+
 ## [0.5.5](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.4...sdk-v0.5.5) (2026-08-07)
 
 
