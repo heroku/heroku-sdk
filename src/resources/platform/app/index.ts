@@ -3,7 +3,7 @@ import type {App} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {CreateAndSetupInput, CreateAndSetupOptions} from './create-and-setup.js'
 import type {DescribeAppOptions} from './info.js'
-import type {TransferOptions} from './transfer.js'
+import type {TransferFn, TransferOptions} from './transfer.js'
 import type {WaitForACMCertificatesOptions} from './wait-for-acm-certificates.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
@@ -18,7 +18,10 @@ export {
 export {
   type AppInfo, describeApp, type DescribeAppOptions, type PipelineCouplingDetail,
 } from './info.js'
-export {transferApp, type TransferOptions} from './transfer.js'
+export {
+  type PersonalTransferOptions, type TeamTransferOptions,
+  transferApp, type TransferFn, type TransferOptions,
+} from './transfer.js'
 export {waitForACMCertificates, type WaitForACMCertificatesOptions} from './wait-for-acm-certificates.js'
 
 export type AppMaintenanceOptions = {
@@ -137,8 +140,15 @@ export const appExtensions = extendResource('platform', 'app', ctx => ({
     getProcessTier(ctx, appIdentity, options),
   isShielded: (appIdentity: string, options?: IsShieldedOptions) =>
     isShielded(ctx, appIdentity, options),
-  transfer: (appIdentity: string, recipient: string, options?: TransferOptions) =>
-    transferApp(ctx, appIdentity, recipient, options),
+  // Typed with the overloaded `TransferFn` so callers get route-narrowed
+  // results (`personalToPersonal: true` → AppTransfer, `false` → TeamApp).
+  // Arrows can't declare overloads directly, so we discriminate on the
+  // required `personalToPersonal` flag — narrowing `options` to the matching
+  // variant — and cast the wrapper to `TransferFn`.
+  transfer: ((appIdentity: string, recipient: string, options: TransferOptions) =>
+    (options.personalToPersonal
+      ? transferApp(ctx, appIdentity, recipient, options)
+      : transferApp(ctx, appIdentity, recipient, options))) as TransferFn,
   waitForACMCertificates: (appIdentity: string, options?: WaitForACMCertificatesOptions) =>
     waitForACMCertificates(ctx, appIdentity, options),
 }))

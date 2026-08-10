@@ -125,4 +125,112 @@ describe('mergeExtensions', () => {
     expect(withHeaders).toHaveBeenCalledWith({Accept: 'application/vnd.heroku+json; version=3'})
     expect(scoped.app.hello()).toBe('world')
   })
+
+  // Regression: an extension method invoked through a sticky-options chain
+  // (`merged.withOptions({signal}).<resource>.ping()`) must route through the
+  // DERIVED client, not the raw one. Extension factories close over `ctx` and
+  // read the raw service client off it, so if the interceptor recurses with the
+  // ORIGINAL ctx, the extension reads the RAW client and drops the options.
+  // These tests use a factory that actually reads `ctx.platform`, unlike the
+  // trivial `() => ({hello: ...})` factories above which ignore ctx.
+
+  type FakePlatform = {
+    someResource: {someMethod: () => string};
+    withHeaders: (headers: object) => FakePlatform;
+    withOptions: (opts: object) => FakePlatform;
+  }
+
+  // Builds a fake platform client. The root exposes `withOptions`/`withHeaders`
+  // that return a DERIVED stub distinguishable from the raw one, and records
+  // the options/headers it was created with.
+  function makeFakePlatform(tag: string, seenOpts: object[], seenHeaders: object[]): FakePlatform {
+    const client: FakePlatform = {
+      someResource: {someMethod: () => tag},
+      withHeaders(headers: object) {
+        seenHeaders.push(headers)
+        return makeFakePlatform('DERIVED', seenOpts, seenHeaders)
+      },
+      withOptions(opts: object) {
+        seenOpts.push(opts)
+        return makeFakePlatform('DERIVED', seenOpts, seenHeaders)
+      },
+    }
+    return client
+  }
+
+  it('routes extension methods through the derived client after withOptions', () => {
+    const seenOpts: object[] = []
+    const seenHeaders: object[] = []
+    const raw = makeFakePlatform('RAW', seenOpts, seenHeaders)
+    // ctx.platform must be the SAME object as the client passed to
+    // mergeExtensions so the un-fixed code (recursing with the original ctx)
+    // would resolve to RAW.
+    const ctx = {platform: raw} as unknown as ResourceCtx
+
+    const ext = extendResource('platform', 'someResource', c => ({
+      ping: () => c.platform.someResource.someMethod(),
+    }))
+
+    const merged = mergeExtensions(raw, [ext], ctx) as unknown as FakePlatform & {
+      someResource: {ping: () => string; someMethod: () => string};
+      withOptions: (opts: object) => FakePlatform & {someResource: {ping: () => string}};
+    }
+
+    // Pre-existing behavior: extension method present before scoping.
+    expect(merged.someResource.ping()).toBe('RAW')
+
+    const {signal} = new AbortController()
+    const scoped = merged.withOptions({signal})
+
+    expect(seenOpts).toContainEqual({signal})
+    // The extension read ctx.platform — with the fix this is the DERIVED client.
+    expect(scoped.someResource.ping()).toBe('DERIVED')
+  })
+
+  it('routes extension methods through the derived client after withHeaders', () => {
+    const seenOpts: object[] = []
+    const seenHeaders: object[] = []
+    const raw = makeFakePlatform('RAW', seenOpts, seenHeaders)
+    const ctx = {platform: raw} as unknown as ResourceCtx
+
+    const ext = extendResource('platform', 'someResource', c => ({
+      ping: () => c.platform.someResource.someMethod(),
+    }))
+
+    const merged = mergeExtensions(raw, [ext], ctx) as unknown as FakePlatform & {
+      withHeaders: (headers: object) => FakePlatform & {someResource: {ping: () => string}};
+    }
+
+    const headers = {Accept: 'application/vnd.heroku+json; version=3'}
+    const scoped = merged.withHeaders(headers)
+
+    expect(seenHeaders).toContainEqual(headers)
+    expect(scoped.someResource.ping()).toBe('DERIVED')
+  })
+
+  it('routes extension methods through the derived client after chained withOptions().withHeaders()', () => {
+    const seenOpts: object[] = []
+    const seenHeaders: object[] = []
+    const raw = makeFakePlatform('RAW', seenOpts, seenHeaders)
+    const ctx = {platform: raw} as unknown as ResourceCtx
+
+    const ext = extendResource('platform', 'someResource', c => ({
+      ping: () => c.platform.someResource.someMethod(),
+    }))
+
+    const merged = mergeExtensions(raw, [ext], ctx) as unknown as FakePlatform & {
+      withOptions: (opts: object) => FakePlatform & {
+        someResource: {ping: () => string};
+        withHeaders: (headers: object) => FakePlatform & {someResource: {ping: () => string}};
+      };
+    }
+
+    const {signal} = new AbortController()
+    const headers = {Accept: 'application/vnd.heroku+json; version=3'}
+    const scoped = merged.withOptions({signal}).withHeaders(headers)
+
+    expect(seenOpts).toContainEqual({signal})
+    expect(seenHeaders).toContainEqual(headers)
+    expect(scoped.someResource.ping()).toBe('DERIVED')
+  })
 })

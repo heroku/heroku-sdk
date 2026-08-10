@@ -2,10 +2,31 @@ import type {AppTransfer, TeamApp} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-export type TransferOptions = {
-  personalToPersonal?: boolean
-  signal?: AbortSignal
-  silent?: boolean
+/**
+ * Options for a personal-to-personal transfer (`POST /account/app-transfers`).
+ * `silent` only applies to this surface, so it lives here and not on the team
+ * variant.
+ */
+export type PersonalTransferOptions = {personalToPersonal: true; signal?: AbortSignal; silent?: boolean}
+
+/**
+ * Options for a team-involved transfer (`PATCH /teams/apps/{name}`).
+ */
+export type TeamTransferOptions = {personalToPersonal: false; signal?: AbortSignal}
+
+/**
+ * Discriminated union of transfer options. The `personalToPersonal`
+ * discriminant is required — the caller must state which surface to use.
+ */
+export type TransferOptions = PersonalTransferOptions | TeamTransferOptions
+
+/**
+ * The ctx-less, overloaded call signature the extension wrapper is typed with:
+ * `personalToPersonal: true` yields an `AppTransfer`, `false` yields a `TeamApp`.
+ */
+export type TransferFn = {
+  (appIdentity: string, recipient: string, options: PersonalTransferOptions): Promise<AppTransfer>
+  (appIdentity: string, recipient: string, options: TeamTransferOptions): Promise<TeamApp>
 }
 
 /**
@@ -18,16 +39,27 @@ export type TransferOptions = {
  *   - team-involved transfers go through `PATCH /teams/apps/{name}`
  *     (`teamApp.transferToTeam` / `transferToAccount`), differing only by body.
  *
- * The caller (CLI) decides `personalToPersonal` and interprets the returned
- * `state` for presentation. `personalToPersonal` defaults to `true`
- * (personal-to-personal) when omitted, mirroring the legacy CLI helper
- * (`personalToPersonal || personalToPersonal === undefined`).
+ * `personalToPersonal` is required: the caller must determine the source app's
+ * owner and state which surface to use. There is no default — a team-owned app
+ * routed through the personal surface would be incorrect.
  */
+export function transferApp(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  recipient: string,
+  options: PersonalTransferOptions,
+): Promise<AppTransfer>
+export function transferApp(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  recipient: string,
+  options: TeamTransferOptions,
+): Promise<TeamApp>
 export async function transferApp(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   recipient: string,
-  options: TransferOptions = {},
+  options: TransferOptions,
 ): Promise<AppTransfer | TeamApp> {
   options.signal?.throwIfAborted()
 
@@ -35,12 +67,12 @@ export async function transferApp(
   // cancels the in-flight transfer, not just the pre-flight check above.
   const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
 
-  // An omitted discriminator means personal-to-personal, matching the legacy
-  // helper's `personalToPersonal || personalToPersonal === undefined`.
-  const personalToPersonal = options.personalToPersonal ?? true
+  const {personalToPersonal} = options
 
   if (personalToPersonal) {
     const body: {app: string; recipient: string; silent?: boolean} = {app: appIdentity, recipient}
+    // `silent` is only present on PersonalTransferOptions; narrowing via the
+    // discriminant above makes `options.silent` accessible here.
     if (options.silent !== undefined) body.silent = options.silent
     return platform.appTransfer.create(body)
   }

@@ -10,29 +10,46 @@ function ctx(platform: Record<string, unknown>): ResourceCtx {
   return {data: {} as never, metrics: {} as never, platform: platform as never}
 }
 
+// A `withHeaders` that returns the same platform is needed because
+// `waitForProvisioning` calls `ctx.platform.withHeaders({...})`. Returning a
+// provisioned add-on from `addOn.create` means the poll loop never runs, but
+// the helper still reads `withHeaders` up front.
+function platformWith(overrides: Record<string, unknown>): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    addOn: {create: vi.fn().mockResolvedValue({name: 'addon', state: 'provisioned'})},
+    app: {create: vi.fn().mockResolvedValue({name: 'app'})},
+    buildpackInstallation: {update: vi.fn().mockResolvedValue([])},
+    configVar: {update: vi.fn().mockResolvedValue({})},
+    teamApp: {create: vi.fn()},
+    ...overrides,
+  }
+  base.withHeaders = vi.fn().mockReturnValue(base)
+  return base
+}
+
 describe('createAndSetup', () => {
-  it('creates a personal app then sets addons, config vars, buildpack in parallel', async () => {
+  it('creates a personal app then provisions addons, config vars, buildpack', async () => {
     // eslint-disable-next-line camelcase
     const app = {name: 'example', web_url: 'https://example.herokuapp.com'}
     const create = vi.fn().mockResolvedValue(app)
-    const addOnCreate = vi.fn().mockResolvedValue({})
+    const addOnCreate = vi.fn().mockResolvedValue({name: 'pg', state: 'provisioned'})
     const configVarUpdate = vi.fn().mockResolvedValue({})
-    const buildpackUpdate = vi.fn().mockResolvedValue({})
+    const buildpackUpdate = vi.fn().mockResolvedValue([])
 
     const result = await createAndSetup(
-      ctx({
+      ctx(platformWith({
         addOn: {create: addOnCreate},
         app: {create},
         buildpackInstallation: {update: buildpackUpdate},
         configVar: {update: configVarUpdate},
-        teamApp: {create: vi.fn()},
-      }),
+      })),
       {
         addons: [{plan: 'heroku-postgresql:mini'}],
         buildpack: 'heroku/nodejs',
         configVars: {FOO: 'bar'},
         name: 'example',
       },
+      {waitIntervalMs: 0},
     )
 
     expect(create).toHaveBeenCalledOnce()
@@ -42,21 +59,103 @@ describe('createAndSetup', () => {
     expect(result).toEqual(app)
   })
 
+  it('applies config vars only after add-on provisioning completes', async () => {
+    const calls: string[] = []
+    const addOnCreate = vi.fn(async () => {
+      calls.push('addOn.create')
+      // A provisioned create response means waitForProvisioning does not poll.
+      return {name: 'pg', state: 'provisioned'}
+    })
+    const configVarUpdate = vi.fn(async () => {
+      calls.push('configVar.update')
+      return {}
+    })
+
+    await createAndSetup(
+      ctx(platformWith({
+        addOn: {create: addOnCreate},
+        app: {create: vi.fn().mockResolvedValue({name: 'app'})},
+        configVar: {update: configVarUpdate},
+      })),
+      {
+        addons: [{plan: 'heroku-postgresql:mini'}],
+        configVars: {FOO: 'bar'},
+        name: 'app',
+      },
+      {waitIntervalMs: 0},
+    )
+
+    // Phase 1 (add-on create → provisioned) strictly precedes phase 2 (config vars).
+    expect(calls).toEqual(['addOn.create', 'configVar.update'])
+  })
+
+  it('waits for a still-provisioning add-on before applying config vars', async () => {
+    const calls: string[] = []
+    // create returns provisioning; the poller reads infoByApp until provisioned.
+    const addOnCreate = vi.fn(async () => {
+      calls.push('addOn.create')
+      return {name: 'pg', state: 'provisioning'}
+    })
+    const infoByApp = vi.fn(async () => {
+      calls.push('addOn.infoByApp')
+      return {name: 'pg', state: 'provisioned'}
+    })
+    const configVarUpdate = vi.fn(async () => {
+      calls.push('configVar.update')
+      return {}
+    })
+
+    await createAndSetup(
+      ctx(platformWith({
+        addOn: {create: addOnCreate, infoByApp},
+        app: {create: vi.fn().mockResolvedValue({name: 'app'})},
+        configVar: {update: configVarUpdate},
+      })),
+      {
+        addons: [{plan: 'heroku-postgresql:mini'}],
+        configVars: {DATABASE_URL: null},
+        name: 'app',
+      },
+      {waitIntervalMs: 0},
+    )
+
+    expect(calls).toEqual(['addOn.create', 'addOn.infoByApp', 'configVar.update'])
+  })
+
   it('routes to teamApp.create when team is set', async () => {
     const teamCreate = vi.fn().mockResolvedValue({name: 'team-app'})
     const appCreate = vi.fn()
     await createAndSetup(
-      ctx({
-        addOn: {create: vi.fn()},
+      ctx(platformWith({
         app: {create: appCreate},
-        buildpackInstallation: {update: vi.fn()},
-        configVar: {update: vi.fn()},
         teamApp: {create: teamCreate},
-      }),
+      })),
       {name: 'team-app', team: 'acme'},
     )
     expect(teamCreate).toHaveBeenCalledOnce()
     expect(appCreate).not.toHaveBeenCalled()
+  })
+
+  it('routes to teamApp.create when space is set', async () => {
+    const teamCreate = vi.fn().mockResolvedValue({name: 'space-app'})
+    const appCreate = vi.fn()
+    await createAndSetup(
+      ctx(platformWith({
+        app: {create: appCreate},
+        teamApp: {create: teamCreate},
+      })),
+      {name: 'space-app', space: 'my-space'},
+    )
+    expect(teamCreate).toHaveBeenCalledOnce()
+    expect(appCreate).not.toHaveBeenCalled()
+  })
+
+  it('throws when the created app has no name', async () => {
+    await expect(createAndSetup(
+      ctx(platformWith({app: {create: vi.fn().mockResolvedValue({})}})),
+      {addons: [{plan: 'heroku-postgresql:mini'}], name: 'app'},
+      {waitIntervalMs: 0},
+    )).rejects.toThrow('created app has no name')
   })
 
   it('skips setup steps that have no input', async () => {
@@ -65,13 +164,12 @@ describe('createAndSetup', () => {
     const configVarUpdate = vi.fn()
     const buildpackUpdate = vi.fn()
     await createAndSetup(
-      ctx({
+      ctx(platformWith({
         addOn: {create: addOnCreate},
         app: {create},
         buildpackInstallation: {update: buildpackUpdate},
         configVar: {update: configVarUpdate},
-        teamApp: {create: vi.fn()},
-      }),
+      })),
       {name: 'bare'},
     )
     expect(addOnCreate).not.toHaveBeenCalled()
@@ -79,19 +177,16 @@ describe('createAndSetup', () => {
     expect(buildpackUpdate).not.toHaveBeenCalled()
   })
 
-  it('fires poller.onStart/onStop once around the parallel setup batch (PR #3857 convention)', async () => {
+  it('fires poller.onStart/onStop once around the setup batch (PR #3857 convention)', async () => {
     const onStart = vi.fn()
     const onStop = vi.fn()
     await createAndSetup(
-      ctx({
-        addOn: {create: vi.fn().mockResolvedValue({})},
+      ctx(platformWith({
+        addOn: {create: vi.fn().mockResolvedValue({name: 'pg', state: 'provisioned'})},
         app: {create: vi.fn().mockResolvedValue({name: 'app'})},
-        buildpackInstallation: {update: vi.fn()},
-        configVar: {update: vi.fn()},
-        teamApp: {create: vi.fn()},
-      }),
+      })),
       {addons: [{plan: 'heroku-postgresql:mini'}], name: 'app'},
-      {poller: {onStart, onStop}},
+      {poller: {onStart, onStop}, waitIntervalMs: 0},
     )
     expect(onStart).toHaveBeenCalledOnce()
     expect(onStop).toHaveBeenCalledOnce()
@@ -104,13 +199,9 @@ describe('createAndSetup', () => {
     const onStart = vi.fn()
     const onStop = vi.fn()
     await createAndSetup(
-      ctx({
-        addOn: {create: vi.fn()},
+      ctx(platformWith({
         app: {create: vi.fn().mockResolvedValue({name: 'bare'})},
-        buildpackInstallation: {update: vi.fn()},
-        configVar: {update: vi.fn()},
-        teamApp: {create: vi.fn()},
-      }),
+      })),
       {name: 'bare'},
       {poller: {onStart, onStop}},
     )
@@ -127,21 +218,18 @@ describe('createAndSetup', () => {
   it('threads the signal into requests via withOptions', async () => {
     const app = {name: 'example'}
     const create = vi.fn().mockResolvedValue(app)
-    const addOnCreate = vi.fn().mockResolvedValue({})
-    const scoped = {
+    const addOnCreate = vi.fn().mockResolvedValue({name: 'pg', state: 'provisioned'})
+    const scoped = platformWith({
       addOn: {create: addOnCreate},
       app: {create},
-      buildpackInstallation: {update: vi.fn()},
-      configVar: {update: vi.fn()},
-      teamApp: {create: vi.fn()},
-    }
+    })
     const withOptions = vi.fn().mockReturnValue(scoped)
     const ac = new AbortController()
 
     await createAndSetup(
       ctx({withOptions}),
       {addons: [{plan: 'heroku-postgresql:mini'}], name: 'example'},
-      {signal: ac.signal},
+      {signal: ac.signal, waitIntervalMs: 0},
     )
 
     expect(withOptions).toHaveBeenCalledWith({signal: ac.signal})
@@ -156,18 +244,15 @@ describe('createAndSetup', () => {
     const onStop = vi.fn(() => calls.push('onStop'))
     const addOnCreate = vi.fn(async () => {
       calls.push('addOn.create')
-      return {}
+      return {name: 'pg', state: 'provisioned'}
     })
     await createAndSetup(
-      ctx({
+      ctx(platformWith({
         addOn: {create: addOnCreate},
         app: {create: vi.fn().mockResolvedValue({name: 'app'})},
-        buildpackInstallation: {update: vi.fn()},
-        configVar: {update: vi.fn()},
-        teamApp: {create: vi.fn()},
-      }),
+      })),
       {addons: [{plan: 'heroku-postgresql:mini'}], name: 'app'},
-      {poller: {onStart, onStop}},
+      {poller: {onStart, onStop}, waitIntervalMs: 0},
     )
     expect(calls).toEqual(['onStart', 'addOn.create', 'onStop'])
   })
@@ -176,19 +261,53 @@ describe('createAndSetup', () => {
     const onStart = vi.fn()
     const onStop = vi.fn()
     await expect(createAndSetup(
-      ctx({
+      ctx(platformWith({
         addOn: {create: vi.fn().mockRejectedValue(new Error('boom'))},
         app: {create: vi.fn().mockResolvedValue({name: 'app'})},
-        buildpackInstallation: {update: vi.fn()},
-        configVar: {update: vi.fn()},
-        teamApp: {create: vi.fn()},
-      }),
+      })),
       {addons: [{plan: 'heroku-postgresql:mini'}], name: 'app'},
-      {poller: {onStart, onStop}},
-    )).rejects.toThrow('boom')
+      {poller: {onStart, onStop}, waitIntervalMs: 0},
+    )).rejects.toThrow(AggregateError)
 
     expect(onStart).toHaveBeenCalledOnce()
     expect(onStop).not.toHaveBeenCalled()
+  })
+
+  it('settles every started phase-1 op before throwing (no orphaned in-flight)', async () => {
+    let secondSettled = false
+    const addOnCreate = vi.fn()
+      // First add-on rejects.
+      .mockRejectedValueOnce(new Error('first failed'))
+      // Second add-on resolves a bit later; must still settle before the throw.
+      .mockImplementationOnce(async () => {
+        await new Promise(resolve => {
+          setTimeout(resolve, 5)
+        })
+        secondSettled = true
+        return {name: 'second', state: 'provisioned'}
+      })
+    const configVarUpdate = vi.fn().mockResolvedValue({})
+
+    const error = await createAndSetup(
+      ctx(platformWith({
+        addOn: {create: addOnCreate},
+        app: {create: vi.fn().mockResolvedValue({name: 'app'})},
+        configVar: {update: configVarUpdate},
+      })),
+      {
+        addons: [{plan: 'plan-a'}, {plan: 'plan-b'}],
+        configVars: {FOO: 'bar'},
+        name: 'app',
+      },
+      {waitIntervalMs: 0},
+    ).catch((error_: unknown) => error_)
+
+    expect(error).toBeInstanceOf(AggregateError)
+    expect((error as AggregateError).errors).toHaveLength(1)
+    // Both phase-1 ops were awaited to settlement before the throw.
+    expect(secondSettled).toBe(true)
+    // Phase 2 never started because phase 1 failed.
+    expect(configVarUpdate).not.toHaveBeenCalled()
   })
 
   it('exposed on appExtensions.factory', async () => {

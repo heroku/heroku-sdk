@@ -46,7 +46,24 @@ export function mergeExtensions<T extends object>(
 
         return (...args: unknown[]) => {
           const rewrapped = (inner as (...a: unknown[]) => T).apply(target, args)
-          return mergeExtensions(rewrapped, extensions, ctx)
+          // Extension factories close over `ctx` and read the raw service
+          // client off it (e.g. `ctx.platform.app.transfer(...)`). If we
+          // recursed with the original `ctx`, that read would resolve to the
+          // RAW client and silently DROP the sticky options/headers the caller
+          // attached via `withOptions`/`withHeaders` — route methods would
+          // honor them (they hit `rewrapped` directly) but extension methods
+          // would not. Re-scope the one service these extensions belong to so
+          // its ctx entry points at `rewrapped`. `Object.create(ctx, ...)`
+          // keeps `ctx` as the prototype so the OTHER services' lazy getters
+          // still resolve to their raw clients (correct — only this service
+          // was re-scoped), while the own property shadows this service.
+          const service = extensions[0]?.service
+          const derivedCtx = service
+            ? (Object.create(ctx, {
+              [service]: {configurable: true, enumerable: true, value: rewrapped},
+            }) as ResourceCtx)
+            : ctx
+          return mergeExtensions(rewrapped, extensions, derivedCtx)
         }
       }
 

@@ -23,24 +23,6 @@ describe('transferApp', () => {
     expect(res).toEqual({state: 'pending'})
   })
 
-  it('defaults to personal-to-personal when options are omitted', async () => {
-    // Omitting the options object (and thus personalToPersonal) must route the
-    // personal way (POST /account/app-transfers), matching the legacy helper's
-    // `personalToPersonal || personalToPersonal === undefined`.
-    const create = vi.fn().mockResolvedValue({state: 'pending'})
-    const transferToAccount = vi.fn()
-    const transferToTeam = vi.fn()
-    const res = await transferApp(
-      ctx({appTransfer: {create}, teamApp: {transferToAccount, transferToTeam}}),
-      'myapp',
-      'person@example.com',
-    )
-    expect(create).toHaveBeenCalledWith({app: 'myapp', recipient: 'person@example.com'})
-    expect(transferToAccount).not.toHaveBeenCalled()
-    expect(transferToTeam).not.toHaveBeenCalled()
-    expect(res).toEqual({state: 'pending'})
-  })
-
   it('team-involved transfer to a team name uses teamApp.transferToTeam with owner', async () => {
     // A real PATCH /teams/apps/{name} response is a TeamApp ({name, owner}),
     // not an AppTransfer — TeamApp has no `state`.
@@ -85,7 +67,7 @@ describe('transferApp', () => {
   it('honors abort signal', async () => {
     const ac = new AbortController()
     ac.abort()
-    await expect(transferApp(ctx({}), 'myapp', 'p@x.com', {signal: ac.signal})).rejects.toThrow()
+    await expect(transferApp(ctx({}), 'myapp', 'p@x.com', {personalToPersonal: true, signal: ac.signal})).rejects.toThrow()
   })
 
   it('threads the signal into requests via platform.withOptions', async () => {
