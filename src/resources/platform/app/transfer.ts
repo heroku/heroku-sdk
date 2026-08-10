@@ -19,7 +19,9 @@ export type TransferOptions = {
  *     (`teamApp.transferToTeam` / `transferToAccount`), differing only by body.
  *
  * The caller (CLI) decides `personalToPersonal` and interprets the returned
- * `state` for presentation.
+ * `state` for presentation. `personalToPersonal` defaults to `true`
+ * (personal-to-personal) when omitted, mirroring the legacy CLI helper
+ * (`personalToPersonal || personalToPersonal === undefined`).
  */
 export async function transferApp(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -33,7 +35,11 @@ export async function transferApp(
   // cancels the in-flight transfer, not just the pre-flight check above.
   const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
 
-  if (options.personalToPersonal) {
+  // An omitted discriminator means personal-to-personal, matching the legacy
+  // helper's `personalToPersonal || personalToPersonal === undefined`.
+  const personalToPersonal = options.personalToPersonal ?? true
+
+  if (personalToPersonal) {
     const body: {app: string; recipient: string; silent?: boolean} = {app: appIdentity, recipient}
     if (options.silent !== undefined) body.silent = options.silent
     return platform.appTransfer.create(body)

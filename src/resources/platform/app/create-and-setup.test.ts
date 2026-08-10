@@ -95,6 +95,9 @@ describe('createAndSetup', () => {
     )
     expect(onStart).toHaveBeenCalledOnce()
     expect(onStop).toHaveBeenCalledOnce()
+    // Poller<void>: both callbacks fire with no arguments (symmetric contract).
+    expect(onStart).toHaveBeenCalledWith()
+    expect(onStop).toHaveBeenCalledWith()
   })
 
   it('does not fire the poller when there are no setup steps', async () => {

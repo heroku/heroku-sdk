@@ -13,7 +13,7 @@ import {transferApp} from './transfer.js'
 import {waitForACMCertificates} from './wait-for-acm-certificates.js'
 
 export {
-  createAndSetup, type CreateAndSetupInput, type CreateAndSetupOptions, type SetupStep,
+  createAndSetup, type CreateAndSetupInput, type CreateAndSetupOptions,
 } from './create-and-setup.js'
 export {
   type AppInfo, describeApp, type DescribeAppOptions, type PipelineCouplingDetail,

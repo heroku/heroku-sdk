@@ -3,15 +3,11 @@ import type {
 } from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-
-// `poller` matches heroku/cli PR #3857's SDK-standard convention.
-export type SetupStep = {kind: 'addon' | 'buildpack' | 'config-vars'; label?: string}
+import type {Poller} from '../../../utils/poller.js'
 
 export type CreateAndSetupOptions = {
-  poller?: {
-    onStart?: (step: SetupStep) => void
-    onStop?: (step?: SetupStep) => void
-  }
+  // `poller` matches heroku/cli PR #3857's SDK-standard convention.
+  poller?: Poller<void>
   signal?: AbortSignal
 }
 
@@ -94,7 +90,7 @@ export async function createAndSetup(
     // Single combined progress window (D2 option A) — one spinner for the whole
     // parallel setup batch, not one per step. Per the poller contract, onStart
     // fires before dispatch and onStop only on success (no finally).
-    options.poller?.onStart?.({kind: 'config-vars', label: 'setup'})
+    options.poller?.onStart?.()
     await Promise.all(steps.map(step => step()))
     options.poller?.onStop?.()
   }
