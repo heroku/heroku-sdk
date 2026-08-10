@@ -84,9 +84,8 @@ describe('transferApp', () => {
 
   it('honors an already-aborted signal pre-flight and dispatches nothing', async () => {
     const {platform, scoped} = fakePlatform()
-    await expect(
-      transferApp(ctx(platform), 'myapp', 'p@x.com', {personalToPersonal: true, signal: AbortSignal.abort()}),
-    ).rejects.toThrow()
+    const call = transferApp(ctx(platform), 'myapp', 'p@x.com', {personalToPersonal: true, signal: AbortSignal.abort()})
+    await expect(call).rejects.toThrow()
     // None of the three platform surfaces should have been touched — proves the
     // rejection came from the pre-flight throwIfAborted(), not a downstream crash.
     expect(platform.appTransfer.create).not.toHaveBeenCalled()
@@ -99,7 +98,7 @@ describe('transferApp', () => {
 
   it('threads the signal into a scoped client and dispatches on it', async () => {
     const {platform, scoped, withOptions} = fakePlatform()
-    const signal = new AbortController().signal
+    const {signal} = new AbortController()
     await transferApp(ctx(platform), 'myapp', 'acme-widgets', {signal})
     expect(withOptions).toHaveBeenCalledWith({signal})
     // Dispatch lands on the scoped client, not the raw one.
