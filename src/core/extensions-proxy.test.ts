@@ -126,13 +126,9 @@ describe('mergeExtensions', () => {
     expect(scoped.app.hello()).toBe('world')
   })
 
-  // Regression: an extension method invoked through a sticky-options chain
-  // (`merged.withOptions({signal}).<resource>.ping()`) must route through the
-  // DERIVED client, not the raw one. Extension factories close over `ctx` and
-  // read the raw service client off it, so if the interceptor recurses with the
-  // ORIGINAL ctx, the extension reads the RAW client and drops the options.
-  // These tests use a factory that actually reads `ctx.platform`, unlike the
-  // trivial `() => ({hello: ...})` factories above which ignore ctx.
+  // Unlike the `() => ({hello: ...})` factories above, these read `ctx.platform`
+  // — the trivial stubs ignore ctx, so they can't catch an extension resolving
+  // the raw client and dropping the sticky options after withOptions/withHeaders.
 
   type FakePlatform = {
     someResource: {someMethod: () => string};
