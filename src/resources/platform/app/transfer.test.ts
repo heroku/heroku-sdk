@@ -10,6 +10,29 @@ function ctx(platform: unknown): ResourceCtx {
   return {data: {} as never, metrics: {} as never, platform: platform as never}
 }
 
+// Full fake platform with spies at both the top level and a scoped level that
+// `withOptions({signal})` returns, so tests can assert which client dispatch
+// landed on (the raw client vs. the signal-scoped one).
+function fakePlatform() {
+  const scoped = {
+    appTransfer: {create: vi.fn().mockResolvedValue({state: 'pending'})},
+    teamApp: {
+      transferToAccount: vi.fn().mockResolvedValue({state: 'transferred'}),
+      transferToTeam: vi.fn().mockResolvedValue({state: 'transferred'}),
+    },
+  }
+  const withOptions = vi.fn().mockReturnValue(scoped)
+  const platform = {
+    appTransfer: {create: vi.fn().mockResolvedValue({state: 'pending'})},
+    teamApp: {
+      transferToAccount: vi.fn().mockResolvedValue({state: 'transferred'}),
+      transferToTeam: vi.fn().mockResolvedValue({state: 'transferred'}),
+    },
+    withOptions,
+  }
+  return {platform, scoped, withOptions}
+}
+
 describe('transferApp', () => {
   it('personal-to-personal uses appTransfer.create with app+recipient', async () => {
     const create = vi.fn().mockResolvedValue({state: 'pending'})
@@ -59,9 +82,63 @@ describe('transferApp', () => {
     expect(create).toHaveBeenCalledWith({app: 'myapp', recipient: 'p@x.com', silent: true})
   })
 
-  it('honors abort signal', async () => {
-    const ac = new AbortController()
-    ac.abort()
-    await expect(transferApp(ctx({}), 'myapp', 'p@x.com', {signal: ac.signal})).rejects.toThrow()
+  it('honors an already-aborted signal pre-flight and dispatches nothing', async () => {
+    const {platform, scoped} = fakePlatform()
+    await expect(
+      transferApp(ctx(platform), 'myapp', 'p@x.com', {personalToPersonal: true, signal: AbortSignal.abort()}),
+    ).rejects.toThrow()
+    // None of the three platform surfaces should have been touched — proves the
+    // rejection came from the pre-flight throwIfAborted(), not a downstream crash.
+    expect(platform.appTransfer.create).not.toHaveBeenCalled()
+    expect(platform.teamApp.transferToAccount).not.toHaveBeenCalled()
+    expect(platform.teamApp.transferToTeam).not.toHaveBeenCalled()
+    expect(scoped.appTransfer.create).not.toHaveBeenCalled()
+    expect(scoped.teamApp.transferToAccount).not.toHaveBeenCalled()
+    expect(scoped.teamApp.transferToTeam).not.toHaveBeenCalled()
+  })
+
+  it('threads the signal into a scoped client and dispatches on it', async () => {
+    const {platform, scoped, withOptions} = fakePlatform()
+    const signal = new AbortController().signal
+    await transferApp(ctx(platform), 'myapp', 'acme-widgets', {signal})
+    expect(withOptions).toHaveBeenCalledWith({signal})
+    // Dispatch lands on the scoped client, not the raw one.
+    expect(scoped.teamApp.transferToTeam).toHaveBeenCalledWith('myapp', {owner: 'acme-widgets'})
+    expect(platform.teamApp.transferToTeam).not.toHaveBeenCalled()
+  })
+
+  it('does not scope the client when no signal is given', async () => {
+    const {platform, withOptions} = fakePlatform()
+    await transferApp(ctx(platform), 'myapp', 'acme-widgets', {})
+    expect(withOptions).not.toHaveBeenCalled()
+    expect(platform.teamApp.transferToTeam).toHaveBeenCalledWith('myapp', {owner: 'acme-widgets'})
+  })
+
+  it('defaults to the team route (transferToTeam) when personalToPersonal is omitted', async () => {
+    const {platform} = fakePlatform()
+    await transferApp(ctx(platform), 'myapp', 'acme-widgets')
+    expect(platform.teamApp.transferToTeam).toHaveBeenCalledWith('myapp', {owner: 'acme-widgets'})
+    expect(platform.appTransfer.create).not.toHaveBeenCalled()
+  })
+
+  it('defaults an email recipient to transferToAccount when personalToPersonal is omitted', async () => {
+    const {platform} = fakePlatform()
+    await transferApp(ctx(platform), 'myapp', 'person@example.com')
+    expect(platform.teamApp.transferToAccount).toHaveBeenCalledWith('myapp', {owner: 'person@example.com'})
+    expect(platform.appTransfer.create).not.toHaveBeenCalled()
+  })
+
+  it('omits silent from appTransfer.create when unset', async () => {
+    const {platform} = fakePlatform()
+    await transferApp(ctx(platform), 'myapp', 'p@x.com', {personalToPersonal: true})
+    expect(platform.appTransfer.create).toHaveBeenCalledWith({app: 'myapp', recipient: 'p@x.com'})
+  })
+
+  it('does not forward silent on the team path', async () => {
+    const {platform} = fakePlatform()
+    await transferApp(ctx(platform), 'myapp', 'acme-widgets', {silent: true})
+    // Team route carries only {owner}; silent is a personal-transfer-only field.
+    expect(platform.teamApp.transferToTeam).toHaveBeenCalledWith('myapp', {owner: 'acme-widgets'})
+    expect(platform.appTransfer.create).not.toHaveBeenCalled()
   })
 })

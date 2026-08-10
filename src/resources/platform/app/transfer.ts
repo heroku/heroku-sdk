@@ -19,7 +19,9 @@ export type TransferOptions = {
  *     (`teamApp.transferToTeam` / `transferToAccount`), differing only by body.
  *
  * The caller (CLI) decides `personalToPersonal` and interprets the returned
- * `state` for presentation.
+ * `state` for presentation. `personalToPersonal` defaults falsy → the team
+ * route, so a caller who forgets the flag on a genuine personal transfer
+ * silently hits the team path (a caller-owned footgun the SDK can't detect).
  */
 export async function transferApp(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -28,11 +30,12 @@ export async function transferApp(
   options: TransferOptions = {},
 ): Promise<AppTransfer | TeamApp> {
   options.signal?.throwIfAborted()
+  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
 
   if (options.personalToPersonal) {
     const body: {app: string; recipient: string; silent?: boolean} = {app: appIdentity, recipient}
     if (options.silent !== undefined) body.silent = options.silent
-    return ctx.platform.appTransfer.create(body)
+    return platform.appTransfer.create(body)
   }
 
   // Team-involved (personalToPersonal=false): both routes are PATCH /teams/apps/{name}
@@ -43,6 +46,6 @@ export async function transferApp(
   // spec-faithful split with no functional regression.
   const looksLikeEmail = recipient.includes('@')
   return looksLikeEmail
-    ? ctx.platform.teamApp.transferToAccount(appIdentity, {owner: recipient})
-    : ctx.platform.teamApp.transferToTeam(appIdentity, {owner: recipient})
+    ? platform.teamApp.transferToAccount(appIdentity, {owner: recipient})
+    : platform.teamApp.transferToTeam(appIdentity, {owner: recipient})
 }

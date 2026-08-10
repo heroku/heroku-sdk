@@ -4,8 +4,10 @@ import type {
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-// `poller` matches heroku/cli PR #3857's SDK-standard convention.
-export type SetupStep = {kind: 'addon' | 'buildpack' | 'config-vars'; label?: string}
+// `poller` matches the SDK-standard progress-reporting convention.
+// `'setup'` is the discriminant for the single combined window fired around
+// the whole parallel batch (the per-kind values describe individual steps).
+export type SetupStep = {kind: 'addon' | 'buildpack' | 'config-vars' | 'setup'; label?: string}
 
 export type CreateAndSetupOptions = {
   poller?: {
@@ -15,7 +17,7 @@ export type CreateAndSetupOptions = {
   signal?: AbortSignal
 }
 
-export type CreateAndSetupInput = Record<string, unknown> & {
+export type CreateAndSetupInput = {
   addons?: Array<{as?: string; plan: string}>
   buildpack?: string
   configVars?: ConfigVarUpdateOpts
@@ -34,15 +36,15 @@ export type CreateAndSetupInput = Record<string, unknown> & {
  * (`addOn.create` per plan), config vars (`configVar.update`), and buildpack
  * (`buildpackInstallation.update`). Returns the created `App`.
  *
- * Progress is reported via the PR #3857 `poller` convention. Because the
- * steps run in parallel and the CLI's `ux.action` is a single global spinner,
- * the CLI is expected to render ONE combined "Setting up app…" spinner (D2
- * option A): we fire a single `onStart`/`onStop` pair around the whole setup
- * batch rather than per-step, so parallel steps don't clobber the spinner.
- * Per the shared poller contract, `onStart` fires BEFORE any request is
+ * Progress is reported via the `poller` convention. Because the steps run in
+ * parallel and a caller's progress indicator is typically a single global
+ * spinner, this method fires a single `onStart`/`onStop` pair around the whole
+ * setup batch rather than one per step, so parallel steps don't clobber the
+ * spinner. Per the poller contract, `onStart` fires BEFORE any request is
  * dispatched, and `onStop` fires ONLY on success — if a step rejects, the
- * error propagates and `onStop` is never called (the CLI's error path stops
- * the spinner). Signal threading uses the standard `withOptions({signal})`
+ * error propagates and `onStop` is never called (there is no try/finally, so
+ * the caller's error path stops the spinner). Signal threading uses the
+ * standard `withOptions({signal})`
  * scoped-client idiom so an abort cancels in-flight requests, not just the
  * pre-flight `throwIfAborted()`.
  *
@@ -60,10 +62,11 @@ export async function createAndSetup(
   const {addons, buildpack, configVars, ...createParams} = input
 
   const app: App = (createParams.space || createParams.team)
-    ? (await platform.teamApp.create(createParams as unknown as TeamAppCreateOpts)) as App
-    : await platform.app.create(createParams as unknown as AppCreateOpts)
+    ? (await platform.teamApp.create(createParams as TeamAppCreateOpts)) as App
+    : await platform.app.create(createParams as AppCreateOpts)
 
-  const appName = app.name!
+  if (!app.name) throw new Error('createAndSetup: created app has no name')
+  const appName = app.name
   // Deferred thunks: nothing is dispatched until the batch is launched below,
   // so `onStart` reliably fires before the first request.
   const steps: Array<() => Promise<unknown>> = []
@@ -86,10 +89,10 @@ export async function createAndSetup(
   }
 
   if (steps.length > 0) {
-    // Single combined progress window (D2 option A) — one spinner for the whole
-    // parallel setup batch, not one per step. onStart before dispatch; onStop
-    // only on success (no try/finally — a rejection skips onStop per contract).
-    options.poller?.onStart?.({kind: 'config-vars', label: 'setup'})
+    // Single combined progress window — one spinner for the whole parallel
+    // setup batch, not one per step. onStart before dispatch; onStop only on
+    // success (no try/finally — a rejection skips onStop per contract).
+    options.poller?.onStart?.({kind: 'setup', label: 'setup'})
     await Promise.all(steps.map(step => step()))
     options.poller?.onStop?.()
   }

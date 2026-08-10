@@ -31,10 +31,12 @@ describe('createAndSetup', () => {
         buildpack: 'heroku/nodejs',
         configVars: {FOO: 'bar'},
         name: 'example',
+        region: 'us',
+        stack: 'heroku-24',
       },
     )
 
-    expect(create).toHaveBeenCalledOnce()
+    expect(create).toHaveBeenCalledWith({name: 'example', region: 'us', stack: 'heroku-24'})
     expect(addOnCreate).toHaveBeenCalledWith('example', {attachment: undefined, plan: 'heroku-postgresql:mini'})
     expect(configVarUpdate).toHaveBeenCalledWith('example', {FOO: 'bar'})
     expect(buildpackUpdate).toHaveBeenCalledWith('example', {updates: [{buildpack: 'heroku/nodejs'}]})
@@ -53,6 +55,23 @@ describe('createAndSetup', () => {
         teamApp: {create: teamCreate},
       }),
       {name: 'team-app', team: 'acme'},
+    )
+    expect(teamCreate).toHaveBeenCalledOnce()
+    expect(appCreate).not.toHaveBeenCalled()
+  })
+
+  it('routes to teamApp.create when only space is set', async () => {
+    const teamCreate = vi.fn().mockResolvedValue({name: 'space-app'})
+    const appCreate = vi.fn()
+    await createAndSetup(
+      ctx({
+        addOn: {create: vi.fn()},
+        app: {create: appCreate},
+        buildpackInstallation: {update: vi.fn()},
+        configVar: {update: vi.fn()},
+        teamApp: {create: teamCreate},
+      }),
+      {name: 'space-app', space: 'my-space'},
     )
     expect(teamCreate).toHaveBeenCalledOnce()
     expect(appCreate).not.toHaveBeenCalled()
@@ -78,7 +97,64 @@ describe('createAndSetup', () => {
     expect(buildpackUpdate).not.toHaveBeenCalled()
   })
 
-  it('fires poller.onStart/onStop once around the parallel setup batch (PR #3857 convention)', async () => {
+  it('does not call configVar.update for an empty configVars object', async () => {
+    const create = vi.fn().mockResolvedValue({name: 'bare'})
+    const configVarUpdate = vi.fn()
+    await createAndSetup(
+      ctx({
+        addOn: {create: vi.fn()},
+        app: {create},
+        buildpackInstallation: {update: vi.fn()},
+        configVar: {update: configVarUpdate},
+        teamApp: {create: vi.fn()},
+      }),
+      {configVars: {}, name: 'bare'},
+    )
+    expect(configVarUpdate).not.toHaveBeenCalled()
+  })
+
+  it('maps an addon `as` alias to {attachment: {name}}', async () => {
+    const addOnCreate = vi.fn().mockResolvedValue({})
+    await createAndSetup(
+      ctx({
+        addOn: {create: addOnCreate},
+        app: {create: vi.fn().mockResolvedValue({name: 'app'})},
+        buildpackInstallation: {update: vi.fn()},
+        configVar: {update: vi.fn()},
+        teamApp: {create: vi.fn()},
+      }),
+      {addons: [{as: 'DATABASE_URL', plan: 'heroku-postgresql:standard-0'}], name: 'app'},
+    )
+    expect(addOnCreate).toHaveBeenCalledWith('app', {
+      attachment: {name: 'DATABASE_URL'},
+      plan: 'heroku-postgresql:standard-0',
+    })
+  })
+
+  it('creates one addon per entry when multiple addons are given', async () => {
+    const addOnCreate = vi.fn().mockResolvedValue({})
+    await createAndSetup(
+      ctx({
+        addOn: {create: addOnCreate},
+        app: {create: vi.fn().mockResolvedValue({name: 'app'})},
+        buildpackInstallation: {update: vi.fn()},
+        configVar: {update: vi.fn()},
+        teamApp: {create: vi.fn()},
+      }),
+      {
+        addons: [
+          {plan: 'heroku-postgresql:mini'},
+          {plan: 'heroku-redis:mini'},
+        ],
+        name: 'app',
+      },
+    )
+    expect(addOnCreate).toHaveBeenCalledTimes(2)
+    expect(addOnCreate).toHaveBeenCalledWith('app', {attachment: undefined, plan: 'heroku-postgresql:mini'})
+    expect(addOnCreate).toHaveBeenCalledWith('app', {attachment: undefined, plan: 'heroku-redis:mini'})
+  })
+
+  it('fires poller.onStart/onStop once around the parallel setup batch', async () => {
     const onStart = vi.fn()
     const onStop = vi.fn()
     await createAndSetup(
@@ -93,7 +169,27 @@ describe('createAndSetup', () => {
       {poller: {onStart, onStop}},
     )
     expect(onStart).toHaveBeenCalledOnce()
+    expect(onStart).toHaveBeenCalledWith({kind: 'setup', label: 'setup'})
     expect(onStop).toHaveBeenCalledOnce()
+  })
+
+  it('does not call onStop when a setup step rejects', async () => {
+    const onStart = vi.fn()
+    const onStop = vi.fn()
+    const configVarUpdate = vi.fn().mockRejectedValue(new Error('boom'))
+    await expect(createAndSetup(
+      ctx({
+        addOn: {create: vi.fn().mockResolvedValue({})},
+        app: {create: vi.fn().mockResolvedValue({name: 'app'})},
+        buildpackInstallation: {update: vi.fn()},
+        configVar: {update: configVarUpdate},
+        teamApp: {create: vi.fn()},
+      }),
+      {configVars: {FOO: 'bar'}, name: 'app'},
+      {poller: {onStart, onStop}},
+    )).rejects.toThrow('boom')
+    expect(onStart).toHaveBeenCalledOnce()
+    expect(onStop).not.toHaveBeenCalled()
   })
 
   it('does not fire the poller when there are no setup steps', async () => {
@@ -112,5 +208,25 @@ describe('createAndSetup', () => {
     )
     expect(onStart).not.toHaveBeenCalled()
     expect(onStop).not.toHaveBeenCalled()
+  })
+
+  it('rejects an already-aborted signal before creating the app', async () => {
+    const appCreate = vi.fn()
+    const teamCreate = vi.fn()
+    const controller = new AbortController()
+    controller.abort()
+    await expect(createAndSetup(
+      ctx({
+        addOn: {create: vi.fn()},
+        app: {create: appCreate},
+        buildpackInstallation: {update: vi.fn()},
+        configVar: {update: vi.fn()},
+        teamApp: {create: teamCreate},
+      }),
+      {name: 'app'},
+      {signal: controller.signal},
+    )).rejects.toThrow()
+    expect(appCreate).not.toHaveBeenCalled()
+    expect(teamCreate).not.toHaveBeenCalled()
   })
 })
