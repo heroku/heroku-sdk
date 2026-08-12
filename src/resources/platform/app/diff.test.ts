@@ -148,7 +148,9 @@ describe('diffApps', () => {
 
   it('emits add-on rows via set-difference of addon_service names', async () => {
     const {platform} = fakePlatform({
+      // eslint-disable-next-line camelcase
       app1: {addons: [{addon_service: {name: 'heroku-postgresql'}}, {addon_service: {name: 'heroku-redis'}}]},
+      // eslint-disable-next-line camelcase
       app2: {addons: [{addon_service: {name: 'heroku-postgresql'}}, {addon_service: {name: 'heroku-kafka'}}]},
     })
     const rows = await diffApps(ctx(platform), 'app1', 'app2')
@@ -163,15 +165,19 @@ describe('diffApps', () => {
 
   it('emits feature rows via set-difference of ENABLED features only', async () => {
     const {platform} = fakePlatform({
-      app1: {features: [
-        {enabled: true, name: 'a'},
-        {enabled: false, name: 'b'}, // disabled → never counted
-        {enabled: true, name: 'd'},
-      ]},
-      app2: {features: [
-        {enabled: true, name: 'a'},
-        {enabled: true, name: 'c'},
-      ]},
+      app1: {
+        features: [
+          {enabled: true, name: 'a'},
+          {enabled: false, name: 'b'}, // disabled → never counted
+          {enabled: true, name: 'd'},
+        ],
+      },
+      app2: {
+        features: [
+          {enabled: true, name: 'a'},
+          {enabled: true, name: 'c'},
+        ],
+      },
     })
     const rows = await diffApps(ctx(platform), 'app1', 'app2')
     // Shared enabled 'a' excluded; 'b' is disabled so ignored entirely.
@@ -184,6 +190,7 @@ describe('diffApps', () => {
   it('combines every aspect in the order slug, config, stack, buildpack, add-on, feature', async () => {
     const {platform} = fakePlatform({
       app1: {
+        // eslint-disable-next-line camelcase
         addons: [{addon_service: {name: 'pg'}}],
         appInfo: {stack: {name: 'heroku-24'}},
         buildpacks: [{buildpack: {url: 'nodejs-url'}}],
@@ -217,7 +224,7 @@ describe('diffApps', () => {
     const {platform} = fakePlatform()
     platform.release.list.mockImplementation(async (app: string) => {
       if (app === 'ghost') {
-        throw {http: {statusCode: 404}}
+        throw Object.assign(new Error('not found'), {http: {statusCode: 404}})
       }
 
       return []
@@ -232,7 +239,7 @@ describe('diffApps', () => {
     })
     platform.slug.info.mockImplementation(async (app: string) => {
       if (app === 'app1') {
-        throw {statusCode: 404}
+        throw Object.assign(new Error('not found'), {statusCode: 404})
       }
 
       return {checksum: 'sha'}
