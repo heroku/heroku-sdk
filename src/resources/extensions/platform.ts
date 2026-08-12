@@ -1,5 +1,7 @@
 export {addOnExtensions} from '../platform/add-on/index.js'
-export {appExtensions, type AppInfo, type PipelineCouplingDetail} from '../platform/app/index.js'
+export {
+  appExtensions, type AppInfo, type DiffAppsOptions, type DiffRow, type PipelineCouplingDetail,
+} from '../platform/app/index.js'
 export {
   containerExtensions,
   type DockerReleasesBatchUpdateOpts,
