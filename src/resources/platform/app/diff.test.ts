@@ -1,3 +1,4 @@
+import {NotFoundError} from '@heroku/heroku-fetch'
 import {
   describe, expect, it, vi,
 } from 'vitest'
@@ -220,11 +221,11 @@ describe('diffApps', () => {
     ])
   })
 
-  it('throws "App not found" when release.list rejects with a 404 (http.statusCode)', async () => {
+  it('throws "App not found" when release.list rejects with a NotFoundError', async () => {
     const {platform} = fakePlatform()
     platform.release.list.mockImplementation(async (app: string) => {
       if (app === 'ghost') {
-        throw Object.assign(new Error('not found'), {http: {statusCode: 404}})
+        throw new NotFoundError(new Response(null, {status: 404}))
       }
 
       return []
@@ -232,14 +233,14 @@ describe('diffApps', () => {
     await expect(diffApps(ctx(platform), 'ghost', 'other')).rejects.toThrow('App not found: ghost')
   })
 
-  it('throws "App not found" when slug.info rejects with a 404 (statusCode)', async () => {
+  it('throws "App not found" when slug.info rejects with a NotFoundError', async () => {
     const {platform} = fakePlatform({
       app1: {releases: [{slug: {id: 's1'}}]},
       app2: {releases: [{slug: {id: 's2'}}]},
     })
     platform.slug.info.mockImplementation(async (app: string) => {
       if (app === 'app1') {
-        throw Object.assign(new Error('not found'), {statusCode: 404})
+        throw new NotFoundError(new Response(null, {status: 404}))
       }
 
       return {checksum: 'sha'}

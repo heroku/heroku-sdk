@@ -1,3 +1,7 @@
+import type {App, BuildpackInstallation} from '@heroku/types/3.sdk'
+
+import {NotFoundError} from '@heroku/heroku-fetch'
+
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {PlatformClient} from '../../../services/platform.js'
 
@@ -22,18 +26,16 @@ async function checksum(platform: PlatformClient, app: string): Promise<null | s
 
     return null
   } catch (error: unknown) {
-    const e = error as {
-      http?: {statusCode?: number}
-      response?: {statusCode?: number}
-      statusCode?: number
-    }
-    const status = e?.http?.statusCode ?? e?.response?.statusCode ?? e?.statusCode
-    if (status === 404) {
+    if (isNotFound(error)) {
       throw new Error(`App not found: ${app}`)
     }
 
     throw error
   }
+}
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof NotFoundError
 }
 
 async function diffFiles(platform: PlatformClient, app1: string, app2: string): Promise<DiffRow[]> {
@@ -55,26 +57,22 @@ async function diffEnv(platform: PlatformClient, app1: string, app2: string): Pr
 }
 
 async function diffStack(platform: PlatformClient, app1: string, app2: string): Promise<DiffRow[]> {
-  const [res1, res2] = await Promise.all([
+  const [res1, res2]: [App, App] = await Promise.all([
     platform.app.info(app1),
     platform.app.info(app2),
   ])
-  const a = (res1 as {stack?: {name?: string}})?.stack?.name
-  const b = (res2 as {stack?: {name?: string}})?.stack?.name
+  const a = res1?.stack?.name
+  const b = res2?.stack?.name
   return a === b ? [] : [{app1: a, app2: b, prop: 'stack'}]
 }
 
 async function diffBuildpacks(platform: PlatformClient, app1: string, app2: string): Promise<DiffRow[]> {
-  interface BuildpackInstallationRow {
-    buildpack?: {url?: string}
-  }
-
   const [res1, res2] = await Promise.all([
     platform.buildpackInstallation.list(app1),
     platform.buildpackInstallation.list(app2),
   ])
-  const bps1 = (res1 ?? []) as BuildpackInstallationRow[]
-  const bps2 = (res2 ?? []) as BuildpackInstallationRow[]
+  const bps1: BuildpackInstallation[] = res1 ?? []
+  const bps2: BuildpackInstallation[] = res2 ?? []
   const urls1 = bps1.map(obj => obj.buildpack?.url ?? '')
   const urls2 = bps2.map(obj => obj.buildpack?.url ?? '')
   const longest = urls1.length >= urls2.length ? urls1 : urls2
