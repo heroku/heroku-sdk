@@ -45,6 +45,7 @@ export function buildCtx(stubs: {
     data: {} as never,
     metrics: {} as never,
     platform: platform as never,
+    repositories: {} as never,
   }
 }
 

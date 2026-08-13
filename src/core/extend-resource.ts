@@ -1,13 +1,15 @@
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
 import type {PlatformClient} from '../services/platform.js'
+import type {RepositoriesClient} from '../services/repositories.js'
 
-export type ServiceName = 'data' | 'metrics' | 'platform'
+export type ServiceName = 'data' | 'metrics' | 'platform' | 'repositories'
 
 export type ResourceCtx = {
   data: DataClient
   metrics: MetricsClient
   platform: PlatformClient
+  repositories: RepositoriesClient
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

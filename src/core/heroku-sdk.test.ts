@@ -5,6 +5,7 @@ import {
 const platformConstructorSpy = vi.fn()
 const dataConstructorSpy = vi.fn()
 const metricsConstructorSpy = vi.fn()
+const repositoriesConstructorSpy = vi.fn()
 
 vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: class {
@@ -15,6 +16,7 @@ vi.mock('@heroku/heroku-fetch', () => ({
       if (service === 'platform') platformConstructorSpy(options)
       else if (service === 'data') dataConstructorSpy(options)
       else if (service === 'custom' && baseUrl?.includes('metrics')) metricsConstructorSpy(options)
+      else if (service === 'custom' && baseUrl?.includes('kolkrabbi')) repositoriesConstructorSpy(options)
     }
   },
 }))
@@ -40,11 +42,18 @@ vi.mock('@heroku/types/metrics/routes', () => ({
   },
 }))
 
+vi.mock('@heroku/types/repositories/routes', () => ({
+  account: {
+    infoWithToken: {method: 'GET', path: '/account/github/token'},
+  },
+}))
+
 describe('HerokuSDK', () => {
   afterEach(() => {
     platformConstructorSpy.mockClear()
     dataConstructorSpy.mockClear()
     metricsConstructorSpy.mockClear()
+    repositoriesConstructorSpy.mockClear()
     vi.resetModules()
   })
 
@@ -192,5 +201,42 @@ describe('HerokuSDK', () => {
 
     expect(a).toBe(b)
     expect(metricsConstructorSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('constructs no repositories client eagerly', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+
+    const sdk = new HerokuSDK()
+    expect(sdk).toBeDefined()
+
+    expect(repositoriesConstructorSpy).not.toHaveBeenCalled()
+  })
+
+  it('lazily constructs the repositories client on first access, passing clientOptions', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({clientOptions: {token: 'abc'}})
+
+    const _touch = sdk.repositories
+    expect(_touch).toBeDefined()
+
+    expect(repositoriesConstructorSpy).toHaveBeenCalledTimes(1)
+    expect(repositoriesConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: 'https://kolkrabbi.heroku.com',
+      service: 'custom',
+      token: 'abc',
+    }))
+    expect(platformConstructorSpy).not.toHaveBeenCalled()
+    expect(dataConstructorSpy).not.toHaveBeenCalled()
+  })
+
+  it('memoizes the repositories service client across repeated access', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK()
+
+    const a = sdk.repositories
+    const b = sdk.repositories
+
+    expect(a).toBe(b)
+    expect(repositoriesConstructorSpy).toHaveBeenCalledTimes(1)
   })
 })
