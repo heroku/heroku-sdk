@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.7](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.6...sdk-v0.5.7) (2026-08-13)
+
+
+### Features
+
+* add platform.app.diff ([#109](https://github.com/heroku/heroku-sdk/issues/109)) ([d16747d](https://github.com/heroku/heroku-sdk/commit/d16747d80b95493c69d9a7154e492a797a23e526))
+* default platform client Accept to version=3.sdk ([#107](https://github.com/heroku/heroku-sdk/issues/107)) ([03015b4](https://github.com/heroku/heroku-sdk/commit/03015b4f83ac7b400f9f67f8559fc65e9206e181))
+
 ## [0.5.6](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.5...sdk-v0.5.6) (2026-08-10)
 
 
