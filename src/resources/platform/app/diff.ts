@@ -27,7 +27,7 @@ async function checksum(platform: PlatformClient, app: string): Promise<null | s
     return null
   } catch (error: unknown) {
     if (isNotFound(error)) {
-      throw new Error(`App not found: ${app}`)
+      throw new Error(`App not found: ${app}`, {cause: error})
     }
 
     throw error

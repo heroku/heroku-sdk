@@ -1,4 +1,4 @@
-import {NotFoundError} from '@heroku/heroku-fetch'
+import {NotFoundError, RateLimitError} from '@heroku/heroku-fetch'
 import {
   describe, expect, it, vi,
 } from 'vitest'
@@ -250,7 +250,9 @@ describe('diffApps', () => {
 
   it('re-throws a non-404 error unchanged', async () => {
     const {platform} = fakePlatform()
-    const boom = Object.assign(new Error('kaboom'), {http: {statusCode: 500}})
+    // A real SDK API error that is NOT a NotFoundError must flow through
+    // untouched — proving the guard is NotFoundError-specific, not "any API error".
+    const boom = new RateLimitError(new Response(null, {status: 429}))
     platform.release.list.mockRejectedValue(boom)
     await expect(diffApps(ctx(platform), 'app1', 'app2')).rejects.toThrow()
     await expect(diffApps(ctx(platform), 'app1', 'app2')).rejects.not.toThrow('App not found')
