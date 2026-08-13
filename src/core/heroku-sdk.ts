@@ -3,6 +3,7 @@ import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
 import type {PlatformClient} from '../services/platform.js'
+import type {RepositoriesClient} from '../services/repositories.js'
 import type {
   ApplyExtensions,
   ExtensionsFor,
@@ -14,6 +15,7 @@ import type {
 import {createDataClient} from '../services/data.js'
 import {createMetricsClient} from '../services/metrics.js'
 import {createPlatformClient} from '../services/platform.js'
+import {createRepositoriesClient} from '../services/repositories.js'
 import {mergeExtensions} from './extensions-proxy.js'
 
 export type HerokuSDKOptions<Exts extends readonly ResourceExtension[]> = {
@@ -44,6 +46,8 @@ export class HerokuSDK<
   #rawData: DataClient | undefined
   #rawMetrics: MetricsClient | undefined
   #rawPlatform: PlatformClient | undefined
+  #rawRepositories: RepositoriesClient | undefined
+  #repositories: unknown
 
   constructor(options: HerokuSDKOptions<Exts> = {}) {
     this.#clientOptions = options.clientOptions ?? {}
@@ -80,6 +84,16 @@ export class HerokuSDK<
     return this.#platform as ApplyExtensions<PlatformClient, ExtensionsFor<Exts, 'platform'>>
   }
 
+  get repositories(): ApplyExtensions<RepositoriesClient, ExtensionsFor<Exts, 'repositories'>> {
+    this.#repositories ??= mergeExtensions(
+      this.#getRawRepositories(),
+      this.#extensionsByService.get('repositories') ?? [],
+      this.#getCtx(),
+    )
+
+    return this.#repositories as ApplyExtensions<RepositoriesClient, ExtensionsFor<Exts, 'repositories'>>
+  }
+
   #getCtx(): ResourceCtx {
     this.#ctx ??= Object.defineProperties({} as ResourceCtx, {
       data: {
@@ -93,6 +107,10 @@ export class HerokuSDK<
       platform: {
         enumerable: true,
         get: () => this.#getRawPlatform(),
+      },
+      repositories: {
+        enumerable: true,
+        get: () => this.#getRawRepositories(),
       },
     })
 
@@ -112,5 +130,10 @@ export class HerokuSDK<
   #getRawPlatform(): PlatformClient {
     this.#rawPlatform ??= createPlatformClient(this.#clientOptions)
     return this.#rawPlatform
+  }
+
+  #getRawRepositories(): RepositoriesClient {
+    this.#rawRepositories ??= createRepositoriesClient(this.#clientOptions)
+    return this.#rawRepositories
   }
 }

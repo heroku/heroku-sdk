@@ -1,6 +1,6 @@
 # Heroku SDK
 
-A TypeScript SDK for the [Heroku Platform API](https://devcenter.heroku.com/articles/platform-api-reference), [Heroku Data API](https://devcenter.heroku.com/articles/heroku-postgres-api-reference), and the Heroku Metrics API. It generates fully-typed clients at runtime from route definitions — no hand-written method per endpoint.
+A TypeScript SDK for the [Heroku Platform API](https://devcenter.heroku.com/articles/platform-api-reference), [Heroku Data API](https://devcenter.heroku.com/articles/heroku-postgres-api-reference), the Heroku Metrics API, and the Heroku Repositories API. It generates fully-typed clients at runtime from route definitions — no hand-written method per endpoint.
 
 ## Installation
 
@@ -38,13 +38,15 @@ const sdk = new HerokuSDK({ clientOptions: { token: 'your-api-token' } })
 If you only need one service (and want the smallest possible bundle), import the factory directly. These return the same typed client the SDK class wraps internally.
 
 ```ts
-import { createPlatformClient } from '@heroku/sdk/platform'
-import { createDataClient }     from '@heroku/sdk/data'
-import { createMetricsClient }  from '@heroku/sdk/metrics'
+import { createPlatformClient }     from '@heroku/sdk/platform'
+import { createDataClient }         from '@heroku/sdk/data'
+import { createMetricsClient }      from '@heroku/sdk/metrics'
+import { createRepositoriesClient } from '@heroku/sdk/repositories'
 
-const platform = createPlatformClient()
-const data     = createDataClient()
-const metrics  = createMetricsClient()
+const platform     = createPlatformClient()
+const data         = createDataClient()
+const metrics      = createMetricsClient()
+const repositories = createRepositoriesClient()
 
 const apps = await platform.app.list()
 ```
@@ -57,6 +59,7 @@ const apps = await platform.app.list()
 | `createPlatformClient`, `PlatformClient` | `@heroku/sdk/platform`            |
 | `createDataClient`, `DataClient`         | `@heroku/sdk/data`                |
 | `createMetricsClient`, `MetricsClient`   | `@heroku/sdk/metrics`             |
+| `createRepositoriesClient`, `RepositoriesClient` | `@heroku/sdk/repositories` |
 | `appExtensions`, `dynoExtensions`, …     | `@heroku/sdk/extensions/platform` |
 | `databaseExtensions`, …                  | `@heroku/sdk/extensions/data`     |
 
