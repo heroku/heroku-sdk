@@ -2,12 +2,14 @@ import type {App} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {CreateAndSetupInput, CreateAndSetupOptions} from './create-and-setup.js'
+import type {DiffAppsOptions} from './diff.js'
 import type {DescribeAppOptions} from './info.js'
 import type {TransferOptions} from './transfer.js'
 import type {WaitForACMCertificatesOptions} from './wait-for-acm-certificates.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
 import {createAndSetup} from './create-and-setup.js'
+import {diffApps} from './diff.js'
 import {describeApp} from './info.js'
 import {transferApp} from './transfer.js'
 import {waitForACMCertificates} from './wait-for-acm-certificates.js'
@@ -15,6 +17,7 @@ import {waitForACMCertificates} from './wait-for-acm-certificates.js'
 export {
   createAndSetup, type CreateAndSetupInput, type CreateAndSetupOptions, type SetupStep,
 } from './create-and-setup.js'
+export {diffApps, type DiffAppsOptions, type DiffRow} from './diff.js'
 export {
   type AppInfo, describeApp, type DescribeAppOptions, type PipelineCouplingDetail,
 } from './info.js'
@@ -127,6 +130,8 @@ export const appExtensions = extendResource('platform', 'app', ctx => ({
     createAndSetup(ctx, input, options),
   describe: (appIdentity: string, options?: DescribeAppOptions) =>
     describeApp(ctx, appIdentity, options),
+  diff: (app1: string, app2: string, options?: DiffAppsOptions) =>
+    diffApps(ctx, app1, app2, options),
   disableMaintenance: (appIdentity: string, options?: AppMaintenanceOptions) =>
     disableMaintenance(ctx, appIdentity, options),
   enableMaintenance: (appIdentity: string, options?: AppMaintenanceOptions) =>
