@@ -13,7 +13,7 @@ const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000
 export class VpnConnectionFailedError extends Error {
   public readonly id = 'vpn_connection_failed'
 
-  constructor(public readonly vpnConnection: VpnConnection) {
+  constructor(vpnConnection: VpnConnection) {
     super(vpnConnection.status_message)
     this.name = 'VpnConnectionFailedError'
   }
@@ -23,10 +23,10 @@ export class VpnConnectionNotReadyError extends Error {
   public readonly id = 'vpn_connection_not_ready'
 
   constructor(
-    public readonly vpnConnection: VpnConnection,
+    vpnConnection: VpnConnection,
     public readonly timeoutMs: number,
   ) {
-    super('Timeout waiting for VPN to become allocated.')
+    super(`Timeout waiting for VPN connection ${vpnConnection.name} to become allocated.`)
     this.name = 'VpnConnectionNotReadyError'
   }
 }

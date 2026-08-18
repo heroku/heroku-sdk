@@ -102,7 +102,6 @@ describe('waitForActive', () => {
 
       const e = error as VpnConnectionFailedError
 
-      expect(e.vpnConnection).toEqual(failed)
       expect(e.message).toEqual(failed.status_message)
       expect(ctx.platform.vpnConnection.info).toHaveBeenCalledTimes(1)
     }
@@ -125,8 +124,8 @@ describe('waitForActive', () => {
 
       const e = error as VpnConnectionNotReadyError
 
-      expect(e.vpnConnection).toEqual(pending)
-      expect(e.message).toEqual('Timeout waiting for VPN to become allocated.')
+      expect(e.timeoutMs).toEqual(WAIT_INTERVAL_MS * 2)
+      expect(e.message).toEqual(`Timeout waiting for VPN connection ${pending.name} to become allocated.`)
       // depending on the speed of the test, we may have more calls, but we should have at least 2
       // call 1: before loop starts
       // call 2: first loop iteration
