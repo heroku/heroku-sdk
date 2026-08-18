@@ -119,6 +119,7 @@ describe('waitForActive', () => {
         intervalMs: WAIT_INTERVAL_MS,
         timeoutMs: WAIT_INTERVAL_MS * 2,
       })
+      expect.fail('Expected VpnConnectionNotReadyError to be thrown')
     } catch (error) {
       expect(error).toBeInstanceOf(VpnConnectionNotReadyError)
 
