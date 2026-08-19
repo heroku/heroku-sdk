@@ -42,6 +42,14 @@
       "types": "./dist/resources/platform/app/index.d.ts",
       "default": "./dist/resources/platform/app/index.js"
     },
+    "./resources/platform/container": {
+      "types": "./dist/resources/platform/container/index.d.ts",
+      "default": "./dist/resources/platform/container/index.js"
+    },
+    "./resources/platform/domain": {
+      "types": "./dist/resources/platform/domain/index.d.ts",
+      "default": "./dist/resources/platform/domain/index.js"
+    },
     "./resources/platform/dyno": {
       "types": "./dist/resources/platform/dyno/index.d.ts",
       "default": "./dist/resources/platform/dyno/index.js"
@@ -58,9 +66,21 @@
       "types": "./dist/resources/platform/pipeline/*.d.ts",
       "default": "./dist/resources/platform/pipeline/*.js"
     },
+    "./resources/platform/sni-endpoint": {
+      "types": "./dist/resources/platform/sni-endpoint/index.d.ts",
+      "default": "./dist/resources/platform/sni-endpoint/index.js"
+    },
+    "./resources/platform/telemetry-drain": {
+      "types": "./dist/resources/platform/telemetry-drain/index.d.ts",
+      "default": "./dist/resources/platform/telemetry-drain/index.js"
+    },
     "./resources/platform/test-run": {
       "types": "./dist/resources/platform/test-run/index.d.ts",
       "default": "./dist/resources/platform/test-run/index.js"
+    },
+    "./resources/platform/vpn-connection": {
+      "types": "./dist/resources/platform/vpn-connection/index.d.ts",
+      "default": "./dist/resources/platform/vpn-connection/index.js"
     },
     "./resources/data/redis": {
       "types": "./dist/resources/data/redis/index.d.ts",

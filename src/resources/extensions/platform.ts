@@ -41,3 +41,11 @@ export {telemetryDrainExtensions, type TelemetryDrainOptions, type TelemetryDrai
 export {
   testRunExtensions, TestRunNotReadyError, type TestRunStatus, waitForState, type WaitForStateOptions,
 } from '../platform/test-run/index.js'
+export {
+  vpnConnectionExtensions,
+  VpnConnectionFailedError,
+  VpnConnectionNotReadyError,
+  type VpnConnectionOptions,
+  waitForActive,
+  type WaitForActiveOptions,
+} from '../platform/vpn-connection/index.js'
