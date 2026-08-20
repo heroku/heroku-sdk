@@ -183,6 +183,24 @@ describe('waitForAllocated', () => {
     expect(result.nat).toBeUndefined()
   })
 
+  it('re-throws an abort during the NAT fetch instead of swallowing it', async () => {
+    const allocated = buildSpace({state: 'allocated'})
+    const controller = new AbortController()
+    const ctx = buildCtx({
+      info: vi.fn().mockResolvedValue(allocated),
+      natInfo: vi.fn().mockImplementation(() => {
+        controller.abort()
+        return Promise.reject(new Error('aborted'))
+      }),
+    })
+
+    await expect(waitForAllocated(ctx, 'my-space', {
+      includeNat: true,
+      intervalMs: WAIT_INTERVAL_MS,
+      signal: controller.signal,
+    })).rejects.toThrow()
+  })
+
   it('does not fetch NAT info when includeNat is not set', async () => {
     const allocated = buildSpace({state: 'allocated'})
     const ctx = buildCtx({

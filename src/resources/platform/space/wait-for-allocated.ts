@@ -27,13 +27,14 @@ export type SpaceWithNat = Space & {
  * `SpaceNotAllocatedError`. On exceeding `timeoutMs` without reaching a
  * terminal state, throws `SpaceNotReadyError`.
  *
- * Each poll uses `Accept: version=3.fir` with `Accept-Expansion: region`
- * to match the existing CLI behaviour.
+ * Each poll uses the SDK default `Accept: version=3.sdk` with
+ * `Accept-Expansion: region` to match the existing CLI behaviour.
  *
  * When `options.includeNat` is true and the space becomes allocated,
  * also fetches `spaceNat.info` and attaches it as `nat` on the result.
  * That fetch is soft-failure: if it rejects, `nat` is left `undefined`
- * rather than failing the wait.
+ * rather than failing the wait. A caller abort during the fetch is the
+ * exception — it is re-thrown rather than swallowed.
  */
 export async function waitForAllocated(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -49,10 +50,7 @@ export async function waitForAllocated(
 
   signal?.throwIfAborted()
 
-  let platform = ctx.platform.withHeaders({
-    Accept: 'application/vnd.heroku+json; version=3.fir',
-    'Accept-Expansion': 'region',
-  })
+  let platform = ctx.platform.withHeaders({'Accept-Expansion': 'region'})
   if (signal) {
     platform = platform.withOptions({signal})
   }
@@ -84,6 +82,10 @@ export async function waitForAllocated(
     const nat = await platform.spaceNat.info(name)
     return {...space, nat}
   } catch {
+    // Soft-failure: a rejected NAT fetch leaves `nat` undefined rather than
+    // failing the wait — but a caller abort must not be swallowed here, so
+    // re-throw it if the signal aborted during the fetch.
+    signal?.throwIfAborted()
     return space
   }
 }
