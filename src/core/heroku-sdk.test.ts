@@ -203,7 +203,6 @@ describe('HerokuSDK', () => {
     expect(a).toBe(b)
     expect(dashboardBackendConstructorSpy).toHaveBeenCalledTimes(1)
     expect(dashboardBackendConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://particleboard.heroku.com',
       service: 'particleboard',
       token: 'abc',
     }))

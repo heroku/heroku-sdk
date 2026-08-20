@@ -10,13 +10,11 @@ import {createClient} from '../core/create-client.js'
 
 export type DashboardBackendClient = HerokuClient & RoutesClientExtras<HerokuClient>
 
-const DEFAULT_DASHBOARD_BACKEND_BASE_URL = 'https://particleboard.heroku.com'
-
 export function createDashboardBackendClient(options: HerokuApiClientOptions = {}): DashboardBackendClient {
-  const baseUrl = process.env.HEROKU_PARTICLEBOARD_HOST ?? DEFAULT_DASHBOARD_BACKEND_BASE_URL
+  const baseUrl = process.env.HEROKU_PARTICLEBOARD_URL
   return createClient<HerokuClient>(routes, {
-    baseUrl,
     service: 'particleboard',
+    ...(baseUrl && {baseUrl}),
     ...options,
   })
 }

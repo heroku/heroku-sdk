@@ -19,29 +19,28 @@ vi.mock('@heroku/types/dashboard-backend/routes', () => ({
 }))
 
 describe('createDashboardBackendClient', () => {
-  const oldHost = process.env.HEROKU_PARTICLEBOARD_HOST
+  const oldUrl = process.env.HEROKU_PARTICLEBOARD_URL
 
   afterEach(() => {
-    if (oldHost === undefined) delete process.env.HEROKU_PARTICLEBOARD_HOST
-    else process.env.HEROKU_PARTICLEBOARD_HOST = oldHost
+    if (oldUrl === undefined) delete process.env.HEROKU_PARTICLEBOARD_URL
+    else process.env.HEROKU_PARTICLEBOARD_URL = oldUrl
     constructorSpy.mockClear()
   })
 
-  it("defaults to service 'particleboard' and the Particleboard base URL", async () => {
-    delete process.env.HEROKU_PARTICLEBOARD_HOST
+  it("defaults to service 'particleboard' without overriding its configured base URL", async () => {
+    delete process.env.HEROKU_PARTICLEBOARD_URL
     const {createDashboardBackendClient} = await import('./dashboard-backend.js')
 
     createDashboardBackendClient({token: 'test-token'})
 
-    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://particleboard.heroku.com',
+    expect(constructorSpy).toHaveBeenCalledWith({
       service: 'particleboard',
       token: 'test-token',
-    }))
+    })
   })
 
-  it('honors HEROKU_PARTICLEBOARD_HOST as a base-URL override', async () => {
-    process.env.HEROKU_PARTICLEBOARD_HOST = 'https://particleboard.herokai.com'
+  it('honors HEROKU_PARTICLEBOARD_URL as a base-URL override', async () => {
+    process.env.HEROKU_PARTICLEBOARD_URL = 'https://particleboard.herokai.com'
     const {createDashboardBackendClient} = await import('./dashboard-backend.js')
 
     createDashboardBackendClient({token: 'test-token'})
@@ -52,7 +51,7 @@ describe('createDashboardBackendClient', () => {
   })
 
   it('lets caller-supplied baseUrl and service override the defaults', async () => {
-    process.env.HEROKU_PARTICLEBOARD_HOST = 'https://particleboard.herokai.com'
+    process.env.HEROKU_PARTICLEBOARD_URL = 'https://particleboard.herokai.com'
     const {createDashboardBackendClient} = await import('./dashboard-backend.js')
 
     createDashboardBackendClient({baseUrl: 'https://example.test', service: 'platform', token: 'test-token'})
