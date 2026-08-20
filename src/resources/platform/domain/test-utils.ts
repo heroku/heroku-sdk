@@ -42,6 +42,7 @@ export function buildCtx(stubs: {
   platform.withOptions.mockReturnValue(platform)
 
   return {
+    dashboardBackend: {} as never,
     data: {} as never,
     metrics: {} as never,
     platform: platform as never,

@@ -1,6 +1,6 @@
 # Heroku SDK
 
-A TypeScript SDK for the [Heroku Platform API](https://devcenter.heroku.com/articles/platform-api-reference), [Heroku Data API](https://devcenter.heroku.com/articles/heroku-postgres-api-reference), the Heroku Metrics API, and the Heroku Repositories API. It generates fully-typed clients at runtime from route definitions — no hand-written method per endpoint.
+A TypeScript SDK for the [Heroku Platform API](https://devcenter.heroku.com/articles/platform-api-reference), [Heroku Data API](https://devcenter.heroku.com/articles/heroku-postgres-api-reference), the Heroku Dashboard Backend, the Heroku Metrics API, and the Heroku Repositories API. It generates fully-typed clients at runtime from route definitions — no hand-written method per endpoint.
 
 ## Installation
 
@@ -22,6 +22,7 @@ const sdk = new HerokuSDK({ extensions: [appExtensions] })
 // Upstream route (auto-generated from the API spec)
 const apps = await sdk.platform.app.list()
 const app  = await sdk.platform.app.info('my-app')
+const favorites = await sdk.dashboardBackend.favorite.list({ type: 'app' })
 
 // Hand-written extension method (provided by appExtensions)
 await sdk.platform.app.enableMaintenance('my-app')
@@ -40,15 +41,18 @@ If you only need one service (and want the smallest possible bundle), import the
 ```ts
 import { createPlatformClient }     from '@heroku/sdk/platform'
 import { createDataClient }         from '@heroku/sdk/data'
+import { createDashboardBackendClient } from '@heroku/sdk/dashboard-backend'
 import { createMetricsClient }      from '@heroku/sdk/metrics'
 import { createRepositoriesClient } from '@heroku/sdk/repositories'
 
 const platform     = createPlatformClient()
 const data         = createDataClient()
+const dashboardBackend = createDashboardBackendClient()
 const metrics      = createMetricsClient()
 const repositories = createRepositoriesClient()
 
 const apps = await platform.app.list()
+const favorites = await dashboardBackend.favorite.list({ type: 'app' })
 ```
 
 ### Imports
@@ -58,6 +62,7 @@ const apps = await platform.app.list()
 | `HerokuSDK`, `extendResource`, types     | `@heroku/sdk`                     |
 | `createPlatformClient`, `PlatformClient` | `@heroku/sdk/platform`            |
 | `createDataClient`, `DataClient`         | `@heroku/sdk/data`                |
+| `createDashboardBackendClient`, `DashboardBackendClient` | `@heroku/sdk/dashboard-backend` |
 | `createMetricsClient`, `MetricsClient`   | `@heroku/sdk/metrics`             |
 | `createRepositoriesClient`, `RepositoriesClient` | `@heroku/sdk/repositories` |
 | `appExtensions`, `dynoExtensions`, …     | `@heroku/sdk/extensions/platform` |

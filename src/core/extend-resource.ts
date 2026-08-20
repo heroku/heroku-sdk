@@ -1,11 +1,13 @@
+import type {DashboardBackendClient} from '../services/dashboard-backend.js'
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
 import type {PlatformClient} from '../services/platform.js'
 import type {RepositoriesClient} from '../services/repositories.js'
 
-export type ServiceName = 'data' | 'metrics' | 'platform' | 'repositories'
+export type ServiceName = 'dashboardBackend' | 'data' | 'metrics' | 'platform' | 'repositories'
 
 export type ResourceCtx = {
+  dashboardBackend: DashboardBackendClient
   data: DataClient
   metrics: MetricsClient
   platform: PlatformClient

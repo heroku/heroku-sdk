@@ -18,6 +18,10 @@
       "types": "./dist/services/data.d.ts",
       "default": "./dist/services/data.js"
     },
+    "./dashboard-backend": {
+      "types": "./dist/services/dashboard-backend.d.ts",
+      "default": "./dist/services/dashboard-backend.js"
+    },
     "./metrics": {
       "types": "./dist/services/metrics.d.ts",
       "default": "./dist/services/metrics.js"
@@ -108,7 +112,7 @@
   },
   "dependencies": {
     "@heroku/heroku-fetch": "^0.1.4",
-    "@heroku/types": "^4.2.0",
+    "@heroku/types": "^4.3.0",
     "debug": "^4.4.0"
   }
 }
