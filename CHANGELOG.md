@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.7...sdk-v0.6.0) (2026-08-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* add vpnConnection wait-for-active extension ([#112](https://github.com/heroku/heroku-sdk/issues/112))
+
+### Features
+
+* add dashboard backend service ([#114](https://github.com/heroku/heroku-sdk/issues/114)) ([38e7732](https://github.com/heroku/heroku-sdk/commit/38e77329d0619ab7808f0309e0a8284b86c32fbd))
+* add platform.space.waitForAllocated SDK extension ([#113](https://github.com/heroku/heroku-sdk/issues/113)) ([4836ffb](https://github.com/heroku/heroku-sdk/commit/4836ffb314eb4aaffce04c829be12a697f527af0))
+* add repositories service ([#110](https://github.com/heroku/heroku-sdk/issues/110)) ([a5a24fe](https://github.com/heroku/heroku-sdk/commit/a5a24fec41522b844f762ccea32ae01e9fcc2d35))
+* add vpnConnection wait-for-active extension ([#112](https://github.com/heroku/heroku-sdk/issues/112)) ([ed3e589](https://github.com/heroku/heroku-sdk/commit/ed3e589c45b6abd4618d1e49e78da5b187ae6d4f))
+
 ## [0.5.7](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.6...sdk-v0.5.7) (2026-08-13)
 
 
