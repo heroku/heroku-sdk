@@ -6,13 +6,9 @@ import type {ContainerOptions} from './index.js'
 export class NotAContainerAppError extends Error {
   public readonly id = 'not_a_container_app'
 
-  constructor(public readonly app: Pick<App, 'build_stack' | 'id' | 'name' | 'stack'>) {
+  constructor(public readonly app: App) {
     super('This operation is for Docker apps only.')
     this.name = 'NotAContainerAppError'
-  }
-
-  public get body() {
-    return {app: this.app, id: this.id, message: this.message}
   }
 }
 
@@ -35,12 +31,6 @@ export async function ensureContainerStack(
   const allowedStack = 'container'
 
   if (app.build_stack.name !== allowedStack && app.stack.name !== allowedStack) {
-    throw new NotAContainerAppError({
-      // eslint-disable-next-line camelcase
-      build_stack: app.build_stack,
-      id: app.id,
-      name: app.name,
-      stack: app.stack,
-    })
+    throw new NotAContainerAppError(app)
   }
 }

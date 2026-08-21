@@ -30,7 +30,9 @@ function buildCtx(stubs: {
 
   return {
     data: {} as never,
+    metrics: {} as never,
     platform: platform as never,
+    repositories: {} as never,
   }
 }
 
@@ -93,7 +95,6 @@ describe('ensureContainerStack', () => {
       expect(e.id).toBe('not_a_container_app')
       expect(e.app).toEqual(app)
       expect(e.message).toBe('This operation is for Docker apps only.')
-      expect(e.body).toEqual({app, id: 'not_a_container_app', message: e.message})
     }
   })
 

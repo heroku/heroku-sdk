@@ -37,7 +37,24 @@ export {pipelineExtensions} from '../platform/pipeline/index.js'
 export {pipelinePromotionExtensions} from '../platform/pipeline/promotion.js'
 export {privateToShield, shieldToPrivate} from '../platform/shield.js'
 export {createAndAssociate, type CreateAndAssociateOptions, sniEndpointExtensions} from '../platform/sni-endpoint/index.js'
+export {
+  spaceExtensions,
+  SpaceNotAllocatedError,
+  SpaceNotReadyError,
+  type SpaceOptions,
+  type SpaceWithNat,
+  waitForAllocated,
+  type WaitForAllocatedOptions,
+} from '../platform/space/index.js'
 export {telemetryDrainExtensions, type TelemetryDrainOptions, type TelemetryDrainTarget} from '../platform/telemetry-drain/index.js'
 export {
   testRunExtensions, TestRunNotReadyError, type TestRunStatus, waitForState, type WaitForStateOptions,
 } from '../platform/test-run/index.js'
+export {
+  vpnConnectionExtensions,
+  VpnConnectionFailedError,
+  VpnConnectionNotReadyError,
+  type VpnConnectionOptions,
+  waitForActive,
+  type WaitForActiveOptions,
+} from '../platform/vpn-connection/index.js'
