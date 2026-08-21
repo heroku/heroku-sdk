@@ -1,22 +1,40 @@
 import {
-  afterEach, describe, expect, it, vi,
+  afterEach, describe, expect, expectTypeOf, it, vi,
 } from 'vitest'
 
 const platformConstructorSpy = vi.fn()
 const dataConstructorSpy = vi.fn()
+const dashboardBackendConstructorSpy = vi.fn()
 const metricsConstructorSpy = vi.fn()
 const repositoriesConstructorSpy = vi.fn()
 
 vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: class {
     constructor(options: unknown) {
-      // The same constructor is used for platform and data; spies are
-      // distinguished by the service field in options.
+      // The same constructor is used for every service; spies are
+      // distinguished by the service field and custom-service base URL.
       const {baseUrl, service} = (options as {baseUrl?: string; service?: string})
-      if (service === 'platform') platformConstructorSpy(options)
-      else if (service === 'data') dataConstructorSpy(options)
-      else if (service === 'custom' && baseUrl?.includes('metrics')) metricsConstructorSpy(options)
-      else if (service === 'custom' && baseUrl?.includes('kolkrabbi')) repositoriesConstructorSpy(options)
+      switch (service) {
+        case 'data': {
+          dataConstructorSpy(options)
+          break
+        }
+
+        case 'particleboard': {
+          dashboardBackendConstructorSpy(options)
+          break
+        }
+
+        case 'platform': {
+          platformConstructorSpy(options)
+          break
+        }
+
+        default: {
+          if (service === 'custom' && baseUrl?.includes('metrics')) metricsConstructorSpy(options)
+          if (service === 'custom' && baseUrl?.includes('kolkrabbi')) repositoriesConstructorSpy(options)
+        }
+      }
     }
   },
 }))
@@ -30,6 +48,12 @@ vi.mock('@heroku/types/3.sdk/routes', () => ({
 vi.mock('@heroku/types/data/routes', () => ({
   database: {
     info: {method: 'GET', path: '/databases/{databaseIdentity}'},
+  },
+}))
+
+vi.mock('@heroku/types/dashboard-backend/routes', () => ({
+  favorite: {
+    list: {method: 'GET', path: '/favorites', query: ['type']},
   },
 }))
 
@@ -52,6 +76,7 @@ describe('HerokuSDK', () => {
   afterEach(() => {
     platformConstructorSpy.mockClear()
     dataConstructorSpy.mockClear()
+    dashboardBackendConstructorSpy.mockClear()
     metricsConstructorSpy.mockClear()
     repositoriesConstructorSpy.mockClear()
     vi.resetModules()
@@ -164,6 +189,64 @@ describe('HerokuSDK', () => {
 
     expect(a).toBe(b)
     expect(dataConstructorSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('lazily constructs and memoizes the dashboard backend client', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({clientOptions: {token: 'abc'}})
+
+    expect(dashboardBackendConstructorSpy).not.toHaveBeenCalled()
+
+    const a = sdk.dashboardBackend
+    const b = sdk.dashboardBackend
+
+    expect(a).toBe(b)
+    expect(dashboardBackendConstructorSpy).toHaveBeenCalledTimes(1)
+    expect(dashboardBackendConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      service: 'particleboard',
+      token: 'abc',
+    }))
+    expect(platformConstructorSpy).not.toHaveBeenCalled()
+    expect(dataConstructorSpy).not.toHaveBeenCalled()
+    expect(metricsConstructorSpy).not.toHaveBeenCalled()
+    expect(repositoriesConstructorSpy).not.toHaveBeenCalled()
+  })
+
+  it('exposes one lazy raw dashboard backend client through extension context', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+    const ext = extendResource('platform', 'app', ctx => ({
+      peekDashboardBackend: () => ctx.dashboardBackend,
+    }))
+    const sdk = new HerokuSDK({extensions: [ext]})
+
+    const platformView = sdk.platform
+    expect(platformView).toBeDefined()
+    expect(dashboardBackendConstructorSpy).not.toHaveBeenCalled()
+
+    const app = sdk.platform.app as unknown as {peekDashboardBackend: () => unknown}
+    const first = app.peekDashboardBackend()
+    const second = app.peekDashboardBackend()
+
+    expect(first).toBe(second)
+    expect(dashboardBackendConstructorSpy).toHaveBeenCalledTimes(1)
+
+    const dashboardBackendView = sdk.dashboardBackend
+    expect(dashboardBackendView).toBeDefined()
+    expect(dashboardBackendConstructorSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('projects dashboard backend extensions onto only that service', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+    const ext = extendResource('dashboardBackend', 'favorite', () => ({
+      marker: () => 'dashboard-backend' as const,
+    }))
+    const sdk = new HerokuSDK({extensions: [ext]})
+
+    expectTypeOf(sdk.dashboardBackend.favorite.marker).returns.toEqualTypeOf<'dashboard-backend'>()
+    expect(sdk.dashboardBackend.favorite.marker()).toBe('dashboard-backend')
+    expect((sdk.platform as unknown as {favorite?: unknown}).favorite).toBeUndefined()
   })
 
   it('constructs no metrics client eagerly', async () => {

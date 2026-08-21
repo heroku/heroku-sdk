@@ -1,5 +1,6 @@
 import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 
+import type {DashboardBackendClient} from '../services/dashboard-backend.js'
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
 import type {PlatformClient} from '../services/platform.js'
@@ -12,6 +13,7 @@ import type {
   ServiceName,
 } from './extend-resource.js'
 
+import {createDashboardBackendClient} from '../services/dashboard-backend.js'
 import {createDataClient} from '../services/data.js'
 import {createMetricsClient} from '../services/metrics.js'
 import {createPlatformClient} from '../services/platform.js'
@@ -39,10 +41,12 @@ export class HerokuSDK<
 > {
   readonly #clientOptions: HerokuApiClientOptions
   #ctx: ResourceCtx | undefined
+  #dashboardBackend: unknown
   #data: unknown
   readonly #extensionsByService: Map<ServiceName, ResourceExtension[]>
   #metrics: unknown
   #platform: unknown
+  #rawDashboardBackend: DashboardBackendClient | undefined
   #rawData: DataClient | undefined
   #rawMetrics: MetricsClient | undefined
   #rawPlatform: PlatformClient | undefined
@@ -52,6 +56,16 @@ export class HerokuSDK<
   constructor(options: HerokuSDKOptions<Exts> = {}) {
     this.#clientOptions = options.clientOptions ?? {}
     this.#extensionsByService = partitionByService(options.extensions ?? [])
+  }
+
+  get dashboardBackend(): ApplyExtensions<DashboardBackendClient, ExtensionsFor<Exts, 'dashboardBackend'>> {
+    this.#dashboardBackend ??= mergeExtensions(
+      this.#getRawDashboardBackend(),
+      this.#extensionsByService.get('dashboardBackend') ?? [],
+      this.#getCtx(),
+    )
+
+    return this.#dashboardBackend as ApplyExtensions<DashboardBackendClient, ExtensionsFor<Exts, 'dashboardBackend'>>
   }
 
   get data(): ApplyExtensions<DataClient, ExtensionsFor<Exts, 'data'>> {
@@ -96,6 +110,10 @@ export class HerokuSDK<
 
   #getCtx(): ResourceCtx {
     this.#ctx ??= Object.defineProperties({} as ResourceCtx, {
+      dashboardBackend: {
+        enumerable: true,
+        get: () => this.#getRawDashboardBackend(),
+      },
       data: {
         enumerable: true,
         get: () => this.#getRawData(),
@@ -115,6 +133,11 @@ export class HerokuSDK<
     })
 
     return this.#ctx
+  }
+
+  #getRawDashboardBackend(): DashboardBackendClient {
+    this.#rawDashboardBackend ??= createDashboardBackendClient(this.#clientOptions)
+    return this.#rawDashboardBackend
   }
 
   #getRawData(): DataClient {
