@@ -7,6 +7,7 @@ const dataConstructorSpy = vi.fn()
 const dashboardBackendConstructorSpy = vi.fn()
 const metricsConstructorSpy = vi.fn()
 const repositoriesConstructorSpy = vi.fn()
+const repositoriesApiConstructorSpy = vi.fn()
 
 vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: class {
@@ -26,7 +27,12 @@ vi.mock('@heroku/heroku-fetch', () => ({
         }
 
         case 'platform': {
-          platformConstructorSpy(options)
+          if ((options as {defaultAccept?: string}).defaultAccept?.includes('repositories-api')) {
+            repositoriesApiConstructorSpy(options)
+          } else {
+            platformConstructorSpy(options)
+          }
+
           break
         }
 
@@ -72,6 +78,12 @@ vi.mock('@heroku/types/repositories/routes', () => ({
   },
 }))
 
+vi.mock('@heroku/types/repositories-api/routes', () => ({
+  githubRepository: {
+    info: {method: 'GET', path: '/pipelines/{pipelineIdentity}/repo'},
+  },
+}))
+
 describe('HerokuSDK', () => {
   afterEach(() => {
     platformConstructorSpy.mockClear()
@@ -79,6 +91,7 @@ describe('HerokuSDK', () => {
     dashboardBackendConstructorSpy.mockClear()
     metricsConstructorSpy.mockClear()
     repositoriesConstructorSpy.mockClear()
+    repositoriesApiConstructorSpy.mockClear()
     vi.resetModules()
   })
 
@@ -321,5 +334,89 @@ describe('HerokuSDK', () => {
 
     expect(a).toBe(b)
     expect(repositoriesConstructorSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('lazily constructs and memoizes the repositories API client', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({clientOptions: {token: 'abc'}})
+
+    expect(repositoriesApiConstructorSpy).not.toHaveBeenCalled()
+
+    const a = sdk.repositoriesApi
+    const b = sdk.repositoriesApi
+
+    expect(a).toBe(b)
+    expect(repositoriesApiConstructorSpy).toHaveBeenCalledTimes(1)
+    expect(repositoriesApiConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      service: 'platform',
+      token: 'abc',
+    }))
+  })
+
+  it('shallowly applies only the matching per-service options', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({
+      clientOptions: {
+        headers: {'X-Common': 'common'},
+        token: 'abc',
+      },
+      clientOptionsByService: {
+        platform: {
+          baseUrl: 'https://platform.example.test',
+          headers: {'X-Platform': 'platform'},
+        },
+        repositoriesApi: {baseUrl: 'https://repositories-api.example.test'},
+      },
+    })
+
+    const clients = [sdk.platform, sdk.repositoriesApi, sdk.repositories]
+    expect(clients).toHaveLength(3)
+
+    expect(platformConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: 'https://platform.example.test',
+      headers: {'X-Platform': 'platform'},
+      token: 'abc',
+    }))
+    expect(repositoriesApiConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: 'https://repositories-api.example.test',
+      headers: {'X-Common': 'common'},
+      token: 'abc',
+    }))
+    expect(repositoriesConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: 'https://kolkrabbi.heroku.com',
+      headers: {'X-Common': 'common'},
+      token: 'abc',
+    }))
+  })
+
+  it('applies each per-service option only to its matching client', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({
+      clientOptionsByService: {
+        dashboardBackend: {timeout: 1},
+        data: {timeout: 2},
+        metrics: {timeout: 3},
+        platform: {timeout: 4},
+        repositories: {timeout: 5},
+        repositoriesApi: {timeout: 6},
+      },
+    })
+
+    const clients = [
+      sdk.dashboardBackend,
+      sdk.data,
+      sdk.metrics,
+      sdk.platform,
+      sdk.repositories,
+      sdk.repositoriesApi,
+    ]
+    expect(clients).toHaveLength(6)
+
+    expect(dashboardBackendConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 1}))
+    expect(dataConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 2}))
+    expect(metricsConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 3}))
+    expect(platformConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 4}))
+    expect(repositoriesConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 5}))
+    expect(repositoriesApiConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 6}))
   })
 })

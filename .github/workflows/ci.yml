@@ -24,5 +24,7 @@ jobs:
       - run: npm ci
       - name: unit tests
         run: npm run test
+      - name: type contract tests
+        run: npm run test:types
       - name: linting
         run: npm run lint

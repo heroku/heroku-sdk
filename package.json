@@ -30,6 +30,10 @@
       "types": "./dist/services/repositories.d.ts",
       "default": "./dist/services/repositories.js"
     },
+    "./repositories-api": {
+      "types": "./dist/services/repositories-api.d.ts",
+      "default": "./dist/services/repositories-api.js"
+    },
     "./extensions/platform": {
       "types": "./dist/resources/extensions/platform.d.ts",
       "default": "./dist/resources/extensions/platform.js"
@@ -108,11 +112,12 @@
     "lint:fix": "eslint --fix",
     "prebuild": "rimraf dist",
     "prepare": "npm run build",
-    "test": "vitest --run"
+    "test": "vitest --run",
+    "test:types": "tsc --noEmit -p tsconfig.type-tests.json"
   },
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "files": [
     "dist"
@@ -132,7 +137,7 @@
   },
   "dependencies": {
     "@heroku/heroku-fetch": "^0.1.4",
-    "@heroku/types": "^4.3.0",
+    "@heroku/types": "^4.7.0",
     "debug": "^4.4.0"
   }
 }

@@ -34,6 +34,18 @@ You can also pass options directly:
 const sdk = new HerokuSDK({ clientOptions: { token: 'your-api-token' } })
 ```
 
+Common client options apply to every service. Use shallow per-service overrides when services need different hosts or other client settings:
+
+```ts
+const sdk = new HerokuSDK({
+  clientOptions: { token: 'your-api-token' },
+  clientOptionsByService: {
+    platform: { baseUrl: 'https://api.heroku.com' },
+    repositoriesApi: { baseUrl: 'https://api.heroku.com' },
+  },
+})
+```
+
 ### Per-service clients
 
 If you only need one service (and want the smallest possible bundle), import the factory directly. These return the same typed client the SDK class wraps internally.
@@ -44,12 +56,14 @@ import { createDataClient }         from '@heroku/sdk/data'
 import { createDashboardBackendClient } from '@heroku/sdk/dashboard-backend'
 import { createMetricsClient }      from '@heroku/sdk/metrics'
 import { createRepositoriesClient } from '@heroku/sdk/repositories'
+import { createRepositoriesApiClient } from '@heroku/sdk/repositories-api'
 
 const platform     = createPlatformClient()
 const data         = createDataClient()
 const dashboardBackend = createDashboardBackendClient()
 const metrics      = createMetricsClient()
 const repositories = createRepositoriesClient()
+const repositoriesApi = createRepositoriesApiClient()
 
 const apps = await platform.app.list()
 const favorites = await dashboardBackend.favorite.list({ type: 'app' })
@@ -65,6 +79,7 @@ const favorites = await dashboardBackend.favorite.list({ type: 'app' })
 | `createDashboardBackendClient`, `DashboardBackendClient` | `@heroku/sdk/dashboard-backend` |
 | `createMetricsClient`, `MetricsClient`   | `@heroku/sdk/metrics`             |
 | `createRepositoriesClient`, `RepositoriesClient` | `@heroku/sdk/repositories` |
+| `createRepositoriesApiClient`, `RepositoriesApiClient` | `@heroku/sdk/repositories-api` |
 | `appExtensions`, `dynoExtensions`, …     | `@heroku/sdk/extensions/platform` |
 | `databaseExtensions`, …                  | `@heroku/sdk/extensions/data`     |
 
