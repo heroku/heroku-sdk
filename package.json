@@ -103,6 +103,7 @@
   "scripts": {
     "build": "tsc",
     "coverage": "vitest --run --coverage",
+    "create-resource": "tsx scripts/create-resource.ts",
     "example": "tsx",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
@@ -112,7 +113,7 @@
   },
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "files": [
     "dist"
@@ -126,6 +127,7 @@
     "eslint-config-oclif": "^6.0.167",
     "eslint-plugin-vitest": "0.5.4",
     "rimraf": "^6.1.3",
+    "ts-morph": "^28.0.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
