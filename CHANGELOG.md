@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.6.0...sdk-v0.6.1) (2026-09-01)
+
+
+### Features
+
+* add review apps to the SDK ([#117](https://github.com/heroku/heroku-sdk/issues/117)) ([7992e6d](https://github.com/heroku/heroku-sdk/commit/7992e6ddd3e78c906570f564c504092b4f93a511))
+
 ## [0.6.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.5.7...sdk-v0.6.0) (2026-08-21)
 
 
