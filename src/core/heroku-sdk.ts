@@ -3,6 +3,7 @@ import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {DashboardBackendClient} from '../services/dashboard-backend.js'
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
+import type {NotificationsClient} from '../services/notifications.js'
 import type {PlatformClient} from '../services/platform.js'
 import type {RepositoriesApiClient} from '../services/repositories-api.js'
 import type {RepositoriesClient} from '../services/repositories.js'
@@ -17,6 +18,7 @@ import type {
 import {createDashboardBackendClient} from '../services/dashboard-backend.js'
 import {createDataClient} from '../services/data.js'
 import {createMetricsClient} from '../services/metrics.js'
+import {createNotificationsClient} from '../services/notifications.js'
 import {createPlatformClient} from '../services/platform.js'
 import {createRepositoriesApiClient} from '../services/repositories-api.js'
 import {createRepositoriesClient} from '../services/repositories.js'
@@ -54,10 +56,12 @@ export class HerokuSDK<
   #data: unknown
   readonly #extensionsByService: Map<ServiceName, ResourceExtension[]>
   #metrics: unknown
+  #notifications: unknown
   #platform: unknown
   #rawDashboardBackend: DashboardBackendClient | undefined
   #rawData: DataClient | undefined
   #rawMetrics: MetricsClient | undefined
+  #rawNotifications: NotificationsClient | undefined
   #rawPlatform: PlatformClient | undefined
   #rawRepositories: RepositoriesClient | undefined
   #rawRepositoriesApi: RepositoriesApiClient | undefined
@@ -98,6 +102,16 @@ export class HerokuSDK<
     )
 
     return this.#metrics as ApplyExtensions<MetricsClient, ExtensionsFor<Exts, 'metrics'>>
+  }
+
+  get notifications(): ApplyExtensions<NotificationsClient, ExtensionsFor<Exts, 'notifications'>> {
+    this.#notifications ??= mergeExtensions(
+      this.#getRawNotifications(),
+      this.#extensionsByService.get('notifications') ?? [],
+      this.#getCtx(),
+    )
+
+    return this.#notifications as ApplyExtensions<NotificationsClient, ExtensionsFor<Exts, 'notifications'>>
   }
 
   get platform(): ApplyExtensions<PlatformClient, ExtensionsFor<Exts, 'platform'>> {
@@ -154,6 +168,10 @@ export class HerokuSDK<
         enumerable: true,
         get: () => this.#getRawMetrics(),
       },
+      notifications: {
+        enumerable: true,
+        get: () => this.#getRawNotifications(),
+      },
       platform: {
         enumerable: true,
         get: () => this.#getRawPlatform(),
@@ -184,6 +202,11 @@ export class HerokuSDK<
   #getRawMetrics(): MetricsClient {
     this.#rawMetrics ??= createMetricsClient(this.#getClientOptions('metrics'))
     return this.#rawMetrics
+  }
+
+  #getRawNotifications(): NotificationsClient {
+    this.#rawNotifications ??= createNotificationsClient(this.#clientOptions)
+    return this.#rawNotifications
   }
 
   #getRawPlatform(): PlatformClient {

@@ -4,6 +4,7 @@ const legacyResourceCtx: ResourceCtx = {
   dashboardBackend: {} as never,
   data: {} as never,
   metrics: {} as never,
+  notifications: {} as never,
   platform: {} as never,
   repositories: {} as never,
 }

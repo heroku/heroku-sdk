@@ -45,6 +45,7 @@ export function buildCtx(stubs: {
     dashboardBackend: {} as never,
     data: {} as never,
     metrics: {} as never,
+    notifications: {} as never,
     platform: platform as never,
     repositories: {} as never,
   }
