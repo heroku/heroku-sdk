@@ -13,6 +13,9 @@ export type ResolveRepoNameOptions = {
 /**
  * Resolves the GitHub repository name for a canonical pipeline ID.
  * Resolve user-supplied pipeline names before calling this helper.
+ * Uses Repositories API when the account feature is enabled, and falls back
+ * to the Kolkrabbi-backed repositories service when the feature is disabled,
+ * the feature lookup fails, or Repositories API cannot return a usable name.
  */
 export async function resolveRepoName(
   ctx: ResolveRepoNameCtx,

@@ -49,7 +49,10 @@ You can also pass options directly:
 const sdk = new HerokuSDK({ clientOptions: { token: 'your-api-token' } })
 ```
 
-Common client options apply to every service. Use shallow per-service overrides when services need different hosts or other client settings:
+Common client options apply to every service. In particular, a common `baseUrl`
+overrides every service's default host, including Metrics and Repositories. Use
+shallow per-service overrides when only specific services should use a host or
+other client setting:
 
 ```ts
 const sdk = new HerokuSDK({

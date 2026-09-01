@@ -392,6 +392,25 @@ describe('HerokuSDK', () => {
     }))
   })
 
+  it('applies a common base URL to every service for backward compatibility', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({clientOptions: {baseUrl: 'https://common.example.test'}})
+
+    const clients = [
+      sdk.dashboardBackend,
+      sdk.data,
+      sdk.metrics,
+      sdk.platform,
+      sdk.repositories,
+      sdk.repositoriesApi,
+    ]
+    expect(clients).toHaveLength(6)
+    expect(clientConstructorSpy.mock.calls).toHaveLength(6)
+    for (const [options] of clientConstructorSpy.mock.calls) {
+      expect(options).toEqual(expect.objectContaining({baseUrl: 'https://common.example.test'}))
+    }
+  })
+
   it('applies each per-service option only to its matching client', async () => {
     const {HerokuSDK} = await import('./heroku-sdk.js')
     const sdk = new HerokuSDK({
