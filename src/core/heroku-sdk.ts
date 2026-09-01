@@ -131,9 +131,12 @@ export class HerokuSDK<
   }
 
   #getClientOptions(service: ServiceName): HerokuApiClientOptions {
+    const serviceOverride = this.#clientOptionsByService[service] as HerokuApiClientOptions | undefined
+    const serviceOptions = {...serviceOverride}
+    delete serviceOptions.service
     return {
       ...this.#clientOptions,
-      ...this.#clientOptionsByService[service],
+      ...serviceOptions,
     }
   }
 

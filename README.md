@@ -28,6 +28,21 @@ const favorites = await sdk.dashboardBackend.favorite.list({ type: 'app' })
 await sdk.platform.app.enableMaintenance('my-app')
 ```
 
+Extensions can also coordinate multiple services. For example, resolve a
+pipeline first, then resolve its GitHub repository through Repositories API
+with the Kolkrabbi-backed repositories service as a fallback:
+
+```ts
+import { HerokuSDK } from '@heroku/sdk'
+import { reviewAppConfigExtensions } from '@heroku/sdk/extensions/platform'
+
+const sdk = new HerokuSDK({ extensions: [reviewAppConfigExtensions] })
+const pipeline = await sdk.platform.pipeline.info('my-pipeline')
+
+if (!pipeline.id) throw new Error('Pipeline response did not include an id')
+const repo = await sdk.platform.reviewAppConfig.resolveRepoName(pipeline.id)
+```
+
 You can also pass options directly:
 
 ```ts

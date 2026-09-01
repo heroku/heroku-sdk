@@ -7,9 +7,13 @@ import {
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {HerokuSDK} from '../../../core/heroku-sdk.js'
+import {debug} from './debug.js'
 import {resolveRepoName, reviewAppConfigExtensions} from './index.js'
 
+vi.mock('./debug.js', () => ({debug: vi.fn()}))
+
 afterEach(() => {
+  vi.mocked(debug).mockClear()
   vi.unstubAllGlobals()
 })
 
@@ -73,6 +77,7 @@ describe('resolveRepoName', () => {
     await expect(resolveRepoName(ctx, 'pipeline-id')).resolves.toBe('owner/repo')
     expect(repositoriesApi.githubRepository.info).not.toHaveBeenCalled()
     expect(repositories.pipelineRepository.info).toHaveBeenCalledExactlyOnceWith('pipeline-id')
+    expect(debug).toHaveBeenCalledWith('repositories API disabled; falling back')
   })
 
   it.each([
@@ -91,6 +96,29 @@ describe('resolveRepoName', () => {
 
     await expect(resolveRepoName(ctx, 'pipeline-id')).resolves.toBe('owner/repo')
     expect(repositories.pipelineRepository.info).toHaveBeenCalledExactlyOnceWith('pipeline-id')
+    expect(vi.mocked(debug).mock.calls[0]?.[0]).toContain('falling back')
+    expect(vi.mocked(debug).mock.calls.flat()).not.toContain('pipeline-id')
+  })
+
+  it('normalizes repository names from either service', async () => {
+    const primary = buildCtx()
+    primary.platform.accountFeature.info.mockResolvedValue({enabled: true})
+    primary.repositoriesApi.githubRepository.info.mockResolvedValue({full_name: ' owner/repo '})
+    await expect(resolveRepoName(primary.ctx, 'pipeline-id')).resolves.toBe('owner/repo')
+
+    const fallback = buildCtx()
+    fallback.platform.accountFeature.info.mockResolvedValue({enabled: false})
+    fallback.repositories.pipelineRepository.info.mockResolvedValue({repository: {name: ' owner/repo '}})
+    await expect(resolveRepoName(fallback.ctx, 'pipeline-id')).resolves.toBe('owner/repo')
+  })
+
+  it('rejects an unusable fallback repository name', async () => {
+    const {ctx, platform, repositories} = buildCtx()
+    platform.accountFeature.info.mockResolvedValue({enabled: false})
+    repositories.pipelineRepository.info.mockResolvedValue({repository: {name: '  '}})
+
+    await expect(resolveRepoName(ctx, 'pipeline-id')).rejects
+      .toThrow('Repositories service returned no repository name')
   })
 
   it('propagates a fallback failure', async () => {
@@ -207,6 +235,15 @@ describe('reviewAppConfigExtensions', () => {
     expect(reviewAppConfigExtensions.service).toBe('platform')
     expect(reviewAppConfigExtensions.resource).toBe('reviewAppConfig')
     expect(typeof reviewAppConfigExtensions.factory(buildCtx().ctx as ResourceCtx).resolveRepoName).toBe('function')
+  })
+
+  it('rejects a direct extension context without the repositories API client', () => {
+    const {ctx} = buildCtx()
+    const legacyCtx = {...ctx}
+    delete legacyCtx.repositoriesApi
+
+    expect(() => reviewAppConfigExtensions.factory(legacyCtx as ResourceCtx))
+      .toThrow('reviewAppConfigExtensions requires ResourceCtx.repositoriesApi')
   })
 
   it('is wired onto the SDK without replacing generated CRUD methods', () => {

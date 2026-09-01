@@ -8,10 +8,12 @@ const dashboardBackendConstructorSpy = vi.fn()
 const metricsConstructorSpy = vi.fn()
 const repositoriesConstructorSpy = vi.fn()
 const repositoriesApiConstructorSpy = vi.fn()
+const clientConstructorSpy = vi.fn()
 
 vi.mock('@heroku/heroku-fetch', () => ({
   HerokuApiClient: class {
     constructor(options: unknown) {
+      clientConstructorSpy(options)
       // The same constructor is used for every service; spies are
       // distinguished by the service field and custom-service base URL.
       const {baseUrl, service} = (options as {baseUrl?: string; service?: string})
@@ -92,6 +94,7 @@ describe('HerokuSDK', () => {
     metricsConstructorSpy.mockClear()
     repositoriesConstructorSpy.mockClear()
     repositoriesApiConstructorSpy.mockClear()
+    clientConstructorSpy.mockClear()
     vi.resetModules()
   })
 
@@ -418,5 +421,38 @@ describe('HerokuSDK', () => {
     expect(platformConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 4}))
     expect(repositoriesConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 5}))
     expect(repositoriesApiConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 6}))
+  })
+
+  it('prevents keyed options from changing each service transport', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({
+      clientOptionsByService: {
+        dashboardBackend: {service: 'illegal'},
+        data: {service: undefined},
+        metrics: {service: 'illegal'},
+        platform: {service: undefined},
+        repositories: {service: 'illegal'},
+        repositoriesApi: {service: undefined},
+      } as never,
+    })
+
+    const clients = [
+      sdk.dashboardBackend,
+      sdk.data,
+      sdk.metrics,
+      sdk.platform,
+      sdk.repositories,
+      sdk.repositoriesApi,
+    ]
+    expect(clients).toHaveLength(6)
+
+    expect(clientConstructorSpy.mock.calls).toEqual([
+      [expect.objectContaining({service: 'particleboard'})],
+      [expect.objectContaining({service: 'data'})],
+      [expect.objectContaining({service: 'custom'})],
+      [expect.objectContaining({service: 'platform'})],
+      [expect.objectContaining({service: 'custom'})],
+      [expect.objectContaining({service: 'platform'})],
+    ])
   })
 })
