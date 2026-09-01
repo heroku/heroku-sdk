@@ -28,10 +28,40 @@ const favorites = await sdk.dashboardBackend.favorite.list({ type: 'app' })
 await sdk.platform.app.enableMaintenance('my-app')
 ```
 
+Extensions can also coordinate multiple services. For example, resolve a
+pipeline first, then resolve its GitHub repository through Repositories API
+with the Kolkrabbi-backed repositories service as a fallback:
+
+```ts
+import { HerokuSDK } from '@heroku/sdk'
+import { reviewAppConfigExtensions } from '@heroku/sdk/extensions/platform'
+
+const sdk = new HerokuSDK({ extensions: [reviewAppConfigExtensions] })
+const pipeline = await sdk.platform.pipeline.info('my-pipeline')
+
+if (!pipeline.id) throw new Error('Pipeline response did not include an id')
+const repo = await sdk.platform.reviewAppConfig.resolveRepoName(pipeline.id)
+```
+
 You can also pass options directly:
 
 ```ts
 const sdk = new HerokuSDK({ clientOptions: { token: 'your-api-token' } })
+```
+
+Common client options apply to every service. In particular, a common `baseUrl`
+overrides every service's default host, including Metrics and Repositories. Use
+shallow per-service overrides when only specific services should use a host or
+other client setting:
+
+```ts
+const sdk = new HerokuSDK({
+  clientOptions: { token: 'your-api-token' },
+  clientOptionsByService: {
+    platform: { baseUrl: 'https://api.heroku.com' },
+    repositoriesApi: { baseUrl: 'https://api.heroku.com' },
+  },
+})
 ```
 
 ### Per-service clients
@@ -44,12 +74,14 @@ import { createDataClient }         from '@heroku/sdk/data'
 import { createDashboardBackendClient } from '@heroku/sdk/dashboard-backend'
 import { createMetricsClient }      from '@heroku/sdk/metrics'
 import { createRepositoriesClient } from '@heroku/sdk/repositories'
+import { createRepositoriesApiClient } from '@heroku/sdk/repositories-api'
 
 const platform     = createPlatformClient()
 const data         = createDataClient()
 const dashboardBackend = createDashboardBackendClient()
 const metrics      = createMetricsClient()
 const repositories = createRepositoriesClient()
+const repositoriesApi = createRepositoriesApiClient()
 
 const apps = await platform.app.list()
 const favorites = await dashboardBackend.favorite.list({ type: 'app' })
@@ -65,6 +97,7 @@ const favorites = await dashboardBackend.favorite.list({ type: 'app' })
 | `createDashboardBackendClient`, `DashboardBackendClient` | `@heroku/sdk/dashboard-backend` |
 | `createMetricsClient`, `MetricsClient`   | `@heroku/sdk/metrics`             |
 | `createRepositoriesClient`, `RepositoriesClient` | `@heroku/sdk/repositories` |
+| `createRepositoriesApiClient`, `RepositoriesApiClient` | `@heroku/sdk/repositories-api` |
 | `appExtensions`, `dynoExtensions`, …     | `@heroku/sdk/extensions/platform` |
 | `databaseExtensions`, …                  | `@heroku/sdk/extensions/data`     |
 

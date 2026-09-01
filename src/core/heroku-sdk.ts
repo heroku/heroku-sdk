@@ -4,6 +4,7 @@ import type {DashboardBackendClient} from '../services/dashboard-backend.js'
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
 import type {PlatformClient} from '../services/platform.js'
+import type {RepositoriesApiClient} from '../services/repositories-api.js'
 import type {RepositoriesClient} from '../services/repositories.js'
 import type {
   ApplyExtensions,
@@ -17,11 +18,18 @@ import {createDashboardBackendClient} from '../services/dashboard-backend.js'
 import {createDataClient} from '../services/data.js'
 import {createMetricsClient} from '../services/metrics.js'
 import {createPlatformClient} from '../services/platform.js'
+import {createRepositoriesApiClient} from '../services/repositories-api.js'
 import {createRepositoriesClient} from '../services/repositories.js'
 import {mergeExtensions} from './extensions-proxy.js'
 
+type ServiceClientOptions = Omit<HerokuApiClientOptions, 'service'> & {
+  service?: never
+}
+
 export type HerokuSDKOptions<Exts extends readonly ResourceExtension[]> = {
   clientOptions?: HerokuApiClientOptions
+  /** Shallow per-service overrides applied after common clientOptions. */
+  clientOptionsByService?: Partial<Record<ServiceName, ServiceClientOptions>>
   extensions?: Exts
 }
 
@@ -40,6 +48,7 @@ export class HerokuSDK<
   const Exts extends readonly ResourceExtension[] = readonly ResourceExtension[],
 > {
   readonly #clientOptions: HerokuApiClientOptions
+  readonly #clientOptionsByService: Partial<Record<ServiceName, ServiceClientOptions>>
   #ctx: ResourceCtx | undefined
   #dashboardBackend: unknown
   #data: unknown
@@ -51,10 +60,13 @@ export class HerokuSDK<
   #rawMetrics: MetricsClient | undefined
   #rawPlatform: PlatformClient | undefined
   #rawRepositories: RepositoriesClient | undefined
+  #rawRepositoriesApi: RepositoriesApiClient | undefined
   #repositories: unknown
+  #repositoriesApi: unknown
 
   constructor(options: HerokuSDKOptions<Exts> = {}) {
     this.#clientOptions = options.clientOptions ?? {}
+    this.#clientOptionsByService = options.clientOptionsByService ?? {}
     this.#extensionsByService = partitionByService(options.extensions ?? [])
   }
 
@@ -108,6 +120,26 @@ export class HerokuSDK<
     return this.#repositories as ApplyExtensions<RepositoriesClient, ExtensionsFor<Exts, 'repositories'>>
   }
 
+  get repositoriesApi(): ApplyExtensions<RepositoriesApiClient, ExtensionsFor<Exts, 'repositoriesApi'>> {
+    this.#repositoriesApi ??= mergeExtensions(
+      this.#getRawRepositoriesApi(),
+      this.#extensionsByService.get('repositoriesApi') ?? [],
+      this.#getCtx(),
+    )
+
+    return this.#repositoriesApi as ApplyExtensions<RepositoriesApiClient, ExtensionsFor<Exts, 'repositoriesApi'>>
+  }
+
+  #getClientOptions(service: ServiceName): HerokuApiClientOptions {
+    const serviceOverride = this.#clientOptionsByService[service] as HerokuApiClientOptions | undefined
+    const serviceOptions = {...serviceOverride}
+    delete serviceOptions.service
+    return {
+      ...this.#clientOptions,
+      ...serviceOptions,
+    }
+  }
+
   #getCtx(): ResourceCtx {
     this.#ctx ??= Object.defineProperties({} as ResourceCtx, {
       dashboardBackend: {
@@ -130,33 +162,42 @@ export class HerokuSDK<
         enumerable: true,
         get: () => this.#getRawRepositories(),
       },
+      repositoriesApi: {
+        enumerable: true,
+        get: () => this.#getRawRepositoriesApi(),
+      },
     })
 
     return this.#ctx
   }
 
   #getRawDashboardBackend(): DashboardBackendClient {
-    this.#rawDashboardBackend ??= createDashboardBackendClient(this.#clientOptions)
+    this.#rawDashboardBackend ??= createDashboardBackendClient(this.#getClientOptions('dashboardBackend'))
     return this.#rawDashboardBackend
   }
 
   #getRawData(): DataClient {
-    this.#rawData ??= createDataClient(this.#clientOptions)
+    this.#rawData ??= createDataClient(this.#getClientOptions('data'))
     return this.#rawData
   }
 
   #getRawMetrics(): MetricsClient {
-    this.#rawMetrics ??= createMetricsClient(this.#clientOptions)
+    this.#rawMetrics ??= createMetricsClient(this.#getClientOptions('metrics'))
     return this.#rawMetrics
   }
 
   #getRawPlatform(): PlatformClient {
-    this.#rawPlatform ??= createPlatformClient(this.#clientOptions)
+    this.#rawPlatform ??= createPlatformClient(this.#getClientOptions('platform'))
     return this.#rawPlatform
   }
 
   #getRawRepositories(): RepositoriesClient {
-    this.#rawRepositories ??= createRepositoriesClient(this.#clientOptions)
+    this.#rawRepositories ??= createRepositoriesClient(this.#getClientOptions('repositories'))
     return this.#rawRepositories
+  }
+
+  #getRawRepositoriesApi(): RepositoriesApiClient {
+    this.#rawRepositoriesApi ??= createRepositoriesApiClient(this.#getClientOptions('repositoriesApi'))
+    return this.#rawRepositoriesApi
   }
 }

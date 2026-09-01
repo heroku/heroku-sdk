@@ -35,6 +35,7 @@ export {
 export {pipelineCouplingExtensions} from '../platform/pipeline/coupling.js'
 export {pipelineExtensions} from '../platform/pipeline/index.js'
 export {pipelinePromotionExtensions} from '../platform/pipeline/promotion.js'
+export {type ResolveRepoNameOptions, reviewAppConfigExtensions} from '../platform/review-app-config/index.js'
 export {privateToShield, shieldToPrivate} from '../platform/shield.js'
 export {createAndAssociate, type CreateAndAssociateOptions, sniEndpointExtensions} from '../platform/sni-endpoint/index.js'
 export {
