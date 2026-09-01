@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.6.1...sdk-v0.6.2) (2026-09-01)
+
+
+### Features
+
+* add notifications service ([#118](https://github.com/heroku/heroku-sdk/issues/118)) ([8784f53](https://github.com/heroku/heroku-sdk/commit/8784f53cbd4693d4e00cde16c0a4a5abdf99a244))
+
 ## [0.6.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.6.0...sdk-v0.6.1) (2026-09-01)
 
 
