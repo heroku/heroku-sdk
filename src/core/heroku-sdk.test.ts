@@ -6,6 +6,7 @@ const platformConstructorSpy = vi.fn()
 const dataConstructorSpy = vi.fn()
 const dashboardBackendConstructorSpy = vi.fn()
 const metricsConstructorSpy = vi.fn()
+const notificationsConstructorSpy = vi.fn()
 const repositoriesConstructorSpy = vi.fn()
 const repositoriesApiConstructorSpy = vi.fn()
 const clientConstructorSpy = vi.fn()
@@ -41,6 +42,7 @@ vi.mock('@heroku/heroku-fetch', () => ({
         default: {
           if (service === 'custom' && baseUrl?.includes('metrics')) metricsConstructorSpy(options)
           if (service === 'custom' && baseUrl?.includes('kolkrabbi')) repositoriesConstructorSpy(options)
+          if (service === 'custom' && baseUrl?.includes('telex')) notificationsConstructorSpy(options)
         }
       }
     }
@@ -86,12 +88,19 @@ vi.mock('@heroku/types/repositories-api/routes', () => ({
   },
 }))
 
+vi.mock('@heroku/types/notifications/routes', () => ({
+  notification: {
+    list: {method: 'GET', path: '/user/notifications'},
+  },
+}))
+
 describe('HerokuSDK', () => {
   afterEach(() => {
     platformConstructorSpy.mockClear()
     dataConstructorSpy.mockClear()
     dashboardBackendConstructorSpy.mockClear()
     metricsConstructorSpy.mockClear()
+    notificationsConstructorSpy.mockClear()
     repositoriesConstructorSpy.mockClear()
     repositoriesApiConstructorSpy.mockClear()
     clientConstructorSpy.mockClear()
@@ -300,6 +309,43 @@ describe('HerokuSDK', () => {
 
     expect(a).toBe(b)
     expect(metricsConstructorSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('constructs no notifications client eagerly', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+
+    const sdk = new HerokuSDK()
+    expect(sdk).toBeDefined()
+
+    expect(notificationsConstructorSpy).not.toHaveBeenCalled()
+  })
+
+  it('lazily constructs the notifications client on first access, passing clientOptions', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({clientOptions: {token: 'abc'}})
+
+    const _touch = sdk.notifications
+    expect(_touch).toBeDefined()
+
+    expect(notificationsConstructorSpy).toHaveBeenCalledTimes(1)
+    expect(notificationsConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: 'https://telex.heroku.com',
+      service: 'custom',
+      token: 'abc',
+    }))
+    expect(platformConstructorSpy).not.toHaveBeenCalled()
+    expect(dataConstructorSpy).not.toHaveBeenCalled()
+  })
+
+  it('memoizes the notifications service client across repeated access', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK()
+
+    const a = sdk.notifications
+    const b = sdk.notifications
+
+    expect(a).toBe(b)
+    expect(notificationsConstructorSpy).toHaveBeenCalledTimes(1)
   })
 
   it('constructs no repositories client eagerly', async () => {

@@ -34,6 +34,10 @@
       "types": "./dist/services/repositories-api.d.ts",
       "default": "./dist/services/repositories-api.js"
     },
+    "./notifications": {
+      "types": "./dist/services/notifications.d.ts",
+      "default": "./dist/services/notifications.js"
+    },
     "./extensions/platform": {
       "types": "./dist/resources/extensions/platform.d.ts",
       "default": "./dist/resources/extensions/platform.js"
@@ -141,7 +145,7 @@
   },
   "dependencies": {
     "@heroku/heroku-fetch": "^0.1.4",
-    "@heroku/types": "^4.7.0",
+    "@heroku/types": "^4.8.0",
     "debug": "^4.4.0"
   }
 }

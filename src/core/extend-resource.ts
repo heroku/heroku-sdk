@@ -1,16 +1,18 @@
 import type {DashboardBackendClient} from '../services/dashboard-backend.js'
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
+import type {NotificationsClient} from '../services/notifications.js'
 import type {PlatformClient} from '../services/platform.js'
 import type {RepositoriesApiClient} from '../services/repositories-api.js'
 import type {RepositoriesClient} from '../services/repositories.js'
 
-export type ServiceName = 'dashboardBackend' | 'data' | 'metrics' | 'platform' | 'repositories' | 'repositoriesApi'
+export type ServiceName = 'dashboardBackend' | 'data' | 'metrics' | 'notifications' | 'platform' | 'repositories' | 'repositoriesApi'
 
 type BaseResourceCtx = {
   dashboardBackend: DashboardBackendClient
   data: DataClient
   metrics: MetricsClient
+  notifications: NotificationsClient
   platform: PlatformClient
   repositories: RepositoriesClient
 }
