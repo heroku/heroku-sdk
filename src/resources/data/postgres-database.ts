@@ -7,6 +7,9 @@ export type ListCredentialsOptions = {
   signal?: AbortSignal
 }
 
+// The OpenAPI spec declares no fixed response schema for listCredentials
+// (@heroku/types' PostgresDatabaseListCredentialsResult is `Record<string, unknown>`),
+// so we use a custom type here.
 export type CredentialInfo = {
   credentials: Array<{
     connections?: null | number
@@ -22,33 +25,21 @@ export type CredentialInfo = {
   uuid: string
 }
 
-type CredentialsDataClient = {
-  postgresDatabase: {
-    listCredentials(name: string): Promise<CredentialInfo[]>
-  }
-}
-
-type CredentialsCtx = {data: CredentialsDataClient; platform: ResourceCtx['platform']}
-
 export async function listCredentials(
-  ctx: CredentialsCtx,
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
   addonIdentity?: string,
   options: ListCredentialsOptions = {},
 ): Promise<CredentialInfo[]> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
-  return ctx.data.postgresDatabase.listCredentials(addon.id)
+  return ctx.data.postgresDatabase.listCredentials(addon.id) as unknown as Promise<CredentialInfo[]>
 }
 
-export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', rawCtx => {
-  // Bridge heroku-types' loose client types to the adapter's strongly-typed contract
-  const ctx = rawCtx as unknown as CredentialsCtx
-  return {
-    listCredentials: (
-      appIdentity: string,
-      addonIdentity?: string,
-      options?: ListCredentialsOptions,
-    ) => listCredentials(ctx, appIdentity, addonIdentity, options),
-  }
-})
+export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', ctx => ({
+  listCredentials: (
+    appIdentity: string,
+    addonIdentity?: string,
+    options?: ListCredentialsOptions,
+  ) => listCredentials(ctx, appIdentity, addonIdentity, options),
+}))
