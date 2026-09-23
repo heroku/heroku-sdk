@@ -4,13 +4,21 @@ import type {StickyRouteOptions} from '../../../core/create-client.js'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {type ListExtendedOptions, listExtended} from './list-extended.js'
 import {runDyno, type RunDynoOptions} from './run.js'
 import {waitForInfo, type WaitForInfoOptions} from './wait-for-info.js'
+import {type WaitForReleaseOptions, waitForRelease} from './wait-for-release.js'
 
+export {
+  type DynoExtended, type DynoExtendedFields, type ListExtendedOptions, listExtended,
+} from './list-extended.js'
 export {runDyno, type RunDynoOptions} from './run.js'
 export {
   DynoNotReadyError, type DynoState, waitForInfo, type WaitForInfoOptions,
 } from './wait-for-info.js'
+export {
+  type WaitForReleaseOptions, type WaitForReleaseProgress, waitForRelease, type WaitForReleaseResult,
+} from './wait-for-release.js'
 
 export type DynoOptions = {
   signal?: AbortSignal
@@ -92,6 +100,10 @@ export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
     restartDynos(ctx, appIdentity, target, options)
   ),
 
+  listExtended: (appIdentity: string, options?: ListExtendedOptions) => (
+    listExtended(appIdentity, options)
+  ),
+
   run: (appIdentity: string, command: string, options?: RunDynoOptions) => (
     runDyno(ctx, appIdentity, command, options)
   ),
@@ -104,5 +116,9 @@ export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
 
   waitForInfo: (appIdentity: string, dynoIdentity: string, options?: WaitForInfoOptions) => (
     waitForInfo(ctx, appIdentity, dynoIdentity, options)
+  ),
+
+  waitForRelease: (appIdentity: string, options?: WaitForReleaseOptions) => (
+    waitForRelease(ctx, appIdentity, options)
   ),
 }))

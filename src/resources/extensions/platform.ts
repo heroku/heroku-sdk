@@ -16,8 +16,21 @@ export {
   type WaitForReadyOptions,
 } from '../platform/domain/index.js'
 export {
+  type DynoExtended,
+  type DynoExtendedFields,
   dynoExtensions,
-  DynoNotReadyError, type DynoState, runDyno, type RunDynoOptions, waitForInfo, type WaitForInfoOptions,
+  DynoNotReadyError,
+  type DynoState,
+  type ListExtendedOptions,
+  listExtended,
+  runDyno,
+  type RunDynoOptions,
+  waitForInfo,
+  type WaitForInfoOptions,
+  type WaitForReleaseOptions,
+  type WaitForReleaseProgress,
+  waitForRelease,
+  type WaitForReleaseResult,
 } from '../platform/dyno/index.js'
 export {
   type AttachmentAttachedEvent,
