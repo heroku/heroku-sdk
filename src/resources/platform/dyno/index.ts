@@ -6,44 +6,44 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import {extendResource} from '../../../core/extend-resource.js'
 import {
   enableExec,
-  type ExchangeExecCredentialsOptions,
   exchangeExecCredentials,
+  type ExchangeExecCredentialsOptions,
   type ExecOptions,
   execPrereqs,
   execStatus,
   type ExecStatusOptions,
-  type RestartForExecOptions,
   restartForExec,
+  type RestartForExecOptions,
 } from './exec.js'
-import {type ListExtendedOptions, listExtended} from './list-extended.js'
+import {listExtended, type ListExtendedOptions} from './list-extended.js'
 import {runDyno, type RunDynoOptions} from './run.js'
 import {waitForInfo, type WaitForInfoOptions} from './wait-for-info.js'
-import {type WaitForReleaseOptions, waitForRelease} from './wait-for-release.js'
+import {waitForRelease, type WaitForReleaseOptions} from './wait-for-release.js'
 
 export {
   DynoCrashedError,
   enableExec,
-  type ExchangeExecCredentialsOptions,
   exchangeExecCredentials,
+  type ExchangeExecCredentialsOptions,
   type ExecCredentials,
   type ExecOptions,
   type ExecPrereqs,
+  execPrereqs,
   type ExecReservation,
   execStatus,
   type ExecStatusOptions,
-  execPrereqs,
-  type RestartForExecOptions,
   restartForExec,
+  type RestartForExecOptions,
 } from './exec.js'
 export {
-  type DynoExtended, type DynoExtendedFields, type ListExtendedOptions, listExtended,
+  type DynoExtended, type DynoExtendedFields, listExtended, type ListExtendedOptions,
 } from './list-extended.js'
 export {runDyno, type RunDynoOptions} from './run.js'
 export {
   DynoNotReadyError, type DynoState, waitForInfo, type WaitForInfoOptions,
 } from './wait-for-info.js'
 export {
-  type WaitForReleaseOptions, type WaitForReleaseProgress, waitForRelease, type WaitForReleaseResult,
+  waitForRelease, type WaitForReleaseOptions, type WaitForReleaseProgress, type WaitForReleaseResult,
 } from './wait-for-release.js'
 
 export type DynoOptions = {
@@ -122,10 +122,6 @@ export async function restartDynos(
 }
 
 export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
-  restart: (appIdentity: string, target?: RestartDynosTarget, options?: DynoOptions) => (
-    restartDynos(ctx, appIdentity, target, options)
-  ),
-
   enableExec: (appIdentity: string, options?: ExecOptions) => (
     enableExec(ctx, appIdentity, options)
   ),
@@ -144,6 +140,10 @@ export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
 
   listExtended: (appIdentity: string, options?: ListExtendedOptions) => (
     listExtended(appIdentity, options)
+  ),
+
+  restart: (appIdentity: string, target?: RestartDynosTarget, options?: DynoOptions) => (
+    restartDynos(ctx, appIdentity, target, options)
   ),
 
   restartForExec: (appIdentity: string, dynoIdentity: string, options?: RestartForExecOptions) => (

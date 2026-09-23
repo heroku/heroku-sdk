@@ -63,7 +63,7 @@ export async function waitForRelease(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   options: WaitForReleaseOptions = {},
-): Promise<WaitForReleaseResult | undefined> {
+): Promise<undefined | WaitForReleaseResult> {
   const {
     delayMs = DEFAULT_DELAY_MS, onPoll, signal, type, withRun,
   } = options

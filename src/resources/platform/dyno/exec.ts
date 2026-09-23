@@ -36,10 +36,10 @@ export type ExecOptions = {
  * caller so the SDK owns no presentation or prompting.
  */
 export type ExecPrereqs = {
-  /** `build_stack.name`, e.g. `'container'`. */
-  buildStack: string | undefined
   /** Installed buildpacks, for the exec-buildpack presence check. */
   buildpacks: BuildpackInstallation[]
+  /** `build_stack.name`, e.g. `'container'`. */
+  buildStack: string | undefined
   /** Full config-var map; the caller reads `HEROKU_EXEC_URL` off it. */
   configVars: ConfigVar
   /** Whether the `runtime-heroku-exec` feature is already enabled. */
@@ -74,8 +74,8 @@ export async function execPrereqs(
   ])
 
   return {
-    buildStack: app.build_stack?.name,
     buildpacks,
+    buildStack: app.build_stack?.name,
     configVars,
     featureEnabled: Boolean(feature.enabled),
     generation: app.generation,
@@ -148,7 +148,7 @@ export async function restartForExec(
 
   return waitForInfo(ctx, appIdentity, dynoIdentity, {
     ...waitOptions,
-    onPoll: dyno => {
+    onPoll(dyno) {
       if (dyno.state === 'crashed') {
         throw new DynoCrashedError(dyno)
       }
@@ -225,8 +225,8 @@ export async function exchangeExecCredentials(
 
 /** A running exec reservation, as reported by the exec-manager status endpoint. */
 export type ExecReservation = {
-  dyno_name: string
   [key: string]: unknown
+  dyno_name: string
 }
 
 export type ExecStatusOptions = {
@@ -304,7 +304,9 @@ function newExecClient(
   baseUrl: string,
   clientOptions: Omit<HerokuApiClientOptions, 'baseUrl' | 'service' | 'token'> | undefined,
 ): HerokuApiClient {
-  return new HerokuApiClient({...clientOptions, baseUrl, service: 'custom', token: ''})
+  return new HerokuApiClient({
+    ...clientOptions, baseUrl, service: 'custom', token: '',
+  })
 }
 
 function toBasicAuth(username: string, password: string): string {

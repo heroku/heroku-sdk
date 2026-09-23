@@ -1,3 +1,4 @@
+/* eslint-disable camelcase -- exec-manager wire fields follow the platform's snake_case format */
 import type {Dyno} from '@heroku/types/3.sdk'
 
 import {HerokuApiClient} from '@heroku/heroku-fetch'
@@ -72,8 +73,8 @@ describe('execPrereqs', () => {
 
     expect(featureInfo).toHaveBeenCalledWith('app-1', 'runtime-heroku-exec')
     expect(facts).toEqual({
-      buildStack: 'heroku-24',
       buildpacks: [{buildpack: {url: 'urn:buildpack:heroku/exec'}, ordinal: 0}],
+      buildStack: 'heroku-24',
       configVars: {FOO: 'bar'},
       featureEnabled: true,
       generation: 'cedar',
@@ -157,7 +158,7 @@ describe('restartForExec', () => {
   })
 
   it('restarts all dynos then resolves once the target dyno is up', async () => {
-    const restartAll = vi.fn().mockResolvedValue(undefined)
+    const restartAll = vi.fn().mockResolvedValue()
     const info = vi.fn()
       .mockResolvedValueOnce({name: 'web.1', state: 'starting'} as Dyno)
       .mockResolvedValueOnce({name: 'web.1', state: 'up'} as Dyno)
@@ -171,7 +172,7 @@ describe('restartForExec', () => {
   })
 
   it('throws DynoCrashedError immediately when the dyno crashes', async () => {
-    const restartAll = vi.fn().mockResolvedValue(undefined)
+    const restartAll = vi.fn().mockResolvedValue()
     const info = vi.fn().mockResolvedValue({name: 'web.1', state: 'crashed'} as Dyno)
     const {ctx} = ctxWith({dyno: {info, restartAll}})
 

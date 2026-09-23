@@ -12,14 +12,14 @@ const ACCEPT_EXTENDED = 'application/vnd.heroku+json; version=3.sdk'
  * cannot resolve for a given dyno (e.g. a `run` dyno has no `route`).
  */
 export type DynoExtendedFields = {
-  az: string | null
-  execution_plane: string | null
-  fleet: string | null
-  instance: string | null
-  ip: string | null
-  port: number | null
-  region: string | null
-  route: string | null
+  az: null | string
+  execution_plane: null | string
+  fleet: null | string
+  instance: null | string
+  ip: null | string
+  port: null | number
+  region: null | string
+  route: null | string
 }
 
 /**
