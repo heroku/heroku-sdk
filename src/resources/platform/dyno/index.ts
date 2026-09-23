@@ -4,11 +4,37 @@ import type {StickyRouteOptions} from '../../../core/create-client.js'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {
+  enableExec,
+  type ExchangeExecCredentialsOptions,
+  exchangeExecCredentials,
+  type ExecOptions,
+  execPrereqs,
+  execStatus,
+  type ExecStatusOptions,
+  type RestartForExecOptions,
+  restartForExec,
+} from './exec.js'
 import {type ListExtendedOptions, listExtended} from './list-extended.js'
 import {runDyno, type RunDynoOptions} from './run.js'
 import {waitForInfo, type WaitForInfoOptions} from './wait-for-info.js'
 import {type WaitForReleaseOptions, waitForRelease} from './wait-for-release.js'
 
+export {
+  DynoCrashedError,
+  enableExec,
+  type ExchangeExecCredentialsOptions,
+  exchangeExecCredentials,
+  type ExecCredentials,
+  type ExecOptions,
+  type ExecPrereqs,
+  type ExecReservation,
+  execStatus,
+  type ExecStatusOptions,
+  execPrereqs,
+  type RestartForExecOptions,
+  restartForExec,
+} from './exec.js'
 export {
   type DynoExtended, type DynoExtendedFields, type ListExtendedOptions, listExtended,
 } from './list-extended.js'
@@ -100,8 +126,28 @@ export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
     restartDynos(ctx, appIdentity, target, options)
   ),
 
+  enableExec: (appIdentity: string, options?: ExecOptions) => (
+    enableExec(ctx, appIdentity, options)
+  ),
+
+  exchangeExecCredentials: (appIdentity: string, options: ExchangeExecCredentialsOptions) => (
+    exchangeExecCredentials(appIdentity, options)
+  ),
+
+  execPrereqs: (appIdentity: string, options?: ExecOptions) => (
+    execPrereqs(ctx, appIdentity, options)
+  ),
+
+  execStatus: (appIdentity: string, options: ExecStatusOptions) => (
+    execStatus(appIdentity, options)
+  ),
+
   listExtended: (appIdentity: string, options?: ListExtendedOptions) => (
     listExtended(appIdentity, options)
+  ),
+
+  restartForExec: (appIdentity: string, dynoIdentity: string, options?: RestartForExecOptions) => (
+    restartForExec(ctx, appIdentity, dynoIdentity, options)
   ),
 
   run: (appIdentity: string, command: string, options?: RunDynoOptions) => (
