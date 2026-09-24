@@ -62,7 +62,7 @@ export class ReleaseNotConvergedError extends Error {
 
   constructor(
     public readonly attempts: number,
-    public readonly progress: WaitForReleaseProgress | undefined,
+    public readonly progress: undefined | WaitForReleaseProgress,
   ) {
     super(`Fleet did not converge on release version ${progress?.version ?? '?'} `
       + `within ${attempts} attempts`
@@ -115,9 +115,10 @@ export async function waitForRelease(
     return undefined
   }
 
-  let lastProgress: WaitForReleaseProgress | undefined
+  let lastProgress: undefined | WaitForReleaseProgress
+  let attempt = 0
 
-  for (let attempt = 0; attempts === undefined || attempt < attempts; attempt++) {
+  while (true) {
     const dynos = await platform.dyno.list(appIdentity) as Dyno[]
     const relevant = dynos
       .filter(dyno => dyno.type !== 'release')
@@ -140,12 +141,13 @@ export async function waitForRelease(
     lastProgress = {onLatest, total: relevant.length, version}
     onPoll?.(lastProgress)
 
-    // Skip the trailing wait on the final bounded attempt — we are about
-    // to throw, not poll again.
-    if (attempts === undefined || attempt < attempts - 1) {
-      await wait(delayMs, signal)
+    // Give up once the (opt-in) attempts cap is reached, before the next
+    // wait — an unbounded wait only exits on convergence or an aborted signal.
+    attempt++
+    if (attempts !== undefined && attempt >= attempts) {
+      throw new ReleaseNotConvergedError(attempts, lastProgress)
     }
-  }
 
-  throw new ReleaseNotConvergedError(attempts as number, lastProgress)
+    await wait(delayMs, signal)
+  }
 }
