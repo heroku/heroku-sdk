@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4](https://github.com/heroku/heroku-sdk/compare/sdk-v0.6.3...sdk-v0.6.4) (2026-09-24)
+
+
+### Features
+
+* move ps-topic dyno orchestration into @heroku/sdk (W-23388930) ([#132](https://github.com/heroku/heroku-sdk/issues/132)) ([bffa976](https://github.com/heroku/heroku-sdk/commit/bffa97657ef83927f5164acd70395d4db6a7f876))
+
 ## [0.6.3](https://github.com/heroku/heroku-sdk/compare/sdk-v0.6.2...sdk-v0.6.3) (2026-09-17)
 
 
