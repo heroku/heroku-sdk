@@ -20,6 +20,14 @@ export type WaitForReleaseProgress = {
 }
 
 export type WaitForReleaseOptions = {
+  /**
+   * Maximum number of polls before giving up with
+   * {@link ReleaseNotConvergedError}. Omitted (the default) means
+   * unbounded — the wait runs until the fleet converges or the
+   * caller's {@link WaitForReleaseOptions.signal} aborts, matching a
+   * long-running `ps:wait`.
+   */
+  attempts?: number
   /** Delay between polls in milliseconds. Defaults to 10000. */
   delayMs?: number
   /**
@@ -44,12 +52,33 @@ export type WaitForReleaseResult = {
 }
 
 /**
+ * Thrown by {@link waitForRelease} when {@link WaitForReleaseOptions.attempts}
+ * was set and the fleet did not converge on the target release within
+ * that many polls. Carries the last observed progress so callers can
+ * report how far the fleet got.
+ */
+export class ReleaseNotConvergedError extends Error {
+  public readonly id = 'release_not_converged'
+
+  constructor(
+    public readonly attempts: number,
+    public readonly progress: WaitForReleaseProgress | undefined,
+  ) {
+    super(`Fleet did not converge on release version ${progress?.version ?? '?'} `
+      + `within ${attempts} attempts`
+      + (progress ? ` (last: ${progress.onLatest}/${progress.total} on latest).` : '.'))
+    this.name = 'ReleaseNotConvergedError'
+  }
+}
+
+/**
  * Poll an app's dynos until every relevant one is `up` and running a
  * release version at least the app's latest, then resolve with the
  * converged `{total, version}`.
  *
  * "Relevant" excludes `release` dynos always, and one-off `run` dynos
- * unless {@link WaitForReleaseOptions.withRun} is set; when
+ * unless {@link WaitForReleaseOptions.withRun} is set or
+ * {@link WaitForReleaseOptions.type} names `'run'`; when
  * {@link WaitForReleaseOptions.type} is given, only that process type
  * is considered.
  *
@@ -58,6 +87,11 @@ export type WaitForReleaseResult = {
  * order=desc`. If the app has no releases (or the latest has no
  * version), resolves `undefined` without polling — the caller should
  * report "no releases" rather than wait forever.
+ *
+ * Polling is unbounded by default (runs until convergence or an
+ * aborted {@link WaitForReleaseOptions.signal}); pass
+ * {@link WaitForReleaseOptions.attempts} to cap it, after which it
+ * throws {@link ReleaseNotConvergedError}.
  */
 export async function waitForRelease(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -65,7 +99,7 @@ export async function waitForRelease(
   options: WaitForReleaseOptions = {},
 ): Promise<undefined | WaitForReleaseResult> {
   const {
-    delayMs = DEFAULT_DELAY_MS, onPoll, signal, type, withRun,
+    attempts, delayMs = DEFAULT_DELAY_MS, onPoll, signal, type, withRun,
   } = options
 
   signal?.throwIfAborted()
@@ -81,11 +115,16 @@ export async function waitForRelease(
     return undefined
   }
 
-  while (true) {
+  let lastProgress: WaitForReleaseProgress | undefined
+
+  for (let attempt = 0; attempts === undefined || attempt < attempts; attempt++) {
     const dynos = await platform.dyno.list(appIdentity) as Dyno[]
     const relevant = dynos
       .filter(dyno => dyno.type !== 'release')
-      .filter(dyno => withRun || dyno.type !== 'run')
+      // Keep run dynos only when explicitly requested — via withRun, or a
+      // type filter that names 'run'. Ordering matters: this must not drop
+      // run dynos before the type filter below can select them.
+      .filter(dyno => withRun || type === 'run' || dyno.type !== 'run')
       .filter(dyno => !type || dyno.type === type)
 
     const onLatest = relevant.filter(dyno => (
@@ -98,8 +137,15 @@ export async function waitForRelease(
       return {total: relevant.length, version}
     }
 
-    onPoll?.({onLatest, total: relevant.length, version})
+    lastProgress = {onLatest, total: relevant.length, version}
+    onPoll?.(lastProgress)
 
-    await wait(delayMs, signal)
+    // Skip the trailing wait on the final bounded attempt — we are about
+    // to throw, not poll again.
+    if (attempts === undefined || attempt < attempts - 1) {
+      await wait(delayMs, signal)
+    }
   }
+
+  throw new ReleaseNotConvergedError(attempts as number, lastProgress)
 }

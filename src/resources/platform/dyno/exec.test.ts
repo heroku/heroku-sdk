@@ -1,7 +1,7 @@
 /* eslint-disable camelcase -- exec-manager wire fields follow the platform's snake_case format */
 import type {Dyno} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/heroku-fetch'
+import {HerokuApiClient, NotFoundError} from '@heroku/heroku-fetch'
 import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
@@ -97,6 +97,34 @@ describe('execPrereqs', () => {
     expect(facts.space).toBeNull()
   })
 
+  it('treats a fir app\'s missing exec feature as disabled instead of rejecting', async () => {
+    const featureInfo = vi.fn().mockRejectedValue(new NotFoundError(new Response(null, {status: 404})))
+    const {ctx} = ctxWith({
+      app: {info: vi.fn().mockResolvedValue({build_stack: {name: 'cnb'}, generation: 'fir', space: null})},
+      appFeature: {info: featureInfo},
+      buildpackInstallation: {list: vi.fn().mockResolvedValue([])},
+      configVar: {infoForApp: vi.fn().mockResolvedValue({})},
+    })
+
+    const facts = await execPrereqs(ctx, 'app-1')
+
+    // The gather still resolves so the caller can branch on generation to
+    // report that fir apps do not support exec.
+    expect(facts.generation).toBe('fir')
+    expect(facts.featureEnabled).toBe(false)
+  })
+
+  it('propagates a non-404 feature-lookup error', async () => {
+    const {ctx} = ctxWith({
+      app: {info: vi.fn().mockResolvedValue({build_stack: {}, generation: 'cedar', space: null})},
+      appFeature: {info: vi.fn().mockRejectedValue(new Error('boom'))},
+      buildpackInstallation: {list: vi.fn().mockResolvedValue([])},
+      configVar: {infoForApp: vi.fn().mockResolvedValue({})},
+    })
+
+    await expect(execPrereqs(ctx, 'app-1')).rejects.toThrow('boom')
+  })
+
   it('scopes the platform client to the caller signal', async () => {
     const {ctx, platform} = ctxWith({
       app: {info: vi.fn().mockResolvedValue({build_stack: {}, generation: 'cedar', space: null})},
@@ -182,6 +210,25 @@ describe('restartForExec', () => {
     expect(info).toHaveBeenCalledOnce()
   })
 
+  it('polls only the target dyno, so a sibling crash never aborts the wait', async () => {
+    const restartAll = vi.fn().mockResolvedValue()
+    // Crash detection is intentionally scoped to the target: restartForExec
+    // waits via waitForInfo on the named dyno only, so a different dyno
+    // crashing during the fleet restart is invisible and does not abort — exec
+    // only needs the target dyno up.
+    const info = vi.fn()
+      .mockResolvedValueOnce({name: 'web.1', state: 'starting'} as Dyno)
+      .mockResolvedValueOnce({name: 'web.1', state: 'up'} as Dyno)
+    const {ctx} = ctxWith({dyno: {info, restartAll}})
+
+    const result = await restartForExec(ctx, 'app-1', 'web.1', {delayMs: 0, settleMs: 0})
+
+    expect(result).toEqual({name: 'web.1', state: 'up'})
+    for (const call of info.mock.calls) {
+      expect(call).toEqual(['app-1', 'web.1'])
+    }
+  })
+
   it('throws immediately when the signal is already aborted', async () => {
     const restartAll = vi.fn()
     const {ctx} = ctxWith({dyno: {info: vi.fn(), restartAll}})
@@ -251,6 +298,24 @@ describe('exchangeExecCredentials', () => {
       '/api/v1/web.1',
       {client_key: 'ssh-rsa PUBKEY'},
       expect.objectContaining({headers: expect.objectContaining({Authorization: basic('user', 'pass')})}),
+    )
+  })
+
+  it('percent-decodes credentials embedded in HEROKU_EXEC_URL', async () => {
+    const put = vi.fn().mockResolvedValue(jsonResponse(creds))
+    mockClient({put})
+
+    await exchangeExecCredentials('app-1', {
+      apiKey: 'key-123',
+      configVars: {HEROKU_EXEC_URL: 'https://user%40corp:p%40ss@exec.example.com/'},
+      dyno: 'web.1',
+      publicKey: 'ssh-rsa PUBKEY',
+    })
+
+    expect(put).toHaveBeenCalledWith(
+      '/api/v1/web.1',
+      {client_key: 'ssh-rsa PUBKEY'},
+      expect.objectContaining({headers: expect.objectContaining({Authorization: basic('user@corp', 'p@ss')})}),
     )
   })
 

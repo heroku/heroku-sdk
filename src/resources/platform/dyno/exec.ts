@@ -4,7 +4,7 @@ import type {
   App, BuildpackInstallation, ConfigVar, Dyno,
 } from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/heroku-fetch'
+import {HerokuApiClient, NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
@@ -70,7 +70,14 @@ export async function execPrereqs(
     platform.app.info(appIdentity),
     platform.buildpackInstallation.list(appIdentity),
     platform.configVar.infoForApp(appIdentity),
-    platform.appFeature.info(appIdentity, EXEC_FEATURE),
+    // fir apps have no runtime-heroku-exec feature, so this 404s there. A
+    // missing feature must not sink the whole gather — the caller reads
+    // `generation` to reject fir. Only a 404 degrades to disabled; other
+    // errors still propagate.
+    platform.appFeature.info(appIdentity, EXEC_FEATURE).catch((error: unknown) => {
+      if (error instanceof NotFoundError) return {enabled: false}
+      throw error
+    }),
   ])
 
   return {
@@ -285,9 +292,11 @@ function resolveExecEndpoint(
   const configUrl = configVars?.HEROKU_EXEC_URL
   if (configUrl) {
     const url = new URL(configUrl)
+    // URL.username/password are percent-encoded; decode before Basic auth so
+    // credentials with reserved characters (e.g. `p%40ss`) authenticate.
     return {
       apiPath: EXEC_API_PATH_LEGACY,
-      authorization: toBasicAuth(url.username, url.password),
+      authorization: toBasicAuth(decodeURIComponent(url.username), decodeURIComponent(url.password)),
       baseUrl: `${url.protocol}//${url.host}`,
     }
   }
