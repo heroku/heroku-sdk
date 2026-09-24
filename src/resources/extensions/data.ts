@@ -7,4 +7,4 @@ export {restoreExtensions} from '../data/restore/index.js'
 export {type TransferSchedule, transferScheduleExtensions} from '../data/transfer-schedule.js'
 export {
   transferExtensions, TransferFailedError, TransferTimeoutError,
-} from '../data/transfer/index.js'
+} from '../data/wait-for-transfer.js'

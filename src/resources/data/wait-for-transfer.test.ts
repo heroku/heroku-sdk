@@ -3,9 +3,9 @@ import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import {legacyResourceCtx} from '../../../../test-types/heroku-sdk-options.js'
+import {legacyResourceCtx} from '../../../test-types/heroku-sdk-options.js'
 import {TransferFailedError, TransferTimeoutError, waitForTransfer} from './wait-for-transfer.js'
 
 const DEFAULT_INTERVAL_MS = 3

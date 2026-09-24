@@ -2,11 +2,11 @@ import type {RestoreCreateResult, TransferInfoByAppResult} from '@heroku/types/d
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedAddOn} from '../../platform/add-on/index.js'
-import type {WaitForTransferOptions} from '../transfer/wait-for-transfer.js'
+import type {WaitForTransferOptions} from '../wait-for-transfer.js'
 
 import {Poller} from '../../../utils/poller.js'
 import {resolvePgDatabase} from '../internal/resolve-pg-database.js'
-import {waitForTransfer} from '../transfer/wait-for-transfer.js'
+import {waitForTransfer} from '../wait-for-transfer.js'
 
 export type RestoreAndWaitOptions = WaitForTransferOptions & {
   /**

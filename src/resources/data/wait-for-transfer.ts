@@ -1,10 +1,10 @@
 /* eslint-disable no-await-in-loop */
 import type {TransferInfoByAppResult} from '@heroku/types/data'
 
-import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {TransferOptions} from './index.js'
+import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import {wait} from '../../../utils/wait.js'
+import {extendResource} from '../../core/extend-resource.js'
+import {wait} from '../../utils/wait.js'
 
 const DEFAULT_INTERVAL_MS = 3000
 const MAX_FAILURES = 20
@@ -43,7 +43,7 @@ export class TransferTimeoutError extends Error {
   }
 }
 
-export type WaitForTransferOptions = TransferOptions & {
+export type WaitForTransferOptions = {
   /**
    * Polling interval in milliseconds. Defaults to 3000 (3s)
    */
@@ -53,6 +53,10 @@ export type WaitForTransferOptions = TransferOptions & {
    * letting callers drive a status display.
    */
   onPoll?: (transfer: TransferInfoByAppResult) => void
+  /**
+   * Abort signal to cancel the operation.
+   */
+  signal?: AbortSignal
   /**
    * Maximum total time to wait before throwing `TransferTimeoutError`.
    * If omitted, polls until the transfer finishes or `signal` aborts.
@@ -123,3 +127,8 @@ export async function waitForTransfer(
     await wait(intervalMs, signal)
   }
 }
+
+export const transferExtensions = extendResource('data', 'transfer', ctx => ({
+  waitForTransfer: (appIdentity: string, transferId: string, options?: WaitForTransferOptions) =>
+    waitForTransfer(ctx, appIdentity, transferId, options),
+}))
