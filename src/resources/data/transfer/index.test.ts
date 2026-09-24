@@ -4,15 +4,17 @@ import {
   describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {listByApp, transferExtensions} from './transfer.js'
+import {legacyResourceCtx} from '../../../../test-types/heroku-sdk-options.js'
+import {listByApp, transferExtensions} from './index.js'
 
 function buildCtx(opts: {
   listByApp?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
   return {
+    ...legacyResourceCtx,
     data: {
       transfer: {
         listByApp: opts.listByApp ?? vi.fn(),
@@ -71,8 +73,9 @@ describe('transfer resource', () => {
     expect(transferExtensions.resource).toBe('transfer')
   })
 
-  it('transferExtensions factory exposes listByApp', () => {
+  it('transferExtensions factory exposes listByApp and waitForTransfer', () => {
     const methods = transferExtensions.factory(buildCtx({}))
     expect(typeof methods.listByApp).toBe('function')
+    expect(typeof methods.waitForTransfer).toBe('function')
   })
 })

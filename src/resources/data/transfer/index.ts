@@ -1,9 +1,14 @@
 import type {TransferListByAppResult} from '@heroku/types/data'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../core/extend-resource.js'
-import {resolvePgDatabase} from './internal/resolve-pg-database.js'
+import {extendResource} from '../../../core/extend-resource.js'
+import {resolvePgDatabase} from '../internal/resolve-pg-database.js'
+import {waitForTransfer, type WaitForTransferOptions} from './wait-for-transfer.js'
+
+export {
+  TransferFailedError, TransferTimeoutError, waitForTransfer, type WaitForTransferOptions,
+} from './wait-for-transfer.js'
 
 export type TransferOptions = {
   signal?: AbortSignal
@@ -33,4 +38,6 @@ export async function listByApp(
 export const transferExtensions = extendResource('data', 'transfer', ctx => ({
   listByApp: (appIdentity: string, addonIdentity?: string, options?: TransferOptions) =>
     listByApp(ctx, appIdentity, addonIdentity, options),
+  waitForTransfer: (appIdentity: string, transferId: string, options?: WaitForTransferOptions) =>
+    waitForTransfer(ctx, appIdentity, transferId, options),
 }))
