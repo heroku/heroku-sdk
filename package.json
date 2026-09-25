@@ -98,9 +98,17 @@
       "types": "./dist/resources/platform/vpn-connection/index.d.ts",
       "default": "./dist/resources/platform/vpn-connection/index.js"
     },
+    "./resources/data/backup": {
+      "types": "./dist/resources/data/backup/index.d.ts",
+      "default": "./dist/resources/data/backup/index.js"
+    },
     "./resources/data/redis": {
       "types": "./dist/resources/data/redis/index.d.ts",
       "default": "./dist/resources/data/redis/index.js"
+    },
+    "./resources/data/restore": {
+      "types": "./dist/resources/data/restore/index.d.ts",
+      "default": "./dist/resources/data/restore/index.js"
     },
     "./resources/*": {
       "types": "./dist/resources/*.d.ts",
