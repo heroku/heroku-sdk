@@ -52,7 +52,7 @@ export type WaitForTransferOptions = {
    * Fired after every wait poll with the latest transfer record,
    * letting callers drive a status display.
    */
-  onPoll?: (transfer: TransferInfoByAppResult) => void
+  onPoll?: (transfer: TransferInfoByAppResult | undefined) => void
   /**
    * Abort signal to cancel the operation.
    */
@@ -95,7 +95,7 @@ export async function waitForTransfer(
 
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
   let failures = 0
-  let transfer = {} as TransferInfoByAppResult
+  let transfer
 
   while (true) {
     signal?.throwIfAborted()
@@ -111,7 +111,7 @@ export async function waitForTransfer(
 
     onPoll?.(transfer)
 
-    if (transfer.finished_at) {
+    if (transfer?.finished_at) {
       if (transfer.succeeded) {
         return transfer
       }
