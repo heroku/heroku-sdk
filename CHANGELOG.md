@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.6.4...sdk-v0.7.0) (2026-09-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* add backup, restore, transferSchedule, and waitForTransfer extensions ([#133](https://github.com/heroku/heroku-sdk/issues/133))
+
+### Features
+
+* add backup, restore, transferSchedule, and waitForTransfer extensions ([#133](https://github.com/heroku/heroku-sdk/issues/133)) ([1744254](https://github.com/heroku/heroku-sdk/commit/174425400f7cb5a6f9864f63db0c54254e8fdf29))
+
 ## [0.6.4](https://github.com/heroku/heroku-sdk/compare/sdk-v0.6.3...sdk-v0.6.4) (2026-09-24)
 
 
