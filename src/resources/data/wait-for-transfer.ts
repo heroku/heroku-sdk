@@ -17,7 +17,7 @@ export class TransferFailedError extends Error {
   public readonly id = 'transfer_failed'
 
   constructor(public readonly transfer: TransferInfoByAppResult) {
-    super('An error occurred and the backup did not finish.')
+    super('An error occurred and the transfer did not finish.')
     this.name = 'TransferFailedError'
   }
 
