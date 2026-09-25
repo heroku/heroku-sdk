@@ -139,7 +139,7 @@
     "dist"
   ],
   "devDependencies": {
-    "@heroku-cli/test-utils": "^0.3.0",
+    "@heroku-cli/test-utils": "^1.0.2",
     "@types/debug": "^4.1.12",
     "@types/node": "^25.6.2",
     "@vitest/coverage-v8": "^4.1.8",
