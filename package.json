@@ -113,15 +113,16 @@
     "url": "https://github.com/heroku/heroku-sdk"
   },
   "scripts": {
-    "build": "tsc",
-    "coverage": "vitest --run --coverage",
-    "example": "tsx",
-    "lint": "eslint",
-    "lint:fix": "eslint --fix",
-    "prebuild": "rimraf dist",
+    "clean": "rimraf dist",
+    "build": "npm run clean && tsc",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=lcovonly",
+    "test:types": "tsc --noEmit -p tsconfig.type-tests.json",
     "prepare": "npm run build",
-    "test": "vitest --run",
-    "test:types": "tsc --noEmit -p tsconfig.type-tests.json"
+    "example": "tsx"
   },
   "license": "Apache-2.0",
   "engines": {
