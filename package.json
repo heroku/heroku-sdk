@@ -143,7 +143,7 @@
     "@heroku-cli/test-utils": "^1.0.3",
     "@types/debug": "^4.1.12",
     "@types/node": "^26.5.1",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-v8": "^5.0.2",
     "eslint": "^9.39.4",
     "eslint-config-oclif": "^6.0.167",
     "@vitest/eslint-plugin": "^1.6.0",
