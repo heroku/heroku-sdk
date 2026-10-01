@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.7.0...sdk-v0.7.1) (2026-10-01)
+
+
+### Dependencies
+
+* bump undici from 6.28.0 to 6.29.0 ([#137](https://github.com/heroku/heroku-sdk/issues/137)) ([590d263](https://github.com/heroku/heroku-sdk/commit/590d2633faadb6fff22ede35e7117a6112cec4d7))
+* consolidated dependency bumps ([#140](https://github.com/heroku/heroku-sdk/issues/140)) ([52eec89](https://github.com/heroku/heroku-sdk/commit/52eec893fb44937de60bd452a98300bd8301aa15))
+
 ## [0.7.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.6.4...sdk-v0.7.0) (2026-09-25)
 
 
