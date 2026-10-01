@@ -146,7 +146,7 @@
     "@vitest/coverage-v8": "^4.1.8",
     "eslint": "^9.39.4",
     "eslint-config-oclif": "^6.0.167",
-    "eslint-plugin-vitest": "0.5.4",
+    "@vitest/eslint-plugin": "^1.6.0",
     "rimraf": "^6.1.3",
     "tsx": "^4.22.4",
     "typescript": "^6.0.2",
