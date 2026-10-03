@@ -11,7 +11,7 @@ import {describeAddon} from './describe.js'
 import {destroyAndWait} from './destroy-and-wait.js'
 import {listPlans, listPlansForAddon} from './list-plans.js'
 import {formatPlanPriceLabel, priceForPlan} from './pricing.js'
-import {describeAttachment, resolveAddon, resolveAddonByAttachment} from './resolve.js'
+import {resolveAddon} from './resolve.js'
 import {upgrade} from './upgrade.js'
 import {waitForProvisioning} from './wait-for-provisioning.js'
 
@@ -34,7 +34,7 @@ export {
   type PlanPriceKind,
   priceForPlan,
 } from './pricing.js'
-export {describeAttachment, resolveAddon, resolveAddonByAttachment} from './resolve.js'
+export {resolveAddon} from './resolve.js'
 export type {
   AddOnOptions,
   CreateAndWaitOptions,
@@ -42,7 +42,6 @@ export type {
   DestroyAndWaitOptions,
   ResolveAddonOptions,
   ResolvedAddOn,
-  ResolvedAddOnAttachment,
   UpgradeAddOnOptions,
   WaitForProvisioningOptions,
 } from './types.js'
@@ -54,8 +53,6 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
     createAndWait(ctx, appIdentity, body, options),
   describe: (addonIdentity: string, options?: ResolveAddonOptions) =>
     describeAddon(ctx, addonIdentity, options),
-  describeAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
-    describeAttachment(ctx, appIdentity, attachmentName, options),
   destroyAndWait: (appIdentity: string, addonIdentity: string, options?: DestroyAndWaitOptions) =>
     destroyAndWait(ctx, appIdentity, addonIdentity, options),
   formatPlanPriceLabel,
@@ -66,8 +63,6 @@ export const addOnExtensions = extendResource('platform', 'addOn', ctx => ({
   priceForPlan,
   resolve: (addonIdentity: string, options?: ResolveAddonOptions) =>
     resolveAddon(ctx, addonIdentity, options),
-  resolveByAttachment: (appIdentity: string, attachmentName: string, options?: AddOnOptions) =>
-    resolveAddonByAttachment(ctx, appIdentity, attachmentName, options),
   upgrade: (addonIdentity: string, plan: string, options?: UpgradeAddOnOptions) =>
     upgrade(ctx, addonIdentity, plan, options),
   waitForProvisioning: (addon: AddOn, options?: WaitForProvisioningOptions) =>

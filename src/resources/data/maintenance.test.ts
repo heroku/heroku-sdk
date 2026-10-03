@@ -1,4 +1,4 @@
-import type {AddOnAttachment} from '@heroku/types/3.sdk'
+import type {AddOn} from '@heroku/types/3.sdk'
 
 import {
   describe, expect, it, vi,
@@ -10,15 +10,21 @@ import {info, maintenanceExtensions} from './maintenance.js'
 
 describe('maintenance resource', () => {
   it('info resolves the addon and calls maintenance.info', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue([
-      {addon: {app: {id: 'app-uuid', name: 'app-1'}, id: 'addon-y', name: 'pg-attached'}} as AddOnAttachment,
+    const resolution = vi.fn().mockResolvedValue([
+      {
+        // eslint-disable-next-line camelcase
+        addon_service: {id: 'service-id', name: 'heroku-postgresql'},
+        app: {id: 'app-uuid', name: 'app-1'},
+        id: 'addon-y',
+        name: 'pg-attached',
+      } as AddOn,
     ])
     const maintenanceInfo = vi.fn().mockResolvedValue({state: 'scheduled'})
     const ctx: ResourceCtx = {
       data: {maintenance: {info: maintenanceInfo}} as never,
       platform: {
-        addOn: {resolution: vi.fn()},
-        addOnAttachment: {resolution: resolutionByAttachment},
+        addOn: {resolution},
+        addOnAttachment: {resolution: vi.fn()},
       } as never,
     }
 
