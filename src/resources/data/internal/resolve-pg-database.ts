@@ -3,11 +3,12 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolveAddonOptions, ResolvedAddOn} from '../../platform/add-on/index.js'
 
-import {resolveAddon, resolveAddonByAttachment} from '../../platform/add-on/index.js'
+import {resolveAddon} from '../../platform/add-on/index.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 
 const DEFAULT_PG_ATTACHMENT = 'DATABASE_URL'
+const PG_ADDON_SERVICE = process.env.HEROKU_POSTGRESQL_ADDON_NAME ??  process.env.HEROKU_DATA_SERVICE ?? 'heroku-postgresql'
 
 export type ResolvePgDatabaseOptions = ResolveAddonOptions & {
   input?: string
@@ -18,13 +19,15 @@ export type ResolvePgDatabaseOptions = ResolveAddonOptions & {
  * shapes the platform recognizes:
  *
  *   - omitted → the `DATABASE_URL` attachment on `appIdentity`.
- *   - `DATABASE_URL`, `HEROKU_POSTGRESQL_GREEN`, etc. → that attachment
- *     on `appIdentity`. Detected by SHOUTY_SNAKE_CASE shape.
- *   - `parent-app::branch-name` → branch reference. The portion before
- *     `::` is the parent app; the portion after is the branch add-on
- *     name.
- *   - any other string → a bare add-on identity (UUID, globally-unique
- *     name) routed through `resolveAddon`.
+ *   - `parent-app::attachment-or-config-var` (e.g. `my-app::DATABASE_URL`)
+ *     → an attachment or config var on `parent-app`.
+ *   - `parent-app::branch-name` (e.g. `my-app::my-branch`) → branch add-on
+ *     name on `parent-app`.
+ *   - Both `::` forms are handled the same way here: we split on the first
+ *     `::` ourselves and send `app`/`addon` as separate fields, which
+ *     works for either shape.
+ *   - any other string (attachment name, config var, UUID, or
+ *     globally-unique add-on name) → routed through `resolveAddon`.
  *
  * Throws `AddonNotFoundError` (or `AddonAmbiguousError`) from the
  * underlying resolver. Throws if no input is given and no `appIdentity`
@@ -36,39 +39,24 @@ export async function resolvePgDatabase(
 ): Promise<ResolvedAddOn> {
   const {appIdentity, input, ...rest} = options
 
-  if (!input) {
-    if (!appIdentity) {
-      throw new Error('resolvePgDatabase requires either input or appIdentity to default to DATABASE_URL.')
-    }
-
-    debug('resolve branch=default-attachment app=%s attachment=%s', appIdentity, DEFAULT_PG_ATTACHMENT)
-    return resolveAddonByAttachment(ctx, appIdentity, DEFAULT_PG_ATTACHMENT, rest)
+  if (!input && !appIdentity) {
+    throw new Error('resolvePgDatabase requires either input or appIdentity to default to DATABASE_URL.')
   }
 
-  if (input.includes('::')) {
-    const {addon, app} = parseBranchReference(input, appIdentity)
-    debug('resolve branch=branch-reference input=%s addon=%s app=%s', input, addon, app ?? '<global>')
-    return resolveAddon(ctx, addon, {...rest, appIdentity: app})
-  }
+  const databaseReference = input ?? DEFAULT_PG_ATTACHMENT
+  const {addon, app} = databaseReference.includes('::')
+    ? parseBranchReference(databaseReference, appIdentity)
+    : {addon: databaseReference, app: appIdentity}
 
-  if (appIdentity && isAttachmentName(input)) {
-    debug('resolve branch=attachment-name app=%s attachment=%s', appIdentity, input)
-    return resolveAddonByAttachment(ctx, appIdentity, input, rest)
-  }
-
-  debug('resolve branch=bare-identity input=%s app=%s', input, appIdentity ?? '<global>')
-  return resolveAddon(ctx, input, {...rest, appIdentity})
-}
-
-function isAttachmentName(input: string): boolean {
-  return /^[A-Z][A-Z0-9_]*$/.test(input)
+  debug('resolve input=%s addon=%s app=%s', input ?? '<default>', addon, app ?? '<global>')
+  return resolveAddon(ctx, addon, {...rest, addonService: PG_ADDON_SERVICE, appIdentity: app})
 }
 
 function parseBranchReference(
   reference: string,
   fallbackApp?: string,
 ): {addon: string; app?: string} {
-  const match = reference.match(/^(.+)::(.+)$/)
+  const match = reference.match(/^(.+?)::(.+)$/)
   if (match) {
     return {addon: match[2], app: match[1]}
   }
