@@ -1,5 +1,5 @@
 /* eslint-disable camelcase */
-import type {AddOnAttachment} from '@heroku/types/3.sdk'
+import type {AddOn} from '@heroku/types/3.sdk'
 
 import {
   afterEach, describe, expect, it, vi,
@@ -13,7 +13,7 @@ import {captureAndWait} from './capture-and-wait.js'
 function buildCtx(opts: {
   backupCreate?: ReturnType<typeof vi.fn>
   infoByApp?: ReturnType<typeof vi.fn>
-  resolutionByAttachment?: ReturnType<typeof vi.fn>
+  resolution?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
   const dataClient = {
     backup: {
@@ -30,14 +30,19 @@ function buildCtx(opts: {
     ...legacyResourceCtx,
     data: dataClient as never,
     platform: {
-      addOn: {resolution: vi.fn()},
-      addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
+      addOn: {resolution: opts.resolution ?? vi.fn()},
+      addOnAttachment: {resolution: vi.fn()},
     } as never,
   }
 }
 
-const attachmentMatch = [
-  {addon: {app: {id: 'app-uuid', name: 'app-1'}, id: 'addon-1', name: 'pg-attached'}} as AddOnAttachment,
+const addonMatch = [
+  {
+    addon_service: {id: 'service-id', name: 'heroku-postgresql'},
+    app: {id: 'app-uuid', name: 'app-1'},
+    id: 'addon-1',
+    name: 'pg-attached',
+  } as AddOn,
 ]
 
 describe('captureAndWait', () => {
@@ -46,10 +51,10 @@ describe('captureAndWait', () => {
   })
 
   it('resolves the addon, starts a capture, and waits for it to finish', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+    const resolution = vi.fn().mockResolvedValue(addonMatch)
     const backupCreate = vi.fn().mockResolvedValue({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
     const infoByApp = vi.fn().mockResolvedValue({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'xfer-1'})
-    const ctx = buildCtx({backupCreate, infoByApp, resolutionByAttachment})
+    const ctx = buildCtx({backupCreate, infoByApp, resolution})
 
     const result = await captureAndWait(ctx, 'app-1', 'DATABASE_URL')
 
@@ -59,17 +64,17 @@ describe('captureAndWait', () => {
   })
 
   it('fires capturePoller and waitPoller hooks around their respective steps', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+    const resolution = vi.fn().mockResolvedValue(addonMatch)
     const backupCreate = vi.fn().mockResolvedValue({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
     const infoByApp = vi.fn().mockResolvedValue({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'xfer-1'})
-    const ctx = buildCtx({backupCreate, infoByApp, resolutionByAttachment})
+    const ctx = buildCtx({backupCreate, infoByApp, resolution})
     const capturePoller = {onStart: vi.fn(), onStop: vi.fn()}
     const waitPoller = {onStart: vi.fn(), onStop: vi.fn()}
 
     await captureAndWait(ctx, 'app-1', 'DATABASE_URL', {capturePoller, waitPoller})
 
-    expect(capturePoller.onStart).toHaveBeenCalledWith(attachmentMatch[0].addon)
-    expect(capturePoller.onStop).toHaveBeenCalledWith(attachmentMatch[0].addon)
+    expect(capturePoller.onStart).toHaveBeenCalledWith(addonMatch[0])
+    expect(capturePoller.onStop).toHaveBeenCalledWith(addonMatch[0])
     expect(waitPoller.onStart).toHaveBeenCalledWith({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
     expect(waitPoller.onStop).toHaveBeenCalledWith({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
   })

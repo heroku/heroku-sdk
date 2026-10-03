@@ -1,5 +1,5 @@
 /* eslint-disable camelcase */
-import type {AddOnAttachment} from '@heroku/types/3.sdk'
+import type {AddOn} from '@heroku/types/3.sdk'
 
 import {
   describe, expect, it, vi,
@@ -16,7 +16,7 @@ function buildCtx(opts: {
   create?: ReturnType<typeof vi.fn>
   delete?: ReturnType<typeof vi.fn>
   list?: ReturnType<typeof vi.fn>
-  resolutionByAttachment?: ReturnType<typeof vi.fn>
+  resolution?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
   return {
     ...legacyResourceCtx,
@@ -28,24 +28,29 @@ function buildCtx(opts: {
       },
     } as never,
     platform: {
-      addOn: {resolution: vi.fn()},
-      addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
+      addOn: {resolution: opts.resolution ?? vi.fn()},
+      addOnAttachment: {resolution: vi.fn()},
     } as never,
   }
 }
 
-const attachmentMatch = [
-  {addon: {app: {id: 'app-uuid', name: 'app-1'}, id: 'addon-1', name: 'pg-attached'}} as AddOnAttachment,
+const addonMatch = [
+  {
+    addon_service: {id: 'service-id', name: 'heroku-postgresql'},
+    app: {id: 'app-uuid', name: 'app-1'},
+    id: 'addon-1',
+    name: 'pg-attached',
+  } as AddOn,
 ]
 
 describe('transferSchedule resource', () => {
   it('list resolves the addon and calls transferSchedule.list', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+    const resolution = vi.fn().mockResolvedValue(addonMatch)
     const schedules = [{
       hour: 4, name: 'DATABASE_URL', timezone: 'UTC', uuid: 'sched-1',
     }]
     const listStub = vi.fn().mockResolvedValue(schedules)
-    const ctx = buildCtx({list: listStub, resolutionByAttachment})
+    const ctx = buildCtx({list: listStub, resolution})
 
     const result = await list(ctx, 'app-1', 'DATABASE_URL')
 
@@ -54,9 +59,9 @@ describe('transferSchedule resource', () => {
   })
 
   it('create resolves the addon and calls transferSchedule.create with the body', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+    const resolution = vi.fn().mockResolvedValue(addonMatch)
     const createStub = vi.fn().mockResolvedValue({hour: 4, name: 'DATABASE_URL', uuid: 'sched-1'})
-    const ctx = buildCtx({create: createStub, resolutionByAttachment})
+    const ctx = buildCtx({create: createStub, resolution})
 
     const result = await create(ctx, 'app-1', 'DATABASE_URL', {hour: 4, schedule_name: 'DATABASE_URL', timezone: 'UTC'})
 
@@ -65,9 +70,9 @@ describe('transferSchedule resource', () => {
   })
 
   it('delete resolves the addon and calls transferSchedule.delete with the schedule id', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+    const resolution = vi.fn().mockResolvedValue(addonMatch)
     const deleteStub = vi.fn().mockResolvedValue({name: 'DATABASE_URL', uuid: 'sched-1'})
-    const ctx = buildCtx({delete: deleteStub, resolutionByAttachment})
+    const ctx = buildCtx({delete: deleteStub, resolution})
 
     const result = await del(ctx, 'app-1', 'DATABASE_URL', 'sched-1')
 
