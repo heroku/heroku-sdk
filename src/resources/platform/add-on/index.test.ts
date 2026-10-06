@@ -1,6 +1,6 @@
 import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
-import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
+import {HerokuApiError} from '@heroku/heroku-fetch'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -92,14 +92,6 @@ function buildCtx({
     withHeaders: platform.withHeaders,
     withOptions: platform.withOptions,
   }
-}
-
-function buildNotFound(resource = 'add_on'): NotFoundError {
-  const response = new Response(JSON.stringify({id: 'not_found', resource}), {
-    headers: {'content-type': 'application/json'},
-    status: 404,
-  })
-  return new NotFoundError(response, {id: 'not_found', resource})
 }
 
 function buildCreateCtx({
@@ -676,27 +668,6 @@ describe('add-on resource', () => {
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'postgres::sushi'})
     })
 
-    it('falls back to a global resolve when the app-scoped lookup is 404 add_on', async () => {
-      const addon = buildAddon()
-      const {ctx, resolution} = buildCtx({
-        resolveResponses: [buildNotFound('add_on'), [addon]],
-      })
-
-      const result = await describeAddon(ctx, 'my-postgres', {appIdentity: 'other-app'})
-
-      expect(resolution).toHaveBeenNthCalledWith(1, {addon: 'my-postgres', app: 'other-app'})
-      expect(resolution).toHaveBeenNthCalledWith(2, {addon: 'my-postgres'})
-      expect(result.id).toBe(addon.id)
-    })
-
-    it('rethrows non-add_on 404s without falling back', async () => {
-      const error = buildNotFound('app')
-      const {ctx, resolution} = buildCtx({resolveResponses: [error]})
-
-      await expect(describeAddon(ctx, 'my-postgres', {appIdentity: 'my-app'})).rejects.toBe(error)
-      expect(resolution).toHaveBeenCalledTimes(1)
-    })
-
     it('throws AddonNotFoundError when the resolver returns no matches', async () => {
       const {ctx} = buildCtx({resolveResponses: [[]]})
 
@@ -826,6 +797,15 @@ describe('add-on resource', () => {
 
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-postgres', app: 'my-app'})
       expect(result.id).toBe('addon-id')
+    })
+
+    it('leaves a :: identity in the addon field and omits app', async () => {
+      const addon = buildAddon()
+      const {ctx, resolution} = buildCtx({resolveResponses: [[addon]]})
+
+      await resolveAddon(ctx, 'my-app::DATABASE', {appIdentity: 'other-app'})
+
+      expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-app::DATABASE'})
     })
 
     it('throws if the signal is already aborted', async () => {

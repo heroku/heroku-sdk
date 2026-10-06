@@ -1,7 +1,5 @@
 import type {AddOn} from '@heroku/types/3.sdk'
 
-import {NotFoundError} from '@heroku/heroku-fetch'
-
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {PlatformClient} from '../../../services/platform.js'
 import type {
@@ -14,22 +12,17 @@ import {AddonAmbiguousError, AddonNotFoundError} from './errors.js'
 /**
  * Resolve a Platform add-on by identity.
  *
- * `addonIdentity` may be an add-on, or an attachment identity that resolves
- * to its add-on via `appIdentity`.
- *
  * The add-on identity may be:
  *   - an add-on UUID (`d5e3f2a4-...`)
  *   - a globally-unique add-on name (`postgres-curved-12345`)
+ *   - an add-on service slug (`heroku-postgresql`)
+ *   - an add-on plan slug (`heroku-postgresql:essential-0`)
  *
- * The attachment identity may be:
- *   - an attachment UUID (`2a4d5e3f-...`), attachment name (`DATABASE`),
- *     or config var (`DATABASE_URL`); requires `appIdentity` to resolve.
- *   - an app-scoped attachment name or config var (`my-app::DATABASE`,
- *     `my-app::DATABASE_URL`); ignores `appIdentity` in favor of the
- *     scoped app name.
- *
- * When `appIdentity` is provided, the resolve is scoped to that app first
- * and falls back to a global resolve if the platform returns 404 add_on.
+ * It may also be an add-on attachment identity:
+ *   - an attachment UUID (`2a4d5e3f-...`), name (`DATABASE`), or config
+ *     var (`DATABASE_URL`). These identities require `appIdentity`.
+ *   - an attachment name or config var prefixed with the app name
+ *     (`my-app::DATABASE`, `my-app::DATABASE_URL`).
  *
  * `addonService` (e.g. `heroku-postgresql`) is filtered client-side after
  * the resolve. The platform's server-side `addon_service` filter excludes
@@ -55,38 +48,20 @@ export async function resolveAddonInternal(
 ): Promise<ResolvedAddOn> {
   const {addonService, appIdentity} = options
 
-  const resolveBy = async (app?: string): Promise<ResolvedAddOn> => {
-    const body = app ? {addon: addonIdentity, app} : {addon: addonIdentity}
-    debug('resolve addon=%s app=%s service=%s', addonIdentity, app ?? '<global>', addonService ?? '<any>')
-    const matches = await platform.addOn.resolution(body)
-    const filtered = addonService
-      ? matches.filter(addon => addon.addon_service?.name === addonService)
-      : matches
-    debug('resolve matches=%d filtered=%d (service=%s)', matches.length, filtered.length, addonService ?? '<any>')
-    const resolvedAddon = singularize(filtered)
-    debug('resolve resolved addon=%s app=%s', resolvedAddon.id, resolvedAddon.app.id)
-    return resolvedAddon
-  }
+  // If the add-on identity is app-scoped (contains `::`), we do not pass `appIdentity`
+  const app = appIdentity && !addonIdentity.includes('::') ? appIdentity : undefined
+  const body = app ? {addon: addonIdentity, app} : {addon: addonIdentity}
 
-  if (!appIdentity || addonIdentity.includes('::')) {
-    debug('resolve scope=global reason=%s', appIdentity ? 'app-scoped-identity' : 'no-app')
-    return resolveBy()
-  }
+  debug('resolve addon=%s app=%s service=%s', addonIdentity, app ?? '<global>', addonService ?? '<any>')
+  const matches = await platform.addOn.resolution(body)
+  const filtered = addonService
+    ? matches.filter(addon => addon.addon_service?.name === addonService)
+    : matches
 
-  try {
-    return await resolveBy(appIdentity)
-  } catch (error) {
-    if (isAddOnNotFound(error)) {
-      debug('resolve app-scope 404 add_on, falling back to global addon=%s', addonIdentity)
-      return resolveBy()
-    }
-
-    throw error
-  }
-}
-
-function isAddOnNotFound(error: unknown): boolean {
-  return error instanceof NotFoundError && error.resource === 'add_on'
+  debug('resolve matches=%d filtered=%d (service=%s)', matches.length, filtered.length, addonService ?? '<any>')
+  const resolvedAddon = singularize(filtered)
+  debug('resolve resolved addon=%s app=%s', resolvedAddon.id, resolvedAddon.app.id)
+  return resolvedAddon
 }
 
 function singularize(matches: AddOn[]): ResolvedAddOn {
