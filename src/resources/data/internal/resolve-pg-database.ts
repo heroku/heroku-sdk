@@ -1,23 +1,26 @@
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {ResolveAddonOptions, ResolvedAddOn} from '../../platform/add-on/index.js'
+import type {ResolveAddonAttachmentOptions, ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
-import {resolveAddon} from '../../platform/add-on/index.js'
+import {resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 
 const DEFAULT_PG_ATTACHMENT = 'DATABASE_URL'
 const PG_ADDON_SERVICE = process.env.HEROKU_POSTGRESQL_ADDON_NAME ??  process.env.HEROKU_DATA_SERVICE ?? 'heroku-postgresql'
 
-export type ResolvePgDatabaseOptions = ResolveAddonOptions & {
+export type ResolvedPgDatabase = ResolvedAddOnAttachment['addon']
+
+export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
+  appIdentity?: string,
   input?: string
 }
 
 /**
- * Resolve a Heroku Postgres database add-on from any of the input
- * shapes the platform recognizes:
+ * Resolve a Heroku Postgres database add-on from an attachment identity.
  *
+ * `input` selects the attachment as follows:
  *   - omitted → the `DATABASE_URL` attachment on `appIdentity`.
  *   - `parent-app::attachment-or-config-var` (e.g. `my-app::DATABASE_URL`)
  *     → an attachment or config var on `parent-app`.
@@ -27,16 +30,23 @@ export type ResolvePgDatabaseOptions = ResolveAddonOptions & {
  *     `::` ourselves and send `app`/`addon` as separate fields, which
  *     works for either shape.
  *   - any other string (attachment name, config var, UUID, or
- *     globally-unique add-on name) → routed through `resolveAddon`.
+ *     globally-unique add-on name) → routed through `resolveAddonAttachment`.
  *
- * Throws `AddonNotFoundError` (or `AddonAmbiguousError`) from the
- * underlying resolver. Throws if no input is given and no `appIdentity`
+ * This function only uses the attachment resolver. To resolve a database
+ * through the add-on resolve endpoint, call `resolveAddon` directly.
+ *
+ * The returned add-on is the identity nested on the attachment (`id`,
+ * `name`, `app`, and the plan stub), not a full `ResolvedAddOn`. To get
+ * that shape, call `resolveAddon` with the returned add-on's `id`.
+ *
+ * Throws `AddonAttachmentNotFoundError` (or `AddonAttachmentAmbiguousError`)
+ * from the underlying resolver. Throws if no input is given and no `appIdentity`
  * is available to default the attachment lookup to.
  */
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
   options: ResolvePgDatabaseOptions = {},
-): Promise<ResolvedAddOn> {
+): Promise<ResolvedPgDatabase> {
   const {appIdentity, input, ...rest} = options
 
   if (!input && !appIdentity) {
@@ -49,7 +59,8 @@ export async function resolvePgDatabase(
     : {addon: databaseReference, app: appIdentity}
 
   debug('resolve input=%s addon=%s app=%s', input ?? '<default>', addon, app ?? '<global>')
-  return resolveAddon(ctx, addon, {...rest, addonService: PG_ADDON_SERVICE, appIdentity: app})
+  const attachment = await resolveAddonAttachment(ctx, app, addon, {...rest, addonService: PG_ADDON_SERVICE})
+  return attachment.addon
 }
 
 function parseBranchReference(

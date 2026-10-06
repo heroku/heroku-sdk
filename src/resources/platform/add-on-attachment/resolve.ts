@@ -58,7 +58,7 @@ export type ResolvedAddOnAttachment = AddOnAttachmentWithPlan & {
   addon: NonNullable<AddOnAttachmentWithPlan['addon']> & {app: {id: string}; id: string}
 }
 
-export type AddonAttachmentOptions = {
+export type ResolveAddonAttachmentOptions = {
   /**
    * Restrict matches to attachments whose add-on plan belongs to this
    * add-on service (e.g. `heroku-postgresql`), filtered client-side.
@@ -88,7 +88,7 @@ export async function resolveAddonAttachment(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string | undefined,
   attachmentName: string,
-  options: AddonAttachmentOptions = {},
+  options: ResolveAddonAttachmentOptions = {},
 ): Promise<ResolvedAddOnAttachment> {
   const {addonService, signal} = options
 

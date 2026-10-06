@@ -1,7 +1,7 @@
 import type {RestoreCreateResult, TransferInfoByAppResult} from '@heroku/types/data'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {ResolvedAddOn} from '../../platform/add-on/index.js'
+import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
 import type {WaitForTransferOptions} from '../wait-for-transfer.js'
 
 import {Poller} from '../../../utils/poller.js'
@@ -18,7 +18,7 @@ export type RestoreAndWaitOptions = WaitForTransferOptions & {
    * `poller.onStart(addon)` and once after the restore is
    * created `poller.onStop(addon)`.
    */
-  restorePoller?: Poller<ResolvedAddOn>
+  restorePoller?: Poller<ResolvedPgDatabase>
   /**
    * Progress hooks fired once before waiting for the restore to
    * complete `poller.onStart(restore)` and once after the restore
