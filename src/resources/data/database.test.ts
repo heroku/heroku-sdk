@@ -14,7 +14,7 @@ function buildCtx(opts: {
   databaseInfo?: ReturnType<typeof vi.fn>
   dryRunUpgrade?: ReturnType<typeof vi.fn>
   prepareUpgrade?: ReturnType<typeof vi.fn>
-  resolution?: ReturnType<typeof vi.fn>
+  resolutionByAttachment?: ReturnType<typeof vi.fn>
   runUpgrade?: ReturnType<typeof vi.fn>
   upgradeWaitStatus?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
@@ -30,7 +30,7 @@ function buildCtx(opts: {
       },
     } as never,
     platform: {
-      addOnAttachment: {resolution: opts.resolution ?? vi.fn()},
+      addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
       withHeaders() {
         return this
       },
@@ -41,7 +41,7 @@ function buildCtx(opts: {
   }
 }
 
-const oneAddonMatch = [
+const oneAttachmentMatch = [
   {
     addon: {
       app: {id: 'app-uuid', name: 'app-1'},
@@ -57,25 +57,25 @@ const oneAddonMatch = [
 
 describe('database resource', () => {
   it('describe resolves the addon by attachment and calls database.info', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneAddonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const databaseInfo = vi.fn().mockResolvedValue({plan: 'standard-0'})
-    const ctx = buildCtx({databaseInfo, resolution})
+    const ctx = buildCtx({databaseInfo, resolutionByAttachment})
 
     const result = await describeFn(ctx, 'app-1', 'HEROKU_POSTGRESQL_BLUE')
 
-    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'HEROKU_POSTGRESQL_BLUE', app: 'app-1'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'HEROKU_POSTGRESQL_BLUE', app: 'app-1'})
     expect(databaseInfo).toHaveBeenCalledWith('addon-1')
     expect(result).toEqual({plan: 'standard-0'})
   })
 
   it('describe defaults to the DATABASE_URL attachment when no addonIdentity is given', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneAddonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const databaseInfo = vi.fn().mockResolvedValue({})
-    const ctx = buildCtx({databaseInfo, resolution})
+    const ctx = buildCtx({databaseInfo, resolutionByAttachment})
 
     await describeFn(ctx, 'app-1')
 
-    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
   })
 
   it('describe throws if signal is aborted', async () => {
@@ -87,9 +87,9 @@ describe('database resource', () => {
   })
 
   it('runUpgrade resolves the addon and calls database.runUpgrade with the body', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneAddonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const runUpgradeFn = vi.fn().mockResolvedValue({message: 'upgrading'})
-    const ctx = buildCtx({resolution, runUpgrade: runUpgradeFn})
+    const ctx = buildCtx({resolutionByAttachment, runUpgrade: runUpgradeFn})
 
     const result = await runUpgrade(ctx, 'app-1', 'DATABASE_URL', {version: '17'})
 
@@ -98,9 +98,9 @@ describe('database resource', () => {
   })
 
   it('runUpgrade defaults to an empty body when none is provided', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneAddonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const runUpgradeFn = vi.fn().mockResolvedValue({})
-    const ctx = buildCtx({resolution, runUpgrade: runUpgradeFn})
+    const ctx = buildCtx({resolutionByAttachment, runUpgrade: runUpgradeFn})
 
     await runUpgrade(ctx, 'app-1')
 
@@ -108,9 +108,9 @@ describe('database resource', () => {
   })
 
   it('prepareUpgrade resolves the addon and calls database.prepareUpgrade', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneAddonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const prepareUpgradeFn = vi.fn().mockResolvedValue({message: 'scheduled'})
-    const ctx = buildCtx({prepareUpgrade: prepareUpgradeFn, resolution})
+    const ctx = buildCtx({prepareUpgrade: prepareUpgradeFn, resolutionByAttachment})
 
     const result = await prepareUpgrade(ctx, 'app-1', 'DATABASE_URL', {version: '17'})
 
@@ -119,9 +119,9 @@ describe('database resource', () => {
   })
 
   it('dryRunUpgrade resolves the addon and calls database.dryRunUpgrade', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneAddonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const dryRunUpgradeFn = vi.fn().mockResolvedValue({message: 'dry run complete'})
-    const ctx = buildCtx({dryRunUpgrade: dryRunUpgradeFn, resolution})
+    const ctx = buildCtx({dryRunUpgrade: dryRunUpgradeFn, resolutionByAttachment})
 
     const result = await dryRunUpgrade(ctx, 'app-1', 'DATABASE_URL', {version: '17'})
 
@@ -130,11 +130,11 @@ describe('database resource', () => {
   })
 
   it('upgradeWaitStatus resolves the addon and calls database.upgradeWaitStatus', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneAddonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const upgradeWaitStatusFn = vi.fn().mockResolvedValue({
       'error?': false, message: 'upgrading', step: 'wait_for_data_sync', 'waiting?': true,
     })
-    const ctx = buildCtx({resolution, upgradeWaitStatus: upgradeWaitStatusFn})
+    const ctx = buildCtx({resolutionByAttachment, upgradeWaitStatus: upgradeWaitStatusFn})
 
     const result = await upgradeWaitStatus(ctx, 'app-1', 'DATABASE_URL')
 
@@ -145,13 +145,13 @@ describe('database resource', () => {
   })
 
   it('cancelUpgrade resolves the addon and calls database.cancelUpgrade', async () => {
-    const resolution = vi.fn().mockResolvedValue(oneAddonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
     const cancelUpgradeFn = vi.fn().mockResolvedValue({message: 'cancelled'})
-    const ctx = buildCtx({cancelUpgrade: cancelUpgradeFn, resolution})
+    const ctx = buildCtx({cancelUpgrade: cancelUpgradeFn, resolutionByAttachment})
 
     const result = await cancelUpgrade(ctx, 'app-1', 'DATABASE_URL')
 
-    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
     expect(cancelUpgradeFn).toHaveBeenCalledWith('addon-1')
     expect(result).toEqual({message: 'cancelled'})
   })

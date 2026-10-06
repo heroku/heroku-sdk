@@ -11,7 +11,7 @@ import {captureAndWait} from './capture-and-wait.js'
 function buildCtx(opts: {
   backupCreate?: ReturnType<typeof vi.fn>
   infoByApp?: ReturnType<typeof vi.fn>
-  resolution?: ReturnType<typeof vi.fn>
+  resolutionByAttachment?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
   const dataClient = {
     backup: {
@@ -28,7 +28,7 @@ function buildCtx(opts: {
     ...legacyResourceCtx,
     data: dataClient as never,
     platform: {
-      addOnAttachment: {resolution: opts.resolution ?? vi.fn()},
+      addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
       withHeaders() {
         return this
       },
@@ -39,7 +39,7 @@ function buildCtx(opts: {
   }
 }
 
-const addonMatch = [
+const attachmentMatch = [
   {
     addon: {
       app: {id: 'app-uuid', name: 'app-1'},
@@ -59,10 +59,10 @@ describe('captureAndWait', () => {
   })
 
   it('resolves the addon, starts a capture, and waits for it to finish', async () => {
-    const resolution = vi.fn().mockResolvedValue(addonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
     const backupCreate = vi.fn().mockResolvedValue({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
     const infoByApp = vi.fn().mockResolvedValue({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'xfer-1'})
-    const ctx = buildCtx({backupCreate, infoByApp, resolution})
+    const ctx = buildCtx({backupCreate, infoByApp, resolutionByAttachment})
 
     const result = await captureAndWait(ctx, 'app-1', 'DATABASE_URL')
 
@@ -72,17 +72,17 @@ describe('captureAndWait', () => {
   })
 
   it('fires capturePoller and waitPoller hooks around their respective steps', async () => {
-    const resolution = vi.fn().mockResolvedValue(addonMatch)
+    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
     const backupCreate = vi.fn().mockResolvedValue({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
     const infoByApp = vi.fn().mockResolvedValue({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'xfer-1'})
-    const ctx = buildCtx({backupCreate, infoByApp, resolution})
+    const ctx = buildCtx({backupCreate, infoByApp, resolutionByAttachment})
     const capturePoller = {onStart: vi.fn(), onStop: vi.fn()}
     const waitPoller = {onStart: vi.fn(), onStop: vi.fn()}
 
     await captureAndWait(ctx, 'app-1', 'DATABASE_URL', {capturePoller, waitPoller})
 
-    expect(capturePoller.onStart).toHaveBeenCalledWith(addonMatch[0].addon)
-    expect(capturePoller.onStop).toHaveBeenCalledWith(addonMatch[0].addon)
+    expect(capturePoller.onStart).toHaveBeenCalledWith(attachmentMatch[0].addon)
+    expect(capturePoller.onStop).toHaveBeenCalledWith(attachmentMatch[0].addon)
     expect(waitPoller.onStart).toHaveBeenCalledWith({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
     expect(waitPoller.onStop).toHaveBeenCalledWith({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
   })

@@ -8,11 +8,11 @@ import type {AddOnAttachmentWithPlan} from '../../platform/add-on-attachment/res
 
 import {resolvePgDatabase} from './resolve-pg-database.js'
 
-function buildCtx(resolution: ReturnType<typeof vi.fn>): ResourceCtx {
+function buildCtx(resolutionByAttachment: ReturnType<typeof vi.fn>): ResourceCtx {
   return {
     data: {} as never,
     platform: {
-      addOnAttachment: {resolution},
+      addOnAttachment: {resolution: resolutionByAttachment},
       withHeaders() {
         return this
       },
@@ -44,56 +44,56 @@ function pgAttachment(overrides: {id?: string, planName?: string} = {}): AddOnAt
 
 describe('resolvePgDatabase', () => {
   it('routes a parent::branch reference through addOnAttachment.resolution with parsed parts', async () => {
-    const resolution = vi.fn().mockResolvedValue([pgAttachment()])
-    const ctx = buildCtx(resolution)
+    const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
+    const ctx = buildCtx(resolutionByAttachment)
 
     const result = await resolvePgDatabase(ctx, {input: 'parent-app::branch'})
 
-    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'branch', app: 'parent-app'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'branch', app: 'parent-app'})
     expect(result.id).toBe('addon-id')
   })
 
   it('defaults to the DATABASE_URL attachment when input is omitted', async () => {
-    const resolution = vi.fn().mockResolvedValue([pgAttachment()])
-    const ctx = buildCtx(resolution)
+    const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
+    const ctx = buildCtx(resolutionByAttachment)
 
     const result = await resolvePgDatabase(ctx, {appIdentity: 'app-1'})
 
-    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
     expect(result.id).toBe('addon-id')
   })
 
   it('routes a SHOUTY_SNAKE_CASE config var input through addOnAttachment.resolution scoped to the app', async () => {
-    const resolution = vi.fn().mockResolvedValue([pgAttachment({id: 'addon-13'})])
-    const ctx = buildCtx(resolution)
+    const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment({id: 'addon-13'})])
+    const ctx = buildCtx(resolutionByAttachment)
 
     const result = await resolvePgDatabase(ctx, {appIdentity: 'app-1', input: 'HEROKU_POSTGRESQL_GREEN'})
 
-    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'HEROKU_POSTGRESQL_GREEN', app: 'app-1'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'HEROKU_POSTGRESQL_GREEN', app: 'app-1'})
     expect(result.id).toBe('addon-13')
   })
 
   it('routes a kebab-case global add-on name through addOnAttachment.resolution', async () => {
-    const resolution = vi.fn().mockResolvedValue([pgAttachment()])
-    const ctx = buildCtx(resolution)
+    const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
+    const ctx = buildCtx(resolutionByAttachment)
 
     await resolvePgDatabase(ctx, {appIdentity: 'app-1', input: 'postgres-curved-12345'})
 
-    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'postgres-curved-12345', app: 'app-1'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'postgres-curved-12345', app: 'app-1'})
   })
 
   it('resolves globally when no appIdentity is given and the input has no app context', async () => {
-    const resolution = vi.fn().mockResolvedValue([pgAttachment()])
-    const ctx = buildCtx(resolution)
+    const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
+    const ctx = buildCtx(resolutionByAttachment)
 
     await resolvePgDatabase(ctx, {input: 'postgres-curved-12345'})
 
-    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'postgres-curved-12345', app: undefined})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'postgres-curved-12345', app: undefined})
   })
 
   it('throws when a match is found but its addon service is not heroku-postgresql', async () => {
-    const resolution = vi.fn().mockResolvedValue([pgAttachment({planName: 'heroku-redis:premium-0'})])
-    const ctx = buildCtx(resolution)
+    const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment({planName: 'heroku-redis:premium-0'})])
+    const ctx = buildCtx(resolutionByAttachment)
 
     await expect(resolvePgDatabase(ctx, {appIdentity: 'app-1'})).rejects.toThrow()
   })
