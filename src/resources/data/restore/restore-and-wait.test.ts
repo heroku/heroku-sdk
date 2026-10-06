@@ -1,6 +1,4 @@
 /* eslint-disable camelcase */
-import type {AddOn} from '@heroku/types/3.sdk'
-
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -30,19 +28,29 @@ function buildCtx(opts: {
     ...legacyResourceCtx,
     data: dataClient as never,
     platform: {
-      addOn: {resolution: opts.resolution ?? vi.fn()},
-      addOnAttachment: {resolution: vi.fn()},
+      addOnAttachment: {resolution: opts.resolution ?? vi.fn()},
+      withHeaders() {
+        return this
+      },
+      withOptions() {
+        return this
+      },
     } as never,
   }
 }
 
 const addonMatch = [
   {
-    addon_service: {id: 'service-id', name: 'heroku-postgresql'},
+    addon: {
+      app: {id: 'app-uuid', name: 'app-1'},
+      id: 'addon-1',
+      name: 'pg-attached',
+      plan: {name: 'heroku-postgresql:essential-0'},
+    },
     app: {id: 'app-uuid', name: 'app-1'},
-    id: 'addon-1',
-    name: 'pg-attached',
-  } as AddOn,
+    id: 'attachment-id',
+    name: 'DATABASE',
+  },
 ]
 
 describe('restoreAndWait', () => {
@@ -84,8 +92,8 @@ describe('restoreAndWait', () => {
 
     await restoreAndWait(ctx, 'app-1', 'DATABASE_URL', 'https://example.com/backup.dump', {restorePoller, waitPoller})
 
-    expect(restorePoller.onStart).toHaveBeenCalledWith(addonMatch[0])
-    expect(restorePoller.onStop).toHaveBeenCalledWith(addonMatch[0])
+    expect(restorePoller.onStart).toHaveBeenCalledWith(addonMatch[0].addon)
+    expect(restorePoller.onStop).toHaveBeenCalledWith(addonMatch[0].addon)
     expect(waitPoller.onStart).toHaveBeenCalledWith({from_type: 'gof3r', to_type: 'pg_dump', uuid: 'restore-1'})
     expect(waitPoller.onStop).toHaveBeenCalledWith({from_type: 'gof3r', to_type: 'pg_dump', uuid: 'restore-1'})
   })

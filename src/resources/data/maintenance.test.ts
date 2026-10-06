@@ -1,5 +1,3 @@
-import type {AddOn} from '@heroku/types/3.sdk'
-
 import {
   describe, expect, it, vi,
 } from 'vitest'
@@ -12,19 +10,28 @@ describe('maintenance resource', () => {
   it('info resolves the addon and calls maintenance.info', async () => {
     const resolution = vi.fn().mockResolvedValue([
       {
-        // eslint-disable-next-line camelcase
-        addon_service: {id: 'service-id', name: 'heroku-postgresql'},
+        addon: {
+          app: {id: 'app-uuid', name: 'app-1'},
+          id: 'addon-y',
+          name: 'pg-attached',
+          plan: {name: 'heroku-postgresql:essential-0'},
+        },
         app: {id: 'app-uuid', name: 'app-1'},
-        id: 'addon-y',
-        name: 'pg-attached',
-      } as AddOn,
+        id: 'attachment-id',
+        name: 'DATABASE',
+      },
     ])
     const maintenanceInfo = vi.fn().mockResolvedValue({state: 'scheduled'})
     const ctx: ResourceCtx = {
       data: {maintenance: {info: maintenanceInfo}} as never,
       platform: {
-        addOn: {resolution},
-        addOnAttachment: {resolution: vi.fn()},
+        addOnAttachment: {resolution},
+        withHeaders() {
+          return this
+        },
+        withOptions() {
+          return this
+        },
       } as never,
     }
 

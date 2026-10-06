@@ -1,5 +1,3 @@
-import type {AddOn} from '@heroku/types/3.sdk'
-
 import {
   describe, expect, it, vi,
 } from 'vitest'
@@ -17,8 +15,13 @@ function buildCtx(
       postgresDatabase: {listCredentials: list},
     } as never,
     platform: {
-      addOn: {resolution},
-      addOnAttachment: {resolution: vi.fn()},
+      addOnAttachment: {resolution},
+      withHeaders() {
+        return this
+      },
+      withOptions() {
+        return this
+      },
     } as never,
   }
 }
@@ -27,12 +30,16 @@ describe('postgres-database resource', () => {
   it('listCredentials resolves the addon and calls postgresDatabase.listCredentials', async () => {
     const resolution = vi.fn().mockResolvedValue([
       {
-        // eslint-disable-next-line camelcase
-        addon_service: {id: 'service-id', name: 'heroku-postgresql'},
+        addon: {
+          app: {id: 'app-uuid', name: 'app-1'},
+          id: 'addon-x',
+          name: 'pg-attached',
+          plan: {name: 'heroku-postgresql:essential-0'},
+        },
         app: {id: 'app-uuid', name: 'app-1'},
-        id: 'addon-x',
-        name: 'pg-attached',
-      } as AddOn,
+        id: 'attachment-id',
+        name: 'DATABASE',
+      },
     ])
     const list = vi.fn().mockResolvedValue([{name: 'default', state: 'created'}])
 

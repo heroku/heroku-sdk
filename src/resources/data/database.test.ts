@@ -1,5 +1,4 @@
-import type {AddOn} from '@heroku/types/3.sdk'
-
+/* eslint-disable camelcase */
 import {
   describe, expect, it, vi,
 } from 'vitest'
@@ -31,20 +30,29 @@ function buildCtx(opts: {
       },
     } as never,
     platform: {
-      addOn: {resolution: opts.resolution ?? vi.fn()},
-      addOnAttachment: {resolution: vi.fn()},
+      addOnAttachment: {resolution: opts.resolution ?? vi.fn()},
+      withHeaders() {
+        return this
+      },
+      withOptions() {
+        return this
+      },
     } as never,
   }
 }
 
 const oneAddonMatch = [
   {
-    // eslint-disable-next-line camelcase
-    addon_service: {id: 'service-id', name: 'heroku-postgresql'},
+    addon: {
+      app: {id: 'app-uuid', name: 'app-1'},
+      id: 'addon-1',
+      name: 'pg-attached',
+      plan: {name: 'heroku-postgresql:essential-0'},
+    },
     app: {id: 'app-uuid', name: 'app-1'},
-    id: 'addon-1',
-    name: 'pg-attached',
-  } as AddOn,
+    id: 'attachment-id',
+    name: 'DATABASE',
+  },
 ]
 
 describe('database resource', () => {
@@ -55,7 +63,7 @@ describe('database resource', () => {
 
     const result = await describeFn(ctx, 'app-1', 'HEROKU_POSTGRESQL_BLUE')
 
-    expect(resolution).toHaveBeenCalledWith({addon: 'HEROKU_POSTGRESQL_BLUE', app: 'app-1'})
+    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'HEROKU_POSTGRESQL_BLUE', app: 'app-1'})
     expect(databaseInfo).toHaveBeenCalledWith('addon-1')
     expect(result).toEqual({plan: 'standard-0'})
   })
@@ -67,7 +75,7 @@ describe('database resource', () => {
 
     await describeFn(ctx, 'app-1')
 
-    expect(resolution).toHaveBeenCalledWith({addon: 'DATABASE_URL', app: 'app-1'})
+    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
   })
 
   it('describe throws if signal is aborted', async () => {
@@ -143,7 +151,7 @@ describe('database resource', () => {
 
     const result = await cancelUpgrade(ctx, 'app-1', 'DATABASE_URL')
 
-    expect(resolution).toHaveBeenCalledWith({addon: 'DATABASE_URL', app: 'app-1'})
+    expect(resolution).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
     expect(cancelUpgradeFn).toHaveBeenCalledWith('addon-1')
     expect(result).toEqual({message: 'cancelled'})
   })

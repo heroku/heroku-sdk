@@ -39,7 +39,7 @@ export class AddonAttachmentAmbiguousError extends Error {
  * @heroku/types doesn't model that inclusion. Extend locally rather than
  * casting through `any`.
  */
-type AddOnAttachmentWithPlan = AddOnAttachment & {
+export type AddOnAttachmentWithPlan = AddOnAttachment & {
   addon: AddOnAttachment['addon'] & {
     plan: {id?: string, name: string}
   }

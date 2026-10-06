@@ -1,6 +1,4 @@
 /* eslint-disable camelcase */
-import type {AddOn} from '@heroku/types/3.sdk'
-
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -30,19 +28,29 @@ function buildCtx(opts: {
     ...legacyResourceCtx,
     data: dataClient as never,
     platform: {
-      addOn: {resolution: opts.resolution ?? vi.fn()},
-      addOnAttachment: {resolution: vi.fn()},
+      addOnAttachment: {resolution: opts.resolution ?? vi.fn()},
+      withHeaders() {
+        return this
+      },
+      withOptions() {
+        return this
+      },
     } as never,
   }
 }
 
 const addonMatch = [
   {
-    addon_service: {id: 'service-id', name: 'heroku-postgresql'},
+    addon: {
+      app: {id: 'app-uuid', name: 'app-1'},
+      id: 'addon-1',
+      name: 'pg-attached',
+      plan: {name: 'heroku-postgresql:essential-0'},
+    },
     app: {id: 'app-uuid', name: 'app-1'},
-    id: 'addon-1',
-    name: 'pg-attached',
-  } as AddOn,
+    id: 'attachment-id',
+    name: 'DATABASE',
+  },
 ]
 
 describe('captureAndWait', () => {
@@ -73,8 +81,8 @@ describe('captureAndWait', () => {
 
     await captureAndWait(ctx, 'app-1', 'DATABASE_URL', {capturePoller, waitPoller})
 
-    expect(capturePoller.onStart).toHaveBeenCalledWith(addonMatch[0])
-    expect(capturePoller.onStop).toHaveBeenCalledWith(addonMatch[0])
+    expect(capturePoller.onStart).toHaveBeenCalledWith(addonMatch[0].addon)
+    expect(capturePoller.onStop).toHaveBeenCalledWith(addonMatch[0].addon)
     expect(waitPoller.onStart).toHaveBeenCalledWith({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
     expect(waitPoller.onStop).toHaveBeenCalledWith({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
   })

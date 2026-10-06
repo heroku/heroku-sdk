@@ -1,6 +1,4 @@
 /* eslint-disable camelcase */
-import type {AddOn} from '@heroku/types/3.sdk'
-
 import {
   describe, expect, it, vi,
 } from 'vitest'
@@ -28,19 +26,29 @@ function buildCtx(opts: {
       },
     } as never,
     platform: {
-      addOn: {resolution: opts.resolution ?? vi.fn()},
-      addOnAttachment: {resolution: vi.fn()},
+      addOnAttachment: {resolution: opts.resolution ?? vi.fn()},
+      withHeaders() {
+        return this
+      },
+      withOptions() {
+        return this
+      },
     } as never,
   }
 }
 
 const addonMatch = [
   {
-    addon_service: {id: 'service-id', name: 'heroku-postgresql'},
+    addon: {
+      app: {id: 'app-uuid', name: 'app-1'},
+      id: 'addon-1',
+      name: 'pg-attached',
+      plan: {name: 'heroku-postgresql:essential-0'},
+    },
     app: {id: 'app-uuid', name: 'app-1'},
-    id: 'addon-1',
-    name: 'pg-attached',
-  } as AddOn,
+    id: 'attachment-id',
+    name: 'DATABASE',
+  },
 ]
 
 describe('transferSchedule resource', () => {
