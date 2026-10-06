@@ -1,9 +1,9 @@
 import type {AddOnAttachment} from '@heroku/types/3.sdk'
 
-import {NotFoundError} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
+
 const debug = createDebug('heroku:sdk:resources:add-on-attachment')
 
 export class AddonAttachmentNotFoundError extends Error {
@@ -39,8 +39,10 @@ export class AddonAttachmentAmbiguousError extends Error {
  * @heroku/types doesn't model that inclusion. Extend locally rather than
  * casting through `any`.
  */
-type AddOnAttachmentWithDetails = AddOnAttachment & {
-  addon: AddOnAttachment['addon'] & {plan?: {name?: string}}
+type AddOnAttachmentWithPlan = AddOnAttachment & {
+  addon: AddOnAttachment['addon'] & {
+    plan: {id?: string, name: string}
+  }
 }
 
 /**
@@ -52,8 +54,8 @@ type AddOnAttachmentWithDetails = AddOnAttachment & {
  * that schema loosening these back to optional) and to document, by name,
  * that a value carrying this type has actually been through resolution.
  */
-export type ResolvedAddOnAttachment = AddOnAttachmentWithDetails & {
-  addon: NonNullable<AddOnAttachmentWithDetails['addon']> & {app: {id: string}; id: string}
+export type ResolvedAddOnAttachment = AddOnAttachmentWithPlan & {
+  addon: NonNullable<AddOnAttachmentWithPlan['addon']> & {app: {id: string}; id: string}
 }
 
 export type AddonAttachmentOptions = {
@@ -62,11 +64,12 @@ export type AddonAttachmentOptions = {
    * add-on service (e.g. `heroku-postgresql`), filtered client-side.
    */
   addonService?: string
+  namespace?: string
   signal?: AbortSignal
 }
 
 /**
- * Resolve an add-on *attachment* via its name on a given app.
+ * Resolve a Platform add-on *attachment* by identity.
  *
  * The add-on attachment identity may be:
  *   - an attachment UUID (`d5e3f2a4-...`)
@@ -74,6 +77,7 @@ export type AddonAttachmentOptions = {
  *   - a config var (`DATABASE_URL`)
  *   - an app-scoped attachment name or config var (`my-app::DATABASE`,
  *    `my-app::DATABASE_URL`)
+ *   - a globally-unique add-on name (`postgres-curved-12345`)
  *
  * To resolve just the add-on the attachment points to, use `resolveAddon`.
  *
@@ -83,42 +87,47 @@ export type AddonAttachmentOptions = {
  */
 export async function resolveAddonAttachment(
   ctx: Pick<ResourceCtx, 'platform'>,
-  appIdentity: string,
+  appIdentity: string | undefined,
   attachmentName: string,
   options: AddonAttachmentOptions = {},
 ): Promise<ResolvedAddOnAttachment> {
-  const {addonService, signal} = options
+  const {addonService, namespace, signal} = options
 
   signal?.throwIfAborted()
-  debug('resolveAddonAttachment app=%s attachment=%s service=%s', appIdentity, attachmentName, addonService ?? '<any>')
+  debug('resolve app=%s attachment=%s service=%s namespace=%s', appIdentity ?? '<global>', attachmentName, addonService ?? '<any>', namespace ?? '<none>')
 
   const platform = ctx.platform
     .withHeaders({'Accept-Inclusion': 'addon:plan'})
     .withOptions({signal})
 
-  try {
-    const matches = await platform.addOnAttachment.resolution({
-      // eslint-disable-next-line camelcase
-      addon_attachment: attachmentName,
-      app: appIdentity,
-    }) as AddOnAttachmentWithDetails[]
+  const matches = await platform.addOnAttachment.resolution({
+    // eslint-disable-next-line camelcase
+    addon_attachment: attachmentName,
+    app: appIdentity,
+  }) as AddOnAttachmentWithPlan[]
 
-    const filtered = addonService
-      ? matches.filter(match => match.addon?.plan?.name?.split(':', 2)[0] === addonService)
-      : matches
-    debug('resolveAddonAttachment matches=%d filtered=%d (service=%s)', matches.length, filtered.length, addonService ?? '<any>')
+  const filtered = addonService
+    ? matches.filter(match => match.addon?.plan?.name?.split(':', 2)[0] === addonService)
+    : matches
 
-    return singularize(filtered)
-  } catch (error) {
-    if (isAddOnAttachmentNotFound(error)) {
-      throw new AddonAttachmentNotFoundError()
-    }
-
-    throw error
-  }
+  debug('resolve matches=%d filtered=%d (service=%s)', matches.length, filtered.length, addonService ?? '<any>')
+  const resolvedAttachment = singularize(filtered, namespace)
+  debug('resolve resolved attachment=%s addon=%s app=%s', resolvedAttachment.id, resolvedAttachment.addon.id, resolvedAttachment.addon.app.id)
+  return resolvedAttachment
 }
 
-function singularize(matches: AddOnAttachmentWithDetails[]): ResolvedAddOnAttachment {
+function singularize(attachments: AddOnAttachmentWithPlan[], namespace?: null | string): ResolvedAddOnAttachment {
+  let matches: AddOnAttachmentWithPlan[]
+
+  if (namespace) {
+    matches = attachments.filter(m => m.namespace === namespace)
+  } else if (attachments.length > 1) {
+  // In cases that aren't specific enough, keep only attachments without a namespace
+    matches = attachments.filter(m => !Reflect.has(m, 'namespace') || m.namespace === null)
+  } else {
+    matches = attachments
+  }
+
   if (matches.length === 0) {
     throw new AddonAttachmentNotFoundError()
   }
@@ -128,16 +137,9 @@ function singularize(matches: AddOnAttachmentWithDetails[]): ResolvedAddOnAttach
   }
 
   const match = matches[0]
-  if (!match?.addon?.id || !match.addon.app?.id) {
-    debug('resolveAddonAttachment matches=1 (no usable add-on returned)')
-    throw new AddonAttachmentNotFoundError()
+  if (!match.addon?.id || !match.addon?.app?.id) {
+    throw new Error(`Resolved attachment is missing required add-on fields (addon.id=${match.addon.id}, addon.app.id=${match.addon.app.id})`)
   }
 
-  debug('resolveAddonAttachment resolved attachment=%s addon=%s app=%s', match.id, match.addon.id, match.addon.app.id)
   return match as ResolvedAddOnAttachment
 }
-
-function isAddOnAttachmentNotFound(error: unknown): boolean {
-  return error instanceof NotFoundError && error.resource === 'add_on attachment'
-}
-

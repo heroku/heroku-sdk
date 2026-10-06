@@ -7,6 +7,6 @@ export {AddonAttachmentAmbiguousError, AddonAttachmentNotFoundError, resolveAddo
 export type {AddonAttachmentOptions, ResolvedAddOnAttachment} from './resolve.js'
 
 export const addOnAttachmentExtensions = extendResource('platform', 'addOnAttachment', ctx => ({
-  resolve: (appIdentity: string, attachmentName: string, options?: AddonAttachmentOptions) =>
+  resolve: (appIdentity: string | undefined, attachmentName: string, options?: AddonAttachmentOptions) =>
     resolveAddonAttachment(ctx, appIdentity, attachmentName, options),
 }))
