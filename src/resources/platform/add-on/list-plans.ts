@@ -38,10 +38,7 @@ export async function listPlans(
  * the dance of fetching the add-on, plucking its service id/name, and
  * passing it through.
  *
- * `addonIdentity` accepts the same forms as `resolveAddon`:
- *   - a UUID
- *   - a globally-unique add-on name
- *   - a namespaced credential reference (`name::SECONDARY`)
+ * `addonIdentity` accepts the same forms as `resolveAddon`.
  *
  * Pass `appIdentity` via `options` when the add-on identity is
  * scoped to an app (same semantics as `resolveAddon`).

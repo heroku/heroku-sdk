@@ -116,24 +116,24 @@ describe('resolveAddonAttachment', () => {
     expect(result.addon.id).toBe('pg-id')
   })
 
-  it('throws AddonAttachmentNotFoundError when the matched attachment lacks an addon id', async () => {
+  it('throws when the matched attachment lacks an addon id', async () => {
     const {ctx} = buildCtx({
       resolveByAttachmentResponses: [
         {addon: {app: {name: 'my-app'}, name: 'incomplete'}} as AddOnAttachment,
       ],
     })
 
-    await expect(resolveAddonAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonAttachmentNotFoundError)
+    await expect(resolveAddonAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toThrow(/missing required add-on fields/)
   })
 
-  it('throws AddonAttachmentNotFoundError when the matched attachment\'s addon lacks app.id', async () => {
+  it('throws when the matched attachment\'s addon lacks app.id', async () => {
     const {ctx} = buildCtx({
       resolveByAttachmentResponses: [
         {addon: {app: {name: 'my-app'}, id: 'addon-id', name: 'x'}} as AddOnAttachment,
       ],
     })
 
-    await expect(resolveAddonAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonAttachmentNotFoundError)
+    await expect(resolveAddonAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toThrow(/missing required add-on fields/)
   })
 
   it('throws AddonAttachmentAmbiguousError when the matched attachment is ambiguous', async () => {

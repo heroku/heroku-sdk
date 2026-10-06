@@ -13,11 +13,6 @@ import {resolveAddonInternal} from './resolve.js'
  * - Returns a copy with `plan.price` set from `billed_price` (so the
  *   value reflects any grandfathered/contract pricing).
  *
- * If `appIdentity` is provided and the platform returns 404 (resource
- * `add_on`), the resolve falls back to a global lookup. This handles
- * the case where the add-on belongs to a different app than the one
- * supplied.
- *
  * Requests the `version=3.sdk` accept variant with `addon_service,plan`
  * expansion so the resolved add-on includes the full `Plan` shape
  * (`price.unit`, etc.) needed to render pricing.

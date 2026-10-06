@@ -64,7 +64,6 @@ export type AddonAttachmentOptions = {
    * add-on service (e.g. `heroku-postgresql`), filtered client-side.
    */
   addonService?: string
-  namespace?: string
   signal?: AbortSignal
 }
 
@@ -91,10 +90,10 @@ export async function resolveAddonAttachment(
   attachmentName: string,
   options: AddonAttachmentOptions = {},
 ): Promise<ResolvedAddOnAttachment> {
-  const {addonService, namespace, signal} = options
+  const {addonService, signal} = options
 
   signal?.throwIfAborted()
-  debug('resolve app=%s attachment=%s service=%s namespace=%s', appIdentity ?? '<global>', attachmentName, addonService ?? '<any>', namespace ?? '<none>')
+  debug('resolve app=%s attachment=%s service=%s', appIdentity ?? '<global>', attachmentName, addonService ?? '<any>')
 
   const platform = ctx.platform
     .withHeaders({'Accept-Inclusion': 'addon:plan'})
@@ -111,23 +110,12 @@ export async function resolveAddonAttachment(
     : matches
 
   debug('resolve matches=%d filtered=%d (service=%s)', matches.length, filtered.length, addonService ?? '<any>')
-  const resolvedAttachment = singularize(filtered, namespace)
+  const resolvedAttachment = singularize(filtered)
   debug('resolve resolved attachment=%s addon=%s app=%s', resolvedAttachment.id, resolvedAttachment.addon.id, resolvedAttachment.addon.app.id)
   return resolvedAttachment
 }
 
-function singularize(attachments: AddOnAttachmentWithPlan[], namespace?: null | string): ResolvedAddOnAttachment {
-  let matches: AddOnAttachmentWithPlan[]
-
-  if (namespace) {
-    matches = attachments.filter(m => m.namespace === namespace)
-  } else if (attachments.length > 1) {
-  // In cases that aren't specific enough, keep only attachments without a namespace
-    matches = attachments.filter(m => !Reflect.has(m, 'namespace') || m.namespace === null)
-  } else {
-    matches = attachments
-  }
-
+function singularize(matches: AddOnAttachmentWithPlan[]): ResolvedAddOnAttachment {
   if (matches.length === 0) {
     throw new AddonAttachmentNotFoundError()
   }
