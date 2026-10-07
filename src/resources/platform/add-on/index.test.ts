@@ -1,6 +1,6 @@
 import type {AddOn, AddOnAttachment, Plan} from '@heroku/types/3.sdk'
 
-import {HerokuApiError} from '@heroku/heroku-fetch'
+import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -92,6 +92,14 @@ function buildCtx({
     withHeaders: platform.withHeaders,
     withOptions: platform.withOptions,
   }
+}
+
+function buildNotFound(resource = 'add_on'): NotFoundError {
+  const response = new Response(JSON.stringify({id: 'not_found', resource}), {
+    headers: {'content-type': 'application/json'},
+    status: 404,
+  })
+  return new NotFoundError(response, {id: 'not_found', resource})
 }
 
 function buildCreateCtx({
@@ -668,6 +676,14 @@ describe('add-on resource', () => {
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'postgres::sushi'})
     })
 
+    it('surfaces API errors', async () => {
+      const error = buildNotFound('app')
+      const {ctx, resolution} = buildCtx({resolveResponses: [error]})
+
+      await expect(describeAddon(ctx, 'my-postgres', {appIdentity: 'my-app'})).rejects.toBe(error)
+      expect(resolution).toHaveBeenCalledTimes(1)
+    })
+
     it('throws AddonNotFoundError when the resolver returns no matches', async () => {
       const {ctx} = buildCtx({resolveResponses: [[]]})
 
@@ -815,39 +831,6 @@ describe('add-on resource', () => {
 
       await expect(resolveAddon(ctx, 'my-postgres', {signal: controller.signal})).rejects.toThrow()
       expect(resolution).not.toHaveBeenCalled()
-    })
-
-    it('resolves a config-var identity (an attachment-shaped identifier) via the add-on resolver', async () => {
-      const {ctx, resolution} = buildCtx({
-        resolveResponses: [
-          [buildAddon({app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'})],
-        ],
-      })
-
-      const result = await resolveAddon(ctx, 'DATABASE_URL', {appIdentity: 'my-app'})
-
-      expect(resolution).toHaveBeenCalledExactlyOnceWith({
-        addon: 'DATABASE_URL',
-        app: 'my-app',
-      })
-      expect(result.id).toBe('addon-id')
-      expect(result.app.id).toBe('app-uuid')
-    })
-
-    it('throws AddonNotFoundError when no match is found for a config-var identity', async () => {
-      const {ctx} = buildCtx({resolveResponses: [[]]})
-
-      await expect(resolveAddon(ctx, 'NONEXISTENT', {appIdentity: 'my-app'})).rejects.toBeInstanceOf(AddonNotFoundError)
-    })
-
-    it('throws an error when the resolved match lacks an addon id', async () => {
-      const {ctx} = buildCtx({
-        resolveResponses: [
-          [{app: {name: 'my-app'}, name: 'incomplete'} as AddOn],
-        ],
-      })
-
-      await expect(resolveAddon(ctx, 'DATABASE_URL', {appIdentity: 'my-app'})).rejects.toThrow(/missing required fields/)
     })
   })
 

@@ -63,7 +63,10 @@ describe('database resource', () => {
 
     const result = await describeFn(ctx, 'app-1', 'HEROKU_POSTGRESQL_BLUE')
 
-    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'HEROKU_POSTGRESQL_BLUE', app: 'app-1'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({
+      addon_attachment: 'HEROKU_POSTGRESQL_BLUE',
+      app: 'app-1',
+    })
     expect(databaseInfo).toHaveBeenCalledWith('addon-1')
     expect(result).toEqual({plan: 'standard-0'})
   })
@@ -75,7 +78,10 @@ describe('database resource', () => {
 
     await describeFn(ctx, 'app-1')
 
-    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({
+      addon_attachment: 'DATABASE_URL',
+      app: 'app-1',
+    })
   })
 
   it('describe throws if signal is aborted', async () => {
@@ -151,7 +157,10 @@ describe('database resource', () => {
 
     const result = await cancelUpgrade(ctx, 'app-1', 'DATABASE_URL')
 
-    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'})
+    expect(resolutionByAttachment).toHaveBeenCalledWith({
+      addon_attachment: 'DATABASE_URL',
+      app: 'app-1',
+    })
     expect(cancelUpgradeFn).toHaveBeenCalledWith('addon-1')
     expect(result).toEqual({message: 'cancelled'})
   })
