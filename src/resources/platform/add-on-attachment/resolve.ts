@@ -24,7 +24,7 @@ export class AddonAttachmentAmbiguousError extends Error {
   public readonly id = 'multiple_matches'
   public readonly statusCode = 422
 
-  constructor(public readonly matches: AddOnAttachment[]) {
+  constructor(public readonly matches: AddOnAttachmentWithInclusions[]) {
     super(`Ambiguous identifier; multiple matching add-on attachments found: ${matches.map(m => m.name).join(', ')}.`)
     this.name = 'AddonAttachmentAmbiguousError'
   }
@@ -35,14 +35,15 @@ export class AddonAttachmentAmbiguousError extends Error {
 }
 
 /**
- * `Accept-Inclusion: addon:plan` requests the add-on's plan, but
- * @heroku/types doesn't model that inclusion. Extend locally rather than
- * casting through `any`.
+ * `Accept-Inclusion: addon:plan,config_vars` requests the add-on's plan and
+ * the attachment's config var names, but @heroku/types doesn't model either
+ * inclusion. Extend locally rather than casting through `any`.
  */
-export type AddOnAttachmentWithPlan = AddOnAttachment & {
+export type AddOnAttachmentWithInclusions = AddOnAttachment & {
   addon: AddOnAttachment['addon'] & {
     plan: {id?: string, name: string}
   }
+  config_vars: string[]
 }
 
 /**
@@ -54,8 +55,8 @@ export type AddOnAttachmentWithPlan = AddOnAttachment & {
  * that schema loosening these back to optional) and to document, by name,
  * that a value carrying this type has actually been through resolution.
  */
-export type ResolvedAddOnAttachment = AddOnAttachmentWithPlan & {
-  addon: NonNullable<AddOnAttachmentWithPlan['addon']> & {app: {id: string}; id: string}
+export type ResolvedAddOnAttachment = AddOnAttachmentWithInclusions & {
+  addon: NonNullable<AddOnAttachmentWithInclusions['addon']> & {app: {id: string}; id: string}
 }
 
 export type ResolveAddonAttachmentOptions = {
@@ -80,9 +81,9 @@ export type ResolveAddonAttachmentOptions = {
  *
  * To resolve just the add-on the attachment points to, use `resolveAddon`.
  *
- * Always sends `Accept-Inclusion: addon:plan` on the resolve request so
- * matches come back with their add-on's plan, needed to filter by
- * `addonService`.
+ * Always sends `Accept-Inclusion: addon:plan,config_vars` on the resolve
+ * request so matches come back with their add-on's plan (needed to filter
+ * by `addonService`) and their own config var names.
  */
 export async function resolveAddonAttachment(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -96,14 +97,14 @@ export async function resolveAddonAttachment(
   debug('resolve app=%s attachment=%s service=%s', appIdentity ?? '<global>', attachmentName, addonService ?? '<any>')
 
   const platform = ctx.platform
-    .withHeaders({'Accept-Inclusion': 'addon:plan'})
+    .withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'})
     .withOptions({signal})
 
   const matches = await platform.addOnAttachment.resolution({
     // eslint-disable-next-line camelcase
     addon_attachment: attachmentName,
     app: appIdentity,
-  }) as AddOnAttachmentWithPlan[]
+  }) as AddOnAttachmentWithInclusions[]
 
   const filtered = addonService
     ? matches.filter(match => match.addon?.plan?.name?.split(':', 2)[0] === addonService)
@@ -115,7 +116,7 @@ export async function resolveAddonAttachment(
   return resolvedAttachment
 }
 
-function singularize(matches: AddOnAttachmentWithPlan[]): ResolvedAddOnAttachment {
+function singularize(matches: AddOnAttachmentWithInclusions[]): ResolvedAddOnAttachment {
   if (matches.length === 0) {
     throw new AddonAttachmentNotFoundError()
   }
