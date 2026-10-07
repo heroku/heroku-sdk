@@ -112,7 +112,7 @@ describe('resolveAddonAttachment', () => {
       addon_attachment: 'DATABASE_URL',
       app: 'my-app',
     })
-    expect(withHeaders).toHaveBeenCalledWith({'Accept-Inclusion': 'addon:plan'})
+    expect(withHeaders).toHaveBeenCalledWith({'Accept-Inclusion': 'addon:plan,config_vars'})
     expect(result.addon.id).toBe('pg-id')
   })
 

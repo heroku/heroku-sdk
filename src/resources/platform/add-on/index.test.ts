@@ -817,7 +817,7 @@ describe('add-on resource', () => {
       expect(resolution).not.toHaveBeenCalled()
     })
 
-    it('resolves and returns the add-on from the matched attachment', async () => {
+    it('resolves a config-var identity (an attachment-shaped identifier) via the add-on resolver', async () => {
       const {ctx, resolution} = buildCtx({
         resolveResponses: [
           [buildAddon({app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'})],
@@ -834,13 +834,13 @@ describe('add-on resource', () => {
       expect(result.app.id).toBe('app-uuid')
     })
 
-    it('throws AddonNotFoundError when no attachment matches', async () => {
+    it('throws AddonNotFoundError when no match is found for a config-var identity', async () => {
       const {ctx} = buildCtx({resolveResponses: [[]]})
 
       await expect(resolveAddon(ctx, 'NONEXISTENT', {appIdentity: 'my-app'})).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
-    it('throws an error when the matched attachment lacks an addon id', async () => {
+    it('throws an error when the resolved match lacks an addon id', async () => {
       const {ctx} = buildCtx({
         resolveResponses: [
           [{app: {name: 'my-app'}, name: 'incomplete'} as AddOn],
