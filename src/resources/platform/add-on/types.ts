@@ -10,28 +10,18 @@ export type ResolveAddonOptions = AddOnOptions & {
 }
 
 /**
- * An add-on whose `app.id` and `id` are guaranteed non-null. This is what
- * the Platform's resolver returns for a successful match, but the schema
- * types both as optional. `singularize` enforces it at runtime so callers
- * can rely on the narrower type.
+ * An add-on that has passed through a resolver's `singularize` check:
+ * `app.id` and `id` are guaranteed non-null at runtime. At the currently
+ * installed `@heroku/types` schema, `AddOn` already types these as
+ * required, so this doesn't narrow anything today — it exists to give the
+ * SDK a stable name decoupled from the generated type (insurance against
+ * that schema loosening these back to optional) and to document, by name,
+ * that a value carrying this type has actually been through resolution
+ * rather than a plain `list()`/`info()` call.
  */
 export type ResolvedAddOn = AddOn & {
   app: AddOn['app'] & {id: string}
   id: string
-}
-
-/**
- * An attachment whose add-on `id`/`app.id` are guaranteed non-null (as the
- * resolver enforces at runtime). `web_url` is scoped to the attached app's
- * context — the dashboard URL for opening this add-on *from this app*, which
- * differs from the add-on's own (billing-app) `web_url`.
- *
- * `web_url` remains `string | null` by design (inherited from
- * `AddOnAttachment`): it is `null` for add-ons that expose no web dashboard.
- * The resolver does not guarantee a URL — callers must handle the `null` case.
- */
-export type ResolvedAddOnAttachment = AddOnAttachment & {
-  addon: NonNullable<AddOnAttachment['addon']> & {app: {id: string}; id: string}
 }
 
 export type DescribedAddOn = ResolvedAddOn & {

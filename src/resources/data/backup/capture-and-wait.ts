@@ -1,7 +1,7 @@
 import type {BackupCreateResult, TransferInfoByAppResult} from '@heroku/types/data'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {ResolvedAddOn} from '../../platform/add-on/index.js'
+import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
 import type {WaitForTransferOptions} from '../wait-for-transfer.js'
 
 import {Poller} from '../../../utils/poller.js'
@@ -13,7 +13,7 @@ export type CaptureAndWaitOptions = WaitForTransferOptions & {
    * Progress hooks fired once before capturing the backup `poller.onStart(addon)`
    * and once after the backup is created `poller.onStop(addon)`.
    */
-  capturePoller?: Poller<ResolvedAddOn>
+  capturePoller?: Poller<ResolvedPgDatabase>
   /**
    * Progress hooks fired once before waiting for the transfer to
    * complete `poller.onStart(backup)` and once after the transfer

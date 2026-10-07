@@ -1,3 +1,4 @@
+export {addOnAttachmentExtensions} from '../platform/add-on-attachment/index.js'
 export {addOnExtensions} from '../platform/add-on/index.js'
 export {
   appExtensions, type AppInfo, type DiffAppsOptions, type DiffRow, type PipelineCouplingDetail,

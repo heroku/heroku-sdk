@@ -10,9 +10,8 @@ import {resolveAddonInternal} from './resolve.js'
  * Change the plan of an add-on.
  *
  * Resolves the add-on first so the caller can pass any identifier
- * (UUID, globally unique name, or namespaced `service::name`). When
- * `appIdentity` is provided, the resolve is scoped to that app and
- * falls back to a global resolve if the platform returns 404 add_on.
+ * `resolveAddon` accepts. When `appIdentity` is provided, the resolve
+ * is scoped to that app.
  *
  * If `plan` is unqualified (no `:`), it's prefixed with the resolved
  * add-on's `addon_service.name` — so callers can pass `hobby` rather

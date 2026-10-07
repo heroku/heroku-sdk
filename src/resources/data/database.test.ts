@@ -1,5 +1,4 @@
-import type {AddOnAttachment} from '@heroku/types/3.sdk'
-
+/* eslint-disable camelcase */
 import {
   describe, expect, it, vi,
 } from 'vitest'
@@ -15,7 +14,6 @@ function buildCtx(opts: {
   databaseInfo?: ReturnType<typeof vi.fn>
   dryRunUpgrade?: ReturnType<typeof vi.fn>
   prepareUpgrade?: ReturnType<typeof vi.fn>
-  resolution?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
   runUpgrade?: ReturnType<typeof vi.fn>
   upgradeWaitStatus?: ReturnType<typeof vi.fn>
@@ -32,14 +30,29 @@ function buildCtx(opts: {
       },
     } as never,
     platform: {
-      addOn: {resolution: opts.resolution ?? vi.fn()},
       addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
+      withHeaders() {
+        return this
+      },
+      withOptions() {
+        return this
+      },
     } as never,
   }
 }
 
 const oneAttachmentMatch = [
-  {addon: {app: {id: 'app-uuid', name: 'app-1'}, id: 'addon-1', name: 'pg-attached'}} as AddOnAttachment,
+  {
+    addon: {
+      app: {id: 'app-uuid', name: 'app-1'},
+      id: 'addon-1',
+      name: 'pg-attached',
+      plan: {name: 'heroku-postgresql:essential-0'},
+    },
+    app: {id: 'app-uuid', name: 'app-1'},
+    id: 'attachment-id',
+    name: 'DATABASE',
+  },
 ]
 
 describe('database resource', () => {
@@ -51,7 +64,6 @@ describe('database resource', () => {
     const result = await describeFn(ctx, 'app-1', 'HEROKU_POSTGRESQL_BLUE')
 
     expect(resolutionByAttachment).toHaveBeenCalledWith({
-      // eslint-disable-next-line camelcase
       addon_attachment: 'HEROKU_POSTGRESQL_BLUE',
       app: 'app-1',
     })
@@ -67,7 +79,6 @@ describe('database resource', () => {
     await describeFn(ctx, 'app-1')
 
     expect(resolutionByAttachment).toHaveBeenCalledWith({
-      // eslint-disable-next-line camelcase
       addon_attachment: 'DATABASE_URL',
       app: 'app-1',
     })
@@ -147,7 +158,6 @@ describe('database resource', () => {
     const result = await cancelUpgrade(ctx, 'app-1', 'DATABASE_URL')
 
     expect(resolutionByAttachment).toHaveBeenCalledWith({
-      // eslint-disable-next-line camelcase
       addon_attachment: 'DATABASE_URL',
       app: 'app-1',
     })
