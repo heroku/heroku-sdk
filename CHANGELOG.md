@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.7.1...sdk-v0.8.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* align add-on, attachment, and database resolvers ([#141](https://github.com/heroku/heroku-sdk/issues/141))
+
+### Features
+
+* align add-on, attachment, and database resolvers ([#141](https://github.com/heroku/heroku-sdk/issues/141)) ([b90e454](https://github.com/heroku/heroku-sdk/commit/b90e45470add75c70f430a75fd5487df9a00943a))
+
 ## [0.7.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.7.0...sdk-v0.7.1) (2026-10-01)
 
 
