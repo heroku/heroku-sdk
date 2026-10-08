@@ -23,7 +23,7 @@ export async function getArbitraryLegacyDB(
 }
 
 export const getAddonService = () =>
-  process.env.HEROKU_POSTGRESQL_ADDON_NAME ?? process.env.HEROKU_DATA_SERVICE ?? 'heroku-postgresql'
+  process.env.HEROKU_POSTGRESQL_ADDON_NAME || process.env.HEROKU_DATA_SERVICE || 'heroku-postgresql'
 
 export const isPostgresAddon = (addon: AddOn) =>
   addon.plan?.name?.split(':', 2)[0] === getAddonService()
