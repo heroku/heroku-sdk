@@ -1,19 +1,28 @@
+import type {ConfigVar} from '@heroku/types/3.sdk'
+
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnAttachmentWithInclusions, ResolveAddonAttachmentOptions, ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
 import {AddonAttachmentAmbiguousError, resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
+import {getAddonService} from './postgres-utils.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 
 const DEFAULT_PG_ATTACHMENT = 'DATABASE_URL'
-const PG_ADDON_SERVICE = process.env.HEROKU_POSTGRESQL_ADDON_NAME ??  process.env.HEROKU_DATA_SERVICE ?? 'heroku-postgresql'
+const PG_ADDON_SERVICE = getAddonService()
 
 export type ResolvedPgDatabase = ResolvedAddOnAttachment['addon']
 
+export type ResolvedPgDatabaseWithAttachment = {
+  addon: ResolvedPgDatabase
+  attachment: ResolvedAddOnAttachment
+}
+
 export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
   appIdentity?: string,
+  includeAttachment?: boolean
   input?: string
 }
 
@@ -50,9 +59,18 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
  */
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
+  options: ResolvePgDatabaseOptions & {includeAttachment: true},
+): Promise<ResolvedPgDatabaseWithAttachment>
+export async function resolvePgDatabase(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  options?: ResolvePgDatabaseOptions,
+): Promise<ResolvedPgDatabase>
+
+export async function resolvePgDatabase(
+  ctx: Pick<ResourceCtx, 'platform'>,
   options: ResolvePgDatabaseOptions = {},
-): Promise<ResolvedPgDatabase> {
-  const {appIdentity, input, ...rest} = options
+): Promise<ResolvedPgDatabase | ResolvedPgDatabaseWithAttachment> {
+  const {appIdentity, includeAttachment, input, ...rest} = options
 
   if (!input && !appIdentity) {
     throw new Error('resolvePgDatabase requires either input or appIdentity to default to DATABASE_URL.')
@@ -64,22 +82,23 @@ export async function resolvePgDatabase(
     : {addon: databaseReference, app: appIdentity}
 
   debug('resolve input=%s addon=%s app=%s', input ?? '<default>', addon, app ?? '<global>')
-  try {
-    const attachment = await resolveAddonAttachment(ctx, app, addon, {...rest, addonService: PG_ADDON_SERVICE})
-    return attachment.addon
-  } catch (error) {
-    if (error instanceof AddonAttachmentAmbiguousError) {
-      const equivalent = collapseIfEquivalent(error.matches)
-      if (equivalent) {
-        const config = await ctx.platform.configVar.infoForApp(equivalent[0].app.name)
-        if (allMatchSameUrl(equivalent, config)) {
-          return equivalent[0].addon
-        }
-      }
-    }
 
-    throw error
+  let attachment: ResolvedAddOnAttachment
+  try {
+    attachment = await resolveAddonAttachment(ctx, app, addon, {...rest, addonService: PG_ADDON_SERVICE})
+  } catch (error) {
+    if (!(error instanceof AddonAttachmentAmbiguousError)) throw error
+
+    const equivalent = collapseIfEquivalent(error.matches)
+    if (!equivalent) throw error
+
+    const config = await ctx.platform.configVar.infoForApp(equivalent[0].app.name)
+    if (!allMatchSameUrl(equivalent, config)) throw error
+
+    attachment = equivalent[0]
   }
+
+  return includeAttachment ? {addon: attachment.addon, attachment} : attachment.addon
 }
 
 /**
@@ -99,7 +118,7 @@ function urlConfigVarName(configVars: string[]): string | undefined {
 }
 
 /** Whether every match's own URL config var resolves to the same value in `config`. */
-function allMatchSameUrl(matches: AddOnAttachmentWithInclusions[], config: Record<string, string>): boolean {
+function allMatchSameUrl(matches: AddOnAttachmentWithInclusions[], config: ConfigVar): boolean {
   const firstVarName = urlConfigVarName(matches[0].config_vars)
   const firstValue = firstVarName && config[firstVarName]
   if (!firstValue) {
