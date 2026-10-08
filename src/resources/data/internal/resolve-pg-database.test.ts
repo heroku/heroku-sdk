@@ -15,9 +15,8 @@ function buildCtx({
 }: {
   infoForApp?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
-}): ResourceCtx {
+}): Pick<ResourceCtx, 'platform'> {
   return {
-    data: {} as never,
     platform: {
       addOnAttachment: {resolution: resolutionByAttachment ?? vi.fn()},
       configVar: {infoForApp: infoForApp ?? vi.fn()},
@@ -173,5 +172,33 @@ describe('resolvePgDatabase', () => {
 
     await expect(resolvePgDatabase(ctx, {appIdentity: 'app-1'})).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
     expect(infoForApp).not.toHaveBeenCalled()
+  })
+
+  it('returns the attachment and addon when includeAttachment is true', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
+    const ctx = buildCtx({resolutionByAttachment})
+
+    const result = await resolvePgDatabase(ctx, {appIdentity: 'app-1', includeAttachment: true})
+
+    expect(result.addon.id).toBe('addon-id')
+    expect(result.attachment.id).toBe('attachment-id')
+    expect(result.attachment.name).toBe('DATABASE')
+  })
+
+  it('returns the first equivalent attachment when includeAttachment is true', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue([
+      pgAttachment({attachmentId: 'attachment-1', configVars: ['DATABASE_URL']}),
+      pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL']}),
+    ])
+    const infoForApp = vi.fn().mockResolvedValue({
+      DATABASE_URL: 'postgres://same',
+      HEROKU_POSTGRESQL_PINK_URL: 'postgres://same',
+    })
+    const ctx = buildCtx({infoForApp, resolutionByAttachment})
+
+    const result = await resolvePgDatabase(ctx, {appIdentity: 'app-1', includeAttachment: true})
+
+    expect(result.addon.id).toBe('addon-id')
+    expect(result.attachment.id).toBe('attachment-1')
   })
 })

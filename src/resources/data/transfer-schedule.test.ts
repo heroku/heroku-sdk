@@ -11,6 +11,7 @@ import {
 } from './transfer-schedule.js'
 
 function buildCtx(opts: {
+  addonListByApp?: ReturnType<typeof vi.fn>
   create?: ReturnType<typeof vi.fn>
   delete?: ReturnType<typeof vi.fn>
   list?: ReturnType<typeof vi.fn>
@@ -26,6 +27,7 @@ function buildCtx(opts: {
       },
     } as never,
     platform: {
+      addOn: {listByApp: opts.addonListByApp ?? vi.fn()},
       addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
       withHeaders() {
         return this
@@ -35,6 +37,13 @@ function buildCtx(opts: {
       },
     } as never,
   }
+}
+
+const legacyAddon = {
+  app: {id: 'app-uuid', name: 'app-1'},
+  id: 'addon-1',
+  name: 'postgresql-legacy',
+  plan: {name: 'heroku-postgresql:essential-0'},
 }
 
 const attachmentMatch = [
@@ -52,16 +61,17 @@ const attachmentMatch = [
 ]
 
 describe('transferSchedule resource', () => {
-  it('list resolves the addon and calls transferSchedule.list', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+  it('list resolves a legacy addon and calls transferSchedule.list', async () => {
+    const addonListByApp = vi.fn().mockResolvedValue([legacyAddon])
     const schedules = [{
       hour: 4, name: 'DATABASE_URL', timezone: 'UTC', uuid: 'sched-1',
     }]
     const listStub = vi.fn().mockResolvedValue(schedules)
-    const ctx = buildCtx({list: listStub, resolutionByAttachment})
+    const ctx = buildCtx({addonListByApp, list: listStub})
 
-    const result = await list(ctx, 'app-1', 'DATABASE_URL')
+    const result = await list(ctx, 'app-1')
 
+    expect(addonListByApp).toHaveBeenCalledWith('app-1')
     expect(listStub).toHaveBeenCalledWith('addon-1')
     expect(result).toEqual(schedules)
   })
@@ -75,6 +85,16 @@ describe('transferSchedule resource', () => {
 
     expect(createStub).toHaveBeenCalledWith('addon-1', {hour: 4, schedule_name: 'DATABASE_URL', timezone: 'UTC'})
     expect(result).toEqual({hour: 4, name: 'DATABASE_URL', uuid: 'sched-1'})
+  })
+
+  it('create defaults schedule_name from the attachment name', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+    const createStub = vi.fn().mockResolvedValue({hour: 4, name: 'DATABASE_URL', uuid: 'sched-1'})
+    const ctx = buildCtx({create: createStub, resolutionByAttachment})
+
+    await create(ctx, 'app-1', 'DATABASE_URL', {hour: 4, timezone: 'UTC'})
+
+    expect(createStub).toHaveBeenCalledWith('addon-1', {hour: 4, schedule_name: 'DATABASE_URL', timezone: 'UTC'})
   })
 
   it('delete resolves the addon and calls transferSchedule.delete with the schedule id', async () => {
