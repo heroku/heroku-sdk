@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.8.0...sdk-v0.8.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* update database resolution in transfer schedule extensions ([#149](https://github.com/heroku/heroku-sdk/issues/149)) ([1c2cfa1](https://github.com/heroku/heroku-sdk/commit/1c2cfa11b415ee392f600879053d8ae8a7e66500))
+
 ## [0.8.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.7.1...sdk-v0.8.0) (2026-10-07)
 
 
