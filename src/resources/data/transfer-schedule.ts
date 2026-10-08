@@ -7,6 +7,7 @@ import type {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+import {getArbitraryLegacyDB} from './internal/postgres-utils.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 // The OpenAPI spec declares no fixed response schema for transferSchedule.list
@@ -26,11 +27,11 @@ export type TransferScheduleOptions = {
 export async function list(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
-  addonIdentity?: string,
   options: TransferScheduleOptions = {},
 ): Promise<TransferSchedule[]> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  // Schedules are app-scoped, so any legacy DB ID unlocks the app's list.
+  const addon = await getArbitraryLegacyDB(ctx, appIdentity)
   return ctx.data.transferSchedule.list(addon.id) as unknown as Promise<TransferSchedule[]>
 }
 
@@ -42,8 +43,17 @@ export async function create(
   options: TransferScheduleOptions = {},
 ): Promise<TransferScheduleCreateResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
-  return ctx.data.transferSchedule.create(addon.id, body)
+  const {addon, attachment} = await resolvePgDatabase(ctx, {
+    appIdentity, includeAttachment: true, input: addonIdentity, ...options,
+  })
+
+  let requestBody = body
+  if (!requestBody.schedule_name) {
+    // eslint-disable-next-line camelcase
+    requestBody = {...body, schedule_name: `${attachment.name}_URL`}
+  }
+
+  return ctx.data.transferSchedule.create(addon.id, requestBody)
 }
 
 export async function del(
@@ -73,7 +83,6 @@ export const transferScheduleExtensions = extendResource('data', 'transferSchedu
   ) => del(ctx, appIdentity, addonIdentity, scheduleId, options),
   list: (
     appIdentity: string,
-    addonIdentity?: string,
     options?: TransferScheduleOptions,
-  ) => list(ctx, appIdentity, addonIdentity, options),
+  ) => list(ctx, appIdentity, options),
 }))
