@@ -1,10 +1,10 @@
 /* eslint-disable no-await-in-loop */
 import type {TransferInfoByAppResult} from '@heroku/types/data'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../core/extend-resource.js'
-import {wait} from '../../utils/wait.js'
+import {extendResource} from '../../../core/extend-resource.js'
+import {wait} from '../../../utils/wait.js'
 
 const DEFAULT_INTERVAL_MS = 3000
 const MAX_FAILURES = 20
