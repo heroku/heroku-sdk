@@ -7,7 +7,12 @@ import {restoreAndWait} from './restore-and-wait.js'
 
 export {captureAndWait, type CaptureAndWaitOptions} from './capture-and-wait.js'
 export {restoreAndWait, type RestoreAndWaitOptions} from './restore-and-wait.js'
-export {transferExtensions, TransferFailedError, TransferTimeoutError} from './wait-for-transfer.js'
+export {
+  transferExtensions,
+  TransferFailedError,
+  TransferTimeoutError,
+  type WaitForTransferOptions,
+} from './wait-for-transfer.js'
 
 export const restoreExtensions = extendResource('data', 'restore', ctx => ({
   restoreAndWait: (

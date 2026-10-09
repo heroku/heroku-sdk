@@ -9,4 +9,5 @@ export {
   transferExtensions,
   TransferFailedError,
   TransferTimeoutError,
+  type WaitForTransferOptions,
 } from '../data/transfer/index.js'
