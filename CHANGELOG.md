@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.8.1...sdk-v0.9.0) (2026-10-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* combine backup and restore helpers under transfer ([#151](https://github.com/heroku/heroku-sdk/issues/151))
+
+### Code Refactoring
+
+* combine backup and restore helpers under transfer ([#151](https://github.com/heroku/heroku-sdk/issues/151)) ([6129a61](https://github.com/heroku/heroku-sdk/commit/6129a615518a26c4a652d169962f58456736818c))
+
 ## [0.8.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.8.0...sdk-v0.8.1) (2026-10-08)
 
 
