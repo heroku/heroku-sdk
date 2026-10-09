@@ -5,6 +5,8 @@ export {redisExtensions} from '../data/redis/index.js'
 export {type TransferSchedule, transferScheduleExtensions} from '../data/transfer-schedule.js'
 export {
   backupExtensions,
+  type CaptureAndWaitOptions,
+  type RestoreAndWaitOptions,
   restoreExtensions,
   transferExtensions,
   TransferFailedError,
