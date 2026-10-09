@@ -144,7 +144,7 @@
     "@types/debug": "^4.1.12",
     "@types/node": "^26.5.1",
     "@vitest/coverage-v8": "^4.1.8",
-    "eslint": "^9.39.4",
+    "eslint": "^10.11.0",
     "eslint-config-oclif": "^6.0.167",
     "@vitest/eslint-plugin": "^1.6.0",
     "rimraf": "^6.1.3",
