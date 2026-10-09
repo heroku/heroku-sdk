@@ -1,4 +1,4 @@
-import type {RestoreCreateResult, TransferInfoByAppResult} from '@heroku/types/data'
+import type {TransferInfoByAppResult} from '@heroku/types/data'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
@@ -6,7 +6,15 @@ import type {WaitForTransferOptions} from './wait-for-transfer.js'
 
 import {Poller} from '../../../utils/poller.js'
 import {resolvePgDatabase} from '../internal/resolve-pg-database.js'
-import {waitForTransfer} from '../transfer/wait-for-transfer.js'
+import {waitForTransfer} from './wait-for-transfer.js'
+
+/**
+ * `data.restore.create`'s declared return type, `RestoreCreateResult`, only
+ * lists `uuid`/`from_type`/`to_type`, but the actual response includes the
+ * full transfer record. Widen the type here so callers (e.g. `waitPoller`) can
+ * use the full transfer record.
+ */
+export type RestoreCreateInfo = TransferInfoByAppResult
 
 export type RestoreAndWaitOptions = WaitForTransferOptions & {
   /**
@@ -24,7 +32,7 @@ export type RestoreAndWaitOptions = WaitForTransferOptions & {
    * complete `poller.onStart(restore)` and once after the restore
    * reaches a terminal state `poller.onStop(restore)`.
    */
-  waitPoller?: Poller<RestoreCreateResult>
+  waitPoller?: Poller<RestoreCreateInfo>
 }
 
 export async function restoreAndWait(
@@ -42,7 +50,7 @@ export async function restoreAndWait(
 
   restorePoller?.onStart?.(addon)
   // eslint-disable-next-line camelcase
-  const restore = await ctx.data.restore.create(addon.id, {backup_url: backupUrl, extensions})
+  const restore = await ctx.data.restore.create(addon.id, {backup_url: backupUrl, extensions}) as RestoreCreateInfo
   restorePoller?.onStop?.(addon)
 
   waitPoller?.onStart?.(restore)

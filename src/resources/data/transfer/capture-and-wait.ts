@@ -1,4 +1,4 @@
-import type {BackupCreateResult, TransferInfoByAppResult} from '@heroku/types/data'
+import type {TransferInfoByAppResult} from '@heroku/types/data'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
@@ -7,6 +7,14 @@ import type {WaitForTransferOptions} from './wait-for-transfer.js'
 import {Poller} from '../../../utils/poller.js'
 import {resolvePgDatabase} from '../internal/resolve-pg-database.js'
 import {waitForTransfer} from './wait-for-transfer.js'
+
+/**
+ * `data.backup.create`'s declared return type, `BackupCreateResult`, only
+ * lists `uuid`/`from_type`/`to_type`, but the actual response includes the
+ * full transfer record. Widen the type here so callers (e.g. `waitPoller`) can
+ * use the full transfer record.
+ */
+export type BackupCreateInfo = TransferInfoByAppResult
 
 export type CaptureAndWaitOptions = WaitForTransferOptions & {
   /**
@@ -19,7 +27,7 @@ export type CaptureAndWaitOptions = WaitForTransferOptions & {
    * complete `poller.onStart(backup)` and once after the transfer
    * finishes successfully `poller.onStop(backup)`.
    */
-  waitPoller?: Poller<BackupCreateResult>
+  waitPoller?: Poller<BackupCreateInfo>
 }
 
 export async function captureAndWait(
@@ -35,7 +43,7 @@ export async function captureAndWait(
   const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
 
   capturePoller?.onStart?.(addon)
-  const backup = await ctx.data.backup.create(addon.id)
+  const backup = await ctx.data.backup.create(addon.id) as BackupCreateInfo
   capturePoller?.onStop?.(addon)
 
   waitPoller?.onStart?.(backup)
