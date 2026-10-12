@@ -35,7 +35,7 @@ export async function describe(
   options: DatabaseOptions = {},
 ): Promise<DatabaseDescribeResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
   return ctx.data.database.info(addon.id)
 }
 
@@ -46,7 +46,7 @@ export async function upgradeWaitStatus(
   options: DatabaseOptions = {},
 ): Promise<DatabaseUpgradeWaitStatusResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
   return ctx.data.database.upgradeWaitStatus(addon.id)
 }
 
@@ -58,7 +58,7 @@ export async function dryRunUpgrade(
   options: DatabaseOptions = {},
 ): Promise<DatabaseDryRunUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
   return ctx.data.database.dryRunUpgrade(addon.id, body)
 }
 
@@ -70,7 +70,7 @@ export async function runUpgrade(
   options: DatabaseOptions = {},
 ): Promise<DatabaseRunUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
   return ctx.data.database.runUpgrade(addon.id, body)
 }
 
@@ -82,7 +82,7 @@ export async function prepareUpgrade(
   options: DatabaseOptions = {},
 ): Promise<DatabasePrepareUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
   return ctx.data.database.prepareUpgrade(addon.id, body)
 }
 
@@ -93,7 +93,7 @@ export async function cancelUpgrade(
   options: DatabaseOptions = {},
 ): Promise<DatabaseCancelUpgradeResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
   return ctx.data.database.cancelUpgrade(addon.id)
 }
 

@@ -60,7 +60,7 @@ describe('resolvePgDatabase', () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
     const ctx = buildCtx({resolutionByAttachment})
 
-    const result = await resolvePgDatabase(ctx, {input: 'parent-app::branch'})
+    const result = await resolvePgDatabase(ctx, 'other-app', {input: 'parent-app::branch'})
 
     expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'branch', app: 'parent-app'})
     expect(result.id).toBe('addon-id')
@@ -70,7 +70,7 @@ describe('resolvePgDatabase', () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment({id: 'addon-13'})])
     const ctx = buildCtx({resolutionByAttachment})
 
-    const result = await resolvePgDatabase(ctx, {appIdentity: 'app-1', input: 'HEROKU_POSTGRESQL_GREEN'})
+    const result = await resolvePgDatabase(ctx, 'app-1', {input: 'HEROKU_POSTGRESQL_GREEN'})
 
     expect(resolutionByAttachment).toHaveBeenCalledWith({
       addon_attachment: 'HEROKU_POSTGRESQL_GREEN',
@@ -83,7 +83,7 @@ describe('resolvePgDatabase', () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
     const ctx = buildCtx({resolutionByAttachment})
 
-    await resolvePgDatabase(ctx, {appIdentity: 'app-1', input: 'postgres-curved-12345'})
+    await resolvePgDatabase(ctx, 'app-1', {input: 'postgres-curved-12345'})
 
     expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'postgres-curved-12345', app: 'app-1'})
   })
@@ -92,7 +92,7 @@ describe('resolvePgDatabase', () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
     const ctx = buildCtx({resolutionByAttachment})
 
-    await resolvePgDatabase(ctx, {appIdentity: 'app-1'})
+    await resolvePgDatabase(ctx, 'app-1')
 
     expect(resolutionByAttachment).toHaveBeenCalledWith({
       addon_attachment: 'DATABASE_URL',
@@ -100,25 +100,11 @@ describe('resolvePgDatabase', () => {
     })
   })
 
-  it('throws when input is omitted and no appIdentity is provided', async () => {
-    const ctx = buildCtx({})
-    await expect(resolvePgDatabase(ctx, {})).rejects.toThrow(/requires either input or appIdentity/)
-  })
-
-  it('resolves globally when no appIdentity is given and the input has no app context', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
-    const ctx = buildCtx({resolutionByAttachment})
-
-    await resolvePgDatabase(ctx, {input: 'postgres-curved-12345'})
-
-    expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'postgres-curved-12345', app: undefined})
-  })
-
   it('uses the app:: prefix in the input instead of appIdentity', async () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
     const ctx = buildCtx({resolutionByAttachment})
 
-    await resolvePgDatabase(ctx, {appIdentity: 'app-1', input: 'app::postgres-curved-12345'})
+    await resolvePgDatabase(ctx, 'app-1', {input: 'app::postgres-curved-12345'})
 
     expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'postgres-curved-12345', app: 'app'})
   })
@@ -127,7 +113,7 @@ describe('resolvePgDatabase', () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment({planName: 'heroku-redis:premium-0'})])
     const ctx = buildCtx({resolutionByAttachment})
 
-    await expect(resolvePgDatabase(ctx, {appIdentity: 'app-1'})).rejects.toThrow()
+    await expect(resolvePgDatabase(ctx, 'app-1')).rejects.toThrow()
   })
 
   it('collapses ambiguous matches that target the same database', async () => {
@@ -141,7 +127,7 @@ describe('resolvePgDatabase', () => {
     })
     const ctx = buildCtx({infoForApp, resolutionByAttachment})
 
-    const result = await resolvePgDatabase(ctx, {appIdentity: 'app-1'})
+    const result = await resolvePgDatabase(ctx, 'app-1')
 
     expect(result.id).toBe('addon-id')
     expect(infoForApp).toHaveBeenCalledWith('parent-app')
@@ -158,7 +144,7 @@ describe('resolvePgDatabase', () => {
     })
     const ctx = buildCtx({infoForApp, resolutionByAttachment})
 
-    await expect(resolvePgDatabase(ctx, {appIdentity: 'app-1'})).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
+    await expect(resolvePgDatabase(ctx, 'app-1')).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
     expect(infoForApp).toHaveBeenCalledWith('parent-app')
   })
 
@@ -170,7 +156,7 @@ describe('resolvePgDatabase', () => {
     const infoForApp = vi.fn()
     const ctx = buildCtx({infoForApp, resolutionByAttachment})
 
-    await expect(resolvePgDatabase(ctx, {appIdentity: 'app-1'})).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
+    await expect(resolvePgDatabase(ctx, 'app-1')).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
     expect(infoForApp).not.toHaveBeenCalled()
   })
 
@@ -178,7 +164,7 @@ describe('resolvePgDatabase', () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
     const ctx = buildCtx({resolutionByAttachment})
 
-    const result = await resolvePgDatabase(ctx, {appIdentity: 'app-1', includeAttachment: true})
+    const result = await resolvePgDatabase(ctx, 'app-1', {includeAttachment: true})
 
     expect(result.addon.id).toBe('addon-id')
     expect(result.attachment.id).toBe('attachment-id')
@@ -196,7 +182,7 @@ describe('resolvePgDatabase', () => {
     })
     const ctx = buildCtx({infoForApp, resolutionByAttachment})
 
-    const result = await resolvePgDatabase(ctx, {appIdentity: 'app-1', includeAttachment: true})
+    const result = await resolvePgDatabase(ctx, 'app-1', {includeAttachment: true})
 
     expect(result.addon.id).toBe('addon-id')
     expect(result.attachment.id).toBe('attachment-1')

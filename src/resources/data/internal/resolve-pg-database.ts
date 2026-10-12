@@ -21,7 +21,6 @@ export type ResolvedPgDatabaseWithAttachment = {
 }
 
 export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
-  appIdentity?: string,
   includeAttachment?: boolean
   input?: string
 }
@@ -39,7 +38,8 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
  *     `::` ourselves and send `app`/`addon` as separate fields, which
  *     works for either shape.
  *   - any other string (attachment name, config var, UUID, or
- *     globally-unique add-on name) → routed through `resolveAddonAttachment`.
+ *     globally-unique add-on name) → routed through `resolveAddonAttachment`,
+ *     scoped to `appIdentity`.
  *
  * This function only uses the attachment resolver. To resolve a database
  * through the add-on resolve endpoint, call `resolveAddon` directly.
@@ -54,34 +54,32 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
  * (e.g. the same database attached under two names) rather than ambiguous.
  *
  * Throws `AddonAttachmentNotFoundError` (or `AddonAttachmentAmbiguousError`)
- * from the underlying resolver. Throws if no input is given and no `appIdentity`
- * is available to default the attachment lookup to.
+ * from the underlying resolver.
  */
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
   options: ResolvePgDatabaseOptions & {includeAttachment: true},
 ): Promise<ResolvedPgDatabaseWithAttachment>
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
   options?: ResolvePgDatabaseOptions,
 ): Promise<ResolvedPgDatabase>
 
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
   options: ResolvePgDatabaseOptions = {},
 ): Promise<ResolvedPgDatabase | ResolvedPgDatabaseWithAttachment> {
-  const {appIdentity, includeAttachment, input, ...rest} = options
-
-  if (!input && !appIdentity) {
-    throw new Error('resolvePgDatabase requires either input or appIdentity to default to DATABASE_URL.')
-  }
+  const {includeAttachment, input, ...rest} = options
 
   const databaseReference = input ?? DEFAULT_PG_ATTACHMENT
   const {addon, app} = databaseReference.includes('::')
     ? parseBranchReference(databaseReference, appIdentity)
     : {addon: databaseReference, app: appIdentity}
 
-  debug('resolve input=%s addon=%s app=%s', input ?? '<default>', addon, app ?? '<global>')
+  debug('resolve input=%s addon=%s app=%s', input ?? '<default>', addon, app)
 
   let attachment: ResolvedAddOnAttachment
   try {
@@ -133,12 +131,12 @@ function allMatchSameUrl(matches: AddOnAttachmentWithInclusions[], config: Confi
 
 function parseBranchReference(
   reference: string,
-  fallbackApp?: string,
-): {addon: string; app?: string} {
+  fallbackApp: string,
+): {addon: string; app: string} {
   const match = reference.match(/^(.+?)::(.+)$/)
   if (match) {
     return {addon: match[2], app: match[1]}
   }
 
-  return fallbackApp ? {addon: reference, app: fallbackApp} : {addon: reference}
+  return {addon: reference, app: fallbackApp}
 }

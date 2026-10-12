@@ -40,7 +40,7 @@ export async function captureAndWait(
 
   signal?.throwIfAborted()
 
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
 
   capturePoller?.onStart?.(addon)
   const backup = await ctx.data.backup.create(addon.id) as BackupCreateInfo

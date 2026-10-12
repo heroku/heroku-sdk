@@ -32,7 +32,7 @@ export async function listCredentials(
   options: ListCredentialsOptions = {},
 ): Promise<CredentialInfo[]> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
   return ctx.data.postgresDatabase.listCredentials(addon.id) as unknown as Promise<CredentialInfo[]>
 }
 
