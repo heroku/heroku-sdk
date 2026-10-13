@@ -1,17 +1,17 @@
 import type {ConfigVar} from '@heroku/types/3.sdk'
 
+import {NotFoundError} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnAttachmentWithInclusions, ResolveAddonAttachmentOptions, ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
-import {AddonAttachmentAmbiguousError, resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
+import {AddonAttachmentAmbiguousError, AddonAttachmentNotFoundError, resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
 import {getAddonService} from './postgres-utils.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 
 const DEFAULT_PG_ATTACHMENT = 'DATABASE_URL'
-const PG_ADDON_SERVICE = getAddonService()
 
 export type ResolvedPgDatabase = ResolvedAddOnAttachment['addon']
 
@@ -53,8 +53,10 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
  * resolves to the same value on the app, they're treated as equivalent
  * (e.g. the same database attached under two names) rather than ambiguous.
  *
- * Throws `AddonAttachmentNotFoundError` (or `AddonAttachmentAmbiguousError`)
- * from the underlying resolver.
+ * Throws a plain `Error` when there are no matches, the match is not the
+ * configured Postgres service, or the app has no databases. Throws an
+ * `AddonAttachmentAmbiguousError` when the remaining matches are not the
+ * same database.
  */
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -83,20 +85,72 @@ export async function resolvePgDatabase(
 
   let attachment: ResolvedAddOnAttachment
   try {
-    attachment = await resolveAddonAttachment(ctx, app, addon, {...rest, addonService: PG_ADDON_SERVICE})
+    attachment = await resolveAddonAttachment(ctx, app, addon, {...rest, addonService: getAddonService()})
   } catch (error) {
-    if (!(error instanceof AddonAttachmentAmbiguousError)) throw error
+    if (isAttachmentNotFound(error)) {
+      throw await buildDatabaseNotFoundError(ctx, app, addon, error)
+    }
 
-    const equivalent = collapseIfEquivalent(error.matches)
-    if (!equivalent) throw error
+    if (error instanceof AddonAttachmentAmbiguousError) {
+      const equivalent = collapseIfEquivalent(error.matches)
+      if (!equivalent) throw error
 
-    const config = await ctx.platform.configVar.infoForApp(equivalent[0].app.name)
-    if (!allMatchSameUrl(equivalent, config)) throw error
+      const config = await ctx.platform.configVar.infoForApp(equivalent[0].app.name)
+      if (!allMatchSameUrl(equivalent, config)) throw error
 
-    attachment = equivalent[0]
+      attachment = equivalent[0]
+    } else {
+      throw error
+    }
   }
 
   return includeAttachment ? {addon: attachment.addon, attachment} : attachment.addon
+}
+
+async function buildDatabaseNotFoundError(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  attachmentId: string,
+  error: AddonAttachmentNotFoundError | NotFoundError,
+): Promise<Error> {
+  const attachments = await listPostgresAttachments(ctx, appIdentity)
+  const validOptions = attachments
+    .map(attachment => urlConfigVarName(attachment.config_vars))
+    .filter(name => name !== undefined)
+    .map(name => stripUrlSuffix(name))
+    .join(', ')
+
+  if (validOptions.length === 0) {
+    return new Error(`${appIdentity} has no ${getAddonService()} databases`)
+  }
+
+  const databaseName = stripUrlSuffix(attachmentId)
+
+  if (error instanceof AddonAttachmentNotFoundError) {
+    return new Error(`${databaseName} is not a ${getAddonService()} database. Valid options are: ${validOptions}`)
+  }
+
+  return new Error(`Unknown database: ${databaseName}. Valid options are: ${validOptions}`)
+}
+
+async function listPostgresAttachments(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+): Promise<AddOnAttachmentWithInclusions[]> {
+  const attachments = await ctx.platform
+    .withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'})
+    .addOnAttachment.listByApp(appIdentity) as AddOnAttachmentWithInclusions[]
+
+  return attachments.filter(attachment => attachment.addon?.plan?.name?.split(':', 2)[0] === getAddonService())
+}
+
+function isAttachmentNotFound(error: unknown): error is AddonAttachmentNotFoundError | NotFoundError {
+  const isResolution404 = error instanceof NotFoundError && error.resource === 'add_on attachment'
+  return isResolution404 || error instanceof AddonAttachmentNotFoundError
+}
+
+function stripUrlSuffix(name: string): string {
+  return name.endsWith('_URL') ? name.slice(0, -4) : name
 }
 
 /**
