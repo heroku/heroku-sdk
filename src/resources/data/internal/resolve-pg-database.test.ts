@@ -40,6 +40,7 @@ function pgAttachment(overrides: {
   attachmentId?: string
   configVars?: string[]
   id?: string
+  name?: string
   planName?: string
 } = {}): AddOnAttachmentWithInclusions {
   return {
@@ -54,7 +55,7 @@ function pgAttachment(overrides: {
     created_at: '2024-01-01T00:00:00Z',
     id: overrides.attachmentId ?? 'attachment-id',
     log_input_url: null,
-    name: 'DATABASE',
+    name: overrides.name ?? 'DATABASE',
     namespace: null,
     updated_at: '2024-01-01T00:00:00Z',
     web_url: null,
@@ -211,9 +212,9 @@ describe('resolvePgDatabase', () => {
     expect(listByApp).toHaveBeenCalledWith('app-1')
   })
 
-  it('omits an attachment from valid options when it has no _URL config var', async () => {
+  it('falls back to the attachment name in the valid options list when there is no _URL config var', async () => {
     const listByApp = vi.fn().mockResolvedValue([
-      pgAttachment({attachmentId: 'attachment-2', configVars: ['SOME_OTHER_VAR']}),
+      pgAttachment({attachmentId: 'attachment-2', configVars: ['SOME_OTHER_VAR'], name: 'TEAL'}),
     ])
     const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
     const ctx = buildCtx({listByApp, resolutionByAttachment})
@@ -221,7 +222,7 @@ describe('resolvePgDatabase', () => {
     const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
 
     expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
-    expect(error).toHaveProperty('message', 'Unknown database: DATABASE on app-1. Valid options are: ')
+    expect(error).toHaveProperty('message', 'Unknown database: DATABASE on app-1. Valid options are: TEAL')
   })
 
   it('throws PgDatabaseNotFoundError when listing attachments to build the message fails', async () => {

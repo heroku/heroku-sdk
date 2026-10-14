@@ -153,9 +153,10 @@ async function buildDatabaseNotFoundError(
   }
 
   const validOptions = attachments
-    .map(attachment => urlConfigVarName(attachment.config_vars))
-    .filter(name => name !== undefined)
-    .map(name => stripUrlSuffix(name))
+    .map(attachment => {
+      const urlVarName = urlConfigVarName(attachment.config_vars)
+      return urlVarName ? stripUrlSuffix(urlVarName) : attachment.name
+    })
     .join(', ')
 
   const databaseName = stripUrlSuffix(attachmentId)
