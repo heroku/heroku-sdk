@@ -423,10 +423,11 @@ describe('add-on resource', () => {
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'postgres-curved-12345::SECONDARY'})
     })
 
-    it('throws AddonNotFoundError when resolve finds nothing', async () => {
-      const {ctx} = buildCtx({resolveResponses: [[]]})
+    it('propagates a 404 when resolve finds nothing', async () => {
+      const error = buildNotFound()
+      const {ctx} = buildCtx({resolveResponses: [error]})
 
-      await expect(listPlansForAddon(ctx, 'missing')).rejects.toBeInstanceOf(AddonNotFoundError)
+      await expect(listPlansForAddon(ctx, 'missing')).rejects.toBe(error)
     })
 
     it('throws AddonNotFoundError if the resolved add-on is missing addon_service.name', async () => {
@@ -684,10 +685,11 @@ describe('add-on resource', () => {
       expect(resolution).toHaveBeenCalledTimes(1)
     })
 
-    it('throws AddonNotFoundError when the resolver returns no matches', async () => {
-      const {ctx} = buildCtx({resolveResponses: [[]]})
+    it('propagates a 404 when the resolver returns no matches', async () => {
+      const error = buildNotFound()
+      const {ctx} = buildCtx({resolveResponses: [error]})
 
-      await expect(describeAddon(ctx, 'nope')).rejects.toBeInstanceOf(AddonNotFoundError)
+      await expect(describeAddon(ctx, 'nope')).rejects.toBe(error)
     })
 
     it('throws AddonAmbiguousError when the resolver returns more than one', async () => {
@@ -822,6 +824,21 @@ describe('add-on resource', () => {
       await resolveAddon(ctx, 'my-app::DATABASE', {appIdentity: 'other-app'})
 
       expect(resolution).toHaveBeenCalledExactlyOnceWith({addon: 'my-app::DATABASE'})
+    })
+
+    it('propagates a 404 when resolution finds nothing', async () => {
+      const error = buildNotFound()
+      const {ctx} = buildCtx({resolveResponses: [error]})
+
+      await expect(resolveAddon(ctx, 'missing')).rejects.toBe(error)
+    })
+
+    it('throws AddonNotFoundError when the addonService filter eliminates all matches', async () => {
+      // eslint-disable-next-line camelcase
+      const matches = [buildAddon({addon_service: {name: 'heroku-redis'}, id: 'a1'})]
+      const {ctx} = buildCtx({resolveResponses: [matches]})
+
+      await expect(resolveAddon(ctx, 'shared-name', {addonService: 'heroku-postgresql'})).rejects.toBeInstanceOf(AddonNotFoundError)
     })
 
     it('throws if the signal is already aborted', async () => {

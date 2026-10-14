@@ -7,8 +7,8 @@ import {
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnAttachmentWithInclusions} from '../../platform/add-on-attachment/resolve.js'
 
-import {AddonAttachmentAmbiguousError} from '../../platform/add-on-attachment/resolve.js'
-import {resolvePgDatabase} from './resolve-pg-database.js'
+import {AddonAttachmentAmbiguousError, AddonAttachmentNotFoundError} from '../../platform/add-on-attachment/resolve.js'
+import {PgDatabaseNotFoundError, resolvePgDatabase} from './resolve-pg-database.js'
 
 function buildCtx({
   infoForApp,
@@ -66,6 +66,8 @@ function notFoundError(): NotFoundError {
 }
 
 describe('resolvePgDatabase', () => {
+  const resolveNotFoundError = notFoundError()
+
   afterEach(() => {
     vi.unstubAllEnvs()
   })
@@ -123,43 +125,52 @@ describe('resolvePgDatabase', () => {
     expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'postgres-curved-12345', app: 'app'})
   })
 
-  it('throws an error when the app has no databases', async () => {
+  it('throws PgDatabaseNotFoundError when the app has no databases', async () => {
     const listByApp = vi.fn().mockResolvedValue([])
-    const resolutionByAttachment = vi.fn().mockRejectedValue(notFoundError())
+    const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
     const ctx = buildCtx({listByApp, resolutionByAttachment})
 
-    await expect(resolvePgDatabase(ctx, 'app-1'))
-      .rejects.toThrow('app-1 has no heroku-postgresql databases')
+    const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
+    expect(error).toHaveProperty('message', 'app-1 has no heroku-postgresql databases')
+    expect(error).toHaveProperty('cause', resolveNotFoundError)
     expect(listByApp).toHaveBeenCalledWith('app-1')
   })
 
-  it('throws an error when the app has no databases for the configured service', async () => {
+  it('throws PgDatabaseNotFoundError when the app has no databases for the configured service', async () => {
     const listByApp = vi.fn().mockResolvedValue([pgAttachment()])
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
     const ctx = buildCtx({listByApp, resolutionByAttachment})
 
     vi.stubEnv('HEROKU_POSTGRESQL_ADDON_NAME', 'other-service')
 
-    await expect(resolvePgDatabase(ctx, 'app-1'))
-      .rejects.toThrow('app-1 has no other-service databases')
+    const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
+    expect(error).toHaveProperty('message', 'app-1 has no other-service databases')
+    expect(error.cause).toBeInstanceOf(AddonAttachmentNotFoundError)
     expect(listByApp).toHaveBeenCalledWith('app-1')
   })
 
-  it('throws an error when the attachment is not found', async () => {
+  it('throws PgDatabaseNotFoundError when the attachment is not found', async () => {
     const listByApp = vi.fn().mockResolvedValue([
       pgAttachment(),
       pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL']}),
       pgAttachment({attachmentId: 'attachment-3', planName: 'other-service:premium-0'}),
     ])
-    const resolutionByAttachment = vi.fn().mockRejectedValue(notFoundError())
+    const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
     const ctx = buildCtx({listByApp, resolutionByAttachment})
 
-    await expect(resolvePgDatabase(ctx, 'app-1', {input: 'HEROKU_POSTGRESQL_RED'}))
-      .rejects.toThrow('Unknown database: HEROKU_POSTGRESQL_RED. Valid options are: DATABASE, HEROKU_POSTGRESQL_PINK')
+    const error = await resolvePgDatabase(ctx, 'app-1', {input: 'HEROKU_POSTGRESQL_RED'}).catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
+    expect(error).toHaveProperty('message', 'Unknown database: HEROKU_POSTGRESQL_RED. Valid options are: DATABASE, HEROKU_POSTGRESQL_PINK')
+    expect(error).toHaveProperty('cause', resolveNotFoundError)
     expect(listByApp).toHaveBeenCalledWith('app-1')
   })
 
-  it('throws an error when the attachment is not for the configured service', async () => {
+  it('throws PgDatabaseNotFoundError when the attachment is not for the configured service', async () => {
     const listByApp = vi.fn().mockResolvedValue([
       pgAttachment(),
       pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL'], planName: 'other-service:premium-0'}),
@@ -168,9 +179,36 @@ describe('resolvePgDatabase', () => {
     const ctx = buildCtx({listByApp, resolutionByAttachment})
 
     vi.stubEnv('HEROKU_POSTGRESQL_ADDON_NAME', 'other-service')
-    await expect(resolvePgDatabase(ctx, 'app-1'))
-      .rejects.toThrow('DATABASE is not a other-service database. Valid options are: HEROKU_POSTGRESQL_PINK')
+
+    const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
+    expect(error).toHaveProperty('message', 'DATABASE is not a other-service database. Valid options are: HEROKU_POSTGRESQL_PINK')
+    expect(error.cause).toBeInstanceOf(AddonAttachmentNotFoundError)
     expect(listByApp).toHaveBeenCalledWith('app-1')
+  })
+
+  it('throws an error when an attachment in the valid-options list has no _URL config var', async () => {
+    const listByApp = vi.fn().mockResolvedValue([
+      pgAttachment({attachmentId: 'attachment-2', configVars: ['SOME_OTHER_VAR']}),
+    ])
+    const resolutionByAttachment = vi.fn().mockRejectedValue(notFoundError())
+    const ctx = buildCtx({listByApp, resolutionByAttachment})
+
+    await expect(resolvePgDatabase(ctx, 'app-1'))
+      .rejects.toThrow('Database URL not found for this attachment')
+  })
+
+  it('throws an error when an ambiguous match has no _URL config var', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue([
+      pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL']}),
+      pgAttachment({attachmentId: 'attachment-1', configVars: ['SOME_OTHER_VAR']}),
+    ])
+    const infoForApp = vi.fn().mockResolvedValue({HEROKU_POSTGRESQL_PINK_URL: 'postgres://same'})
+    const ctx = buildCtx({infoForApp, resolutionByAttachment})
+
+    await expect(resolvePgDatabase(ctx, 'app-1'))
+      .rejects.toThrow('Database URL not found for this attachment')
   })
 
   it('collapses ambiguous matches that target the same database', async () => {

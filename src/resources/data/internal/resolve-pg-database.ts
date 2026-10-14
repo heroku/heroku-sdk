@@ -31,8 +31,8 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
  * Postgres service, or no Postgres databases at all).
  */
 export class PgDatabaseNotFoundError extends Error {
-  constructor(message: string) {
-    super(message)
+  constructor(message: string, options?: {cause?: unknown}) {
+    super(message, options)
     this.name = 'PgDatabaseNotFoundError'
   }
 }
@@ -131,16 +131,16 @@ async function buildDatabaseNotFoundError(
     .join(', ')
 
   if (validOptions.length === 0) {
-    return new PgDatabaseNotFoundError(`${appIdentity} has no ${getAddonService()} databases`)
+    return new PgDatabaseNotFoundError(`${appIdentity} has no ${getAddonService()} databases`, {cause: error})
   }
 
   const databaseName = stripUrlSuffix(attachmentId)
 
   if (error instanceof AddonAttachmentNotFoundError) {
-    return new PgDatabaseNotFoundError(`${databaseName} is not a ${getAddonService()} database. Valid options are: ${validOptions}`)
+    return new PgDatabaseNotFoundError(`${databaseName} is not a ${getAddonService()} database. Valid options are: ${validOptions}`, {cause: error})
   }
 
-  return new PgDatabaseNotFoundError(`Unknown database: ${databaseName}. Valid options are: ${validOptions}`)
+  return new PgDatabaseNotFoundError(`Unknown database: ${databaseName}. Valid options are: ${validOptions}`, {cause: error})
 }
 
 async function listPostgresAttachments(
