@@ -1,7 +1,7 @@
 /* eslint-disable camelcase */
 import {NotFoundError} from '@heroku/heroku-fetch'
 import {
-  describe, expect, it, vi,
+  afterEach, describe, expect, it, vi,
 } from 'vitest'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
@@ -66,6 +66,10 @@ function notFoundError(): NotFoundError {
 }
 
 describe('resolvePgDatabase', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('routes a parent::branch reference through addOnAttachment.resolution with parsed parts', async () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
     const ctx = buildCtx({resolutionByAttachment})
@@ -139,8 +143,6 @@ describe('resolvePgDatabase', () => {
     await expect(resolvePgDatabase(ctx, 'app-1'))
       .rejects.toThrow('app-1 has no other-service databases')
     expect(listByApp).toHaveBeenCalledWith('app-1')
-
-    vi.unstubAllEnvs()
   })
 
   it('throws an error when the attachment is not found', async () => {
@@ -169,8 +171,6 @@ describe('resolvePgDatabase', () => {
     await expect(resolvePgDatabase(ctx, 'app-1'))
       .rejects.toThrow('DATABASE is not a other-service database. Valid options are: HEROKU_POSTGRESQL_PINK')
     expect(listByApp).toHaveBeenCalledWith('app-1')
-
-    vi.unstubAllEnvs()
   })
 
   it('collapses ambiguous matches that target the same database', async () => {
