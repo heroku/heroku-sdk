@@ -125,6 +125,17 @@ describe('resolvePgDatabase', () => {
     expect(resolutionByAttachment).toHaveBeenCalledWith({addon_attachment: 'postgres-curved-12345', app: 'app'})
   })
 
+  it('throws when appIdentity is empty, without reaching the API', async () => {
+    const resolutionByAttachment = vi.fn()
+    const listByApp = vi.fn()
+    const ctx = buildCtx({listByApp, resolutionByAttachment})
+
+    await expect(resolvePgDatabase(ctx, ''))
+      .rejects.toThrow('resolvePgDatabase requires a non-empty app identity.')
+    expect(resolutionByAttachment).not.toHaveBeenCalled()
+    expect(listByApp).not.toHaveBeenCalled()
+  })
+
   it('throws PgDatabaseNotFoundError when the app has no databases', async () => {
     const listByApp = vi.fn().mockResolvedValue([])
     const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)

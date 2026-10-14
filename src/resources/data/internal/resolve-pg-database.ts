@@ -68,7 +68,8 @@ export class PgDatabaseNotFoundError extends Error {
  * Throws a `PgDatabaseNotFoundError` when there are no matches, the match
  * is not the configured Postgres service, or the app has no databases.
  * Throws an `AddonAttachmentAmbiguousError` when the remaining matches are
- * not the same database.
+ * not the same database. Throws a plain `Error` if `appIdentity` is empty
+ * and `input` has no `::`-prefixed app to fall back on.
  */
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -92,6 +93,10 @@ export async function resolvePgDatabase(
   const {addon, app} = databaseReference.includes('::')
     ? parseBranchReference(databaseReference, appIdentity)
     : {addon: databaseReference, app: appIdentity}
+
+  if (!app) {
+    throw new Error('resolvePgDatabase requires a non-empty app identity.')
+  }
 
   debug('resolve input=%s addon=%s app=%s', input ?? '<default>', addon, app)
 
