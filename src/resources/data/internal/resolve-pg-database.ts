@@ -148,13 +148,15 @@ async function buildDatabaseNotFoundError(
     throw new PgDatabaseNotFoundError(`Could not resolve ${attachmentId} on ${appIdentity}`, {cause: error})
   }
 
-  const validOptions = attachments
-    .map(attachment => stripUrlSuffix(urlConfigVarName(attachment.config_vars)))
-    .join(', ')
-
-  if (validOptions.length === 0) {
+  if (attachments.length === 0) {
     return new PgDatabaseNotFoundError(`${appIdentity} has no ${getAddonService()} databases`, {cause: error})
   }
+
+  const validOptions = attachments
+    .map(attachment => urlConfigVarName(attachment.config_vars))
+    .filter(name => name !== undefined)
+    .map(name => stripUrlSuffix(name))
+    .join(', ')
 
   const databaseName = stripUrlSuffix(attachmentId)
 
@@ -194,20 +196,22 @@ function collapseIfEquivalent(matches: AddOnAttachmentWithInclusions[]): AddOnAt
 }
 
 /** The first config var name declared on an attachment that holds its connection URL. */
-function urlConfigVarName(configVars: AddOnAttachmentWithInclusions['config_vars']): string {
-  const urlVar = configVars.find(name => name.endsWith('_URL'))
-  if (!urlVar) throw new Error('Database URL not found for this attachment')
-  return urlVar
+function urlConfigVarName(configVars: AddOnAttachmentWithInclusions['config_vars']): string | undefined {
+  return configVars.find(name => name.endsWith('_URL'))
 }
 
 /** Whether every match's own URL config var resolves to the same value in `config`. */
 function allMatchSameUrl(matches: AddOnAttachmentWithInclusions[], config: ConfigVar): boolean {
-  const firstValue = config[urlConfigVarName(matches[0].config_vars)]
+  const firstVarName = urlConfigVarName(matches[0].config_vars)
+  const firstValue = firstVarName && config[firstVarName]
   if (!firstValue) {
     return false
   }
 
-  return matches.every(match => config[urlConfigVarName(match.config_vars)] === firstValue)
+  return matches.every(match => {
+    const varName = urlConfigVarName(match.config_vars)
+    return varName !== undefined && config[varName] === firstValue
+  })
 }
 
 function parseBranchReference(

@@ -211,6 +211,19 @@ describe('resolvePgDatabase', () => {
     expect(listByApp).toHaveBeenCalledWith('app-1')
   })
 
+  it('omits an attachment from valid options when it has no _URL config var', async () => {
+    const listByApp = vi.fn().mockResolvedValue([
+      pgAttachment({attachmentId: 'attachment-2', configVars: ['SOME_OTHER_VAR']}),
+    ])
+    const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
+    const ctx = buildCtx({listByApp, resolutionByAttachment})
+
+    const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
+    expect(error).toHaveProperty('message', 'Unknown database: DATABASE on app-1. Valid options are: ')
+  })
+
   it('throws PgDatabaseNotFoundError when listing attachments to build the message fails', async () => {
     const listByApp = vi.fn().mockRejectedValue(new Error('API outage'))
     const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
@@ -221,29 +234,6 @@ describe('resolvePgDatabase', () => {
     expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
     expect(error).toHaveProperty('message', 'Could not resolve DATABASE_URL on app-1')
     expect(error).toHaveProperty('cause', resolveNotFoundError)
-  })
-
-  it('throws an error when an attachment in the valid-options list has no _URL config var', async () => {
-    const listByApp = vi.fn().mockResolvedValue([
-      pgAttachment({attachmentId: 'attachment-2', configVars: ['SOME_OTHER_VAR']}),
-    ])
-    const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
-    const ctx = buildCtx({listByApp, resolutionByAttachment})
-
-    await expect(resolvePgDatabase(ctx, 'app-1'))
-      .rejects.toThrow('Database URL not found for this attachment')
-  })
-
-  it('throws an error when an ambiguous match has no _URL config var', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue([
-      pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL']}),
-      pgAttachment({attachmentId: 'attachment-1', configVars: ['SOME_OTHER_VAR']}),
-    ])
-    const infoForApp = vi.fn().mockResolvedValue({HEROKU_POSTGRESQL_PINK_URL: 'postgres://same'})
-    const ctx = buildCtx({infoForApp, resolutionByAttachment})
-
-    await expect(resolvePgDatabase(ctx, 'app-1'))
-      .rejects.toThrow('Database URL not found for this attachment')
   })
 
   it('throws PgDatabaseNotFoundError when the config var lookup fails while collapsing ambiguous matches', async () => {
@@ -303,6 +293,17 @@ describe('resolvePgDatabase', () => {
 
     await expect(resolvePgDatabase(ctx, 'app-1')).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
     expect(infoForApp).not.toHaveBeenCalled()
+  })
+
+  it('does not collapse an ambiguous match when an attachment has no _URL config var', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue([
+      pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL']}),
+      pgAttachment({attachmentId: 'attachment-1', configVars: ['SOME_OTHER_VAR']}),
+    ])
+    const infoForApp = vi.fn().mockResolvedValueOnce({HEROKU_POSTGRESQL_PINK_URL: 'postgres://same'})
+    const ctx = buildCtx({infoForApp, resolutionByAttachment})
+
+    await expect(resolvePgDatabase(ctx, 'app-1')).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
   })
 
   it('returns the attachment and addon when includeAttachment is true', async () => {
