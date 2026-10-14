@@ -26,6 +26,18 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
 }
 
 /**
+ * Thrown by `resolvePgDatabase` when the identity doesn't resolve to a
+ * Postgres database on the app (no match, a match that isn't the configured
+ * Postgres service, or no Postgres databases at all).
+ */
+export class PgDatabaseNotFoundError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PgDatabaseNotFoundError'
+  }
+}
+
+/**
  * Resolve a Heroku Postgres database add-on from an attachment identity.
  *
  * `input` selects the attachment as follows:
@@ -53,10 +65,10 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
  * resolves to the same value on the app, they're treated as equivalent
  * (e.g. the same database attached under two names) rather than ambiguous.
  *
- * Throws a plain `Error` when there are no matches, the match is not the
- * configured Postgres service, or the app has no databases. Throws an
- * `AddonAttachmentAmbiguousError` when the remaining matches are not the
- * same database.
+ * Throws a `PgDatabaseNotFoundError` when there are no matches, the match
+ * is not the configured Postgres service, or the app has no databases.
+ * Throws an `AddonAttachmentAmbiguousError` when the remaining matches are
+ * not the same database.
  */
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -112,23 +124,23 @@ async function buildDatabaseNotFoundError(
   appIdentity: string,
   attachmentId: string,
   error: AddonAttachmentNotFoundError | NotFoundError,
-): Promise<Error> {
+): Promise<PgDatabaseNotFoundError> {
   const attachments = await listPostgresAttachments(ctx, appIdentity)
   const validOptions = attachments
     .map(attachment => stripUrlSuffix(urlConfigVarName(attachment.config_vars)))
     .join(', ')
 
   if (validOptions.length === 0) {
-    return new Error(`${appIdentity} has no ${getAddonService()} databases`)
+    return new PgDatabaseNotFoundError(`${appIdentity} has no ${getAddonService()} databases`)
   }
 
   const databaseName = stripUrlSuffix(attachmentId)
 
   if (error instanceof AddonAttachmentNotFoundError) {
-    return new Error(`${databaseName} is not a ${getAddonService()} database. Valid options are: ${validOptions}`)
+    return new PgDatabaseNotFoundError(`${databaseName} is not a ${getAddonService()} database. Valid options are: ${validOptions}`)
   }
 
-  return new Error(`Unknown database: ${databaseName}. Valid options are: ${validOptions}`)
+  return new PgDatabaseNotFoundError(`Unknown database: ${databaseName}. Valid options are: ${validOptions}`)
 }
 
 async function listPostgresAttachments(
