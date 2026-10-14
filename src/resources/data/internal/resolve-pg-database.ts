@@ -99,15 +99,17 @@ export async function resolvePgDatabase(
   try {
     attachment = await resolveAddonAttachment(ctx, app, addon, {...rest, addonService: getAddonService()})
   } catch (error) {
-    if (isAttachmentNotFound(error)) {
-      throw await buildDatabaseNotFoundError(ctx, app, addon, error)
+    if (error instanceof NotFoundError || error instanceof AddonAttachmentNotFoundError) {
+      throw await buildDatabaseNotFoundError(ctx, app, addon, error, rest.signal)
     }
 
     if (error instanceof AddonAttachmentAmbiguousError) {
       const equivalent = collapseIfEquivalent(error.matches)
       if (!equivalent) throw error
 
-      const config = await ctx.platform.configVar.infoForApp(equivalent[0].app.name)
+      const config = await ctx.platform
+        .withOptions({signal: rest.signal})
+        .configVar.infoForApp(equivalent[0].app.name)
       if (!allMatchSameUrl(equivalent, config)) throw error
 
       attachment = equivalent[0]
@@ -124,8 +126,9 @@ async function buildDatabaseNotFoundError(
   appIdentity: string,
   attachmentId: string,
   error: AddonAttachmentNotFoundError | NotFoundError,
+  signal?: AbortSignal,
 ): Promise<PgDatabaseNotFoundError> {
-  const attachments = await listPostgresAttachments(ctx, appIdentity)
+  const attachments = await listPostgresAttachments(ctx, appIdentity, signal)
   const validOptions = attachments
     .map(attachment => stripUrlSuffix(urlConfigVarName(attachment.config_vars)))
     .join(', ')
@@ -137,26 +140,23 @@ async function buildDatabaseNotFoundError(
   const databaseName = stripUrlSuffix(attachmentId)
 
   if (error instanceof AddonAttachmentNotFoundError) {
-    return new PgDatabaseNotFoundError(`${databaseName} is not a ${getAddonService()} database. Valid options are: ${validOptions}`, {cause: error})
+    return new PgDatabaseNotFoundError(`${databaseName} is not a ${getAddonService()} database on ${appIdentity}. Valid options are: ${validOptions}`, {cause: error})
   }
 
-  return new PgDatabaseNotFoundError(`Unknown database: ${databaseName}. Valid options are: ${validOptions}`, {cause: error})
+  return new PgDatabaseNotFoundError(`Unknown database: ${databaseName} on ${appIdentity}. Valid options are: ${validOptions}`, {cause: error})
 }
 
 async function listPostgresAttachments(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
+  signal?: AbortSignal,
 ): Promise<AddOnAttachmentWithInclusions[]> {
   const attachments = await ctx.platform
     .withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'})
+    .withOptions({signal})
     .addOnAttachment.listByApp(appIdentity) as AddOnAttachmentWithInclusions[]
 
   return attachments.filter(attachment => attachment.addon?.plan?.name?.split(':', 2)[0] === getAddonService())
-}
-
-function isAttachmentNotFound(error: unknown): error is AddonAttachmentNotFoundError | NotFoundError {
-  const isResolution404 = error instanceof NotFoundError && error.resource === 'add_on attachment'
-  return isResolution404 || error instanceof AddonAttachmentNotFoundError
 }
 
 function stripUrlSuffix(name: string): string {

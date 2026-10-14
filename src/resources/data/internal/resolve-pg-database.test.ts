@@ -62,7 +62,7 @@ function pgAttachment(overrides: {
 }
 
 function notFoundError(): NotFoundError {
-  return new NotFoundError(new Response(null, {status: 404}), {id: 'not_found', resource: 'add_on attachment'})
+  return new NotFoundError(new Response(null, {status: 404}), {id: 'not_found'})
 }
 
 describe('resolvePgDatabase', () => {
@@ -153,7 +153,7 @@ describe('resolvePgDatabase', () => {
     expect(listByApp).toHaveBeenCalledWith('app-1')
   })
 
-  it('throws PgDatabaseNotFoundError when the attachment is not found', async () => {
+  it('throws PgDatabaseNotFoundError when the attachment resolve endpoint 404s', async () => {
     const listByApp = vi.fn().mockResolvedValue([
       pgAttachment(),
       pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL']}),
@@ -165,9 +165,21 @@ describe('resolvePgDatabase', () => {
     const error = await resolvePgDatabase(ctx, 'app-1', {input: 'HEROKU_POSTGRESQL_RED'}).catch(error_ => error_)
 
     expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
-    expect(error).toHaveProperty('message', 'Unknown database: HEROKU_POSTGRESQL_RED. Valid options are: DATABASE, HEROKU_POSTGRESQL_PINK')
+    expect(error).toHaveProperty('message', 'Unknown database: HEROKU_POSTGRESQL_RED on app-1. Valid options are: DATABASE, HEROKU_POSTGRESQL_PINK')
     expect(error).toHaveProperty('cause', resolveNotFoundError)
     expect(listByApp).toHaveBeenCalledWith('app-1')
+  })
+
+  it('throws PgDatabaseNotFoundError with the parsed app when a cross-app reference is not found', async () => {
+    const listByApp = vi.fn().mockResolvedValue([pgAttachment()])
+    const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
+    const ctx = buildCtx({listByApp, resolutionByAttachment})
+
+    const error = await resolvePgDatabase(ctx, 'app-1', {input: 'other-app::MISSING'}).catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
+    expect(error).toHaveProperty('message', 'Unknown database: MISSING on other-app. Valid options are: DATABASE')
+    expect(listByApp).toHaveBeenCalledWith('other-app')
   })
 
   it('throws PgDatabaseNotFoundError when the attachment is not for the configured service', async () => {
@@ -183,7 +195,7 @@ describe('resolvePgDatabase', () => {
     const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
 
     expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
-    expect(error).toHaveProperty('message', 'DATABASE is not a other-service database. Valid options are: HEROKU_POSTGRESQL_PINK')
+    expect(error).toHaveProperty('message', 'DATABASE is not a other-service database on app-1. Valid options are: HEROKU_POSTGRESQL_PINK')
     expect(error.cause).toBeInstanceOf(AddonAttachmentNotFoundError)
     expect(listByApp).toHaveBeenCalledWith('app-1')
   })
@@ -192,7 +204,7 @@ describe('resolvePgDatabase', () => {
     const listByApp = vi.fn().mockResolvedValue([
       pgAttachment({attachmentId: 'attachment-2', configVars: ['SOME_OTHER_VAR']}),
     ])
-    const resolutionByAttachment = vi.fn().mockRejectedValue(notFoundError())
+    const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
     const ctx = buildCtx({listByApp, resolutionByAttachment})
 
     await expect(resolvePgDatabase(ctx, 'app-1'))
