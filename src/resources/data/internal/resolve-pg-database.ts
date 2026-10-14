@@ -65,11 +65,11 @@ export class PgDatabaseNotFoundError extends Error {
  * resolves to the same value on the app, they're treated as equivalent
  * (e.g. the same database attached under two names) rather than ambiguous.
  *
- * Throws a `PgDatabaseNotFoundError` when there are no matches, the match
- * is not the configured Postgres service, or the app has no databases.
- * Throws an `AddonAttachmentAmbiguousError` when the remaining matches are
- * not the same database. Throws a plain `Error` if `appIdentity` is empty
- * and `input` has no `::`-prefixed app to fall back on.
+ * Throws a `PgDatabaseNotFoundError` when the resolve endpoint 404s, the matched
+ * attachment is not the configured Postgres service, or the app has no databases.
+ * Throws an `AddonAttachmentAmbiguousError` when the remaining matches are not
+ * the same database. Throws a plain `Error` if `appIdentity` is empty and `input`
+ * has no `::`-prefixed app to fall back on.
  */
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -112,9 +112,16 @@ export async function resolvePgDatabase(
       const equivalent = collapseIfEquivalent(error.matches)
       if (!equivalent) throw error
 
-      const config = await ctx.platform
-        .withOptions({signal: rest.signal})
-        .configVar.infoForApp(equivalent[0].app.name)
+      let config: ConfigVar
+      try {
+        config = await ctx.platform
+          .withOptions({signal: rest.signal})
+          .configVar.infoForApp(equivalent[0].app.name)
+      } catch (configVarError) {
+        debug('config var lookup failed while collapsing ambiguous matches: %O', configVarError)
+        throw new PgDatabaseNotFoundError(`Could not resolve ${addon} on ${app}`, {cause: error})
+      }
+
       if (!allMatchSameUrl(equivalent, config)) throw error
 
       attachment = equivalent[0]
@@ -133,7 +140,14 @@ async function buildDatabaseNotFoundError(
   error: AddonAttachmentNotFoundError | NotFoundError,
   signal?: AbortSignal,
 ): Promise<PgDatabaseNotFoundError> {
-  const attachments = await listPostgresAttachments(ctx, appIdentity, signal)
+  let attachments: AddOnAttachmentWithInclusions[]
+  try {
+    attachments = await listPostgresAttachments(ctx, appIdentity, signal)
+  } catch (listError) {
+    debug('listing attachments failed while building not-found error: %O', listError)
+    throw new PgDatabaseNotFoundError(`Could not resolve ${attachmentId} on ${appIdentity}`, {cause: error})
+  }
+
   const validOptions = attachments
     .map(attachment => stripUrlSuffix(urlConfigVarName(attachment.config_vars)))
     .join(', ')

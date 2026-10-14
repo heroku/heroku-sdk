@@ -211,6 +211,18 @@ describe('resolvePgDatabase', () => {
     expect(listByApp).toHaveBeenCalledWith('app-1')
   })
 
+  it('throws PgDatabaseNotFoundError when listing attachments to build the message fails', async () => {
+    const listByApp = vi.fn().mockRejectedValue(new Error('API outage'))
+    const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
+    const ctx = buildCtx({listByApp, resolutionByAttachment})
+
+    const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
+    expect(error).toHaveProperty('message', 'Could not resolve DATABASE_URL on app-1')
+    expect(error).toHaveProperty('cause', resolveNotFoundError)
+  })
+
   it('throws an error when an attachment in the valid-options list has no _URL config var', async () => {
     const listByApp = vi.fn().mockResolvedValue([
       pgAttachment({attachmentId: 'attachment-2', configVars: ['SOME_OTHER_VAR']}),
@@ -232,6 +244,21 @@ describe('resolvePgDatabase', () => {
 
     await expect(resolvePgDatabase(ctx, 'app-1'))
       .rejects.toThrow('Database URL not found for this attachment')
+  })
+
+  it('throws PgDatabaseNotFoundError when the config var lookup fails while collapsing ambiguous matches', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue([
+      pgAttachment({attachmentId: 'attachment-1', configVars: ['DATABASE_URL']}),
+      pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL']}),
+    ])
+    const infoForApp = vi.fn().mockRejectedValue(new Error('API outage'))
+    const ctx = buildCtx({infoForApp, resolutionByAttachment})
+
+    const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
+    expect(error).toHaveProperty('message', 'Could not resolve DATABASE_URL on app-1')
+    expect(error.cause).toBeInstanceOf(AddonAttachmentAmbiguousError)
   })
 
   it('collapses ambiguous matches that target the same database', async () => {
