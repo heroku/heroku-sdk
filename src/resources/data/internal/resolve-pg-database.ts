@@ -115,9 +115,7 @@ async function buildDatabaseNotFoundError(
 ): Promise<Error> {
   const attachments = await listPostgresAttachments(ctx, appIdentity)
   const validOptions = attachments
-    .map(attachment => urlConfigVarName(attachment.config_vars))
-    .filter(name => name !== undefined)
-    .map(name => stripUrlSuffix(name))
+    .map(attachment => stripUrlSuffix(urlConfigVarName(attachment.config_vars)))
     .join(', ')
 
   if (validOptions.length === 0) {
@@ -165,22 +163,20 @@ function collapseIfEquivalent(matches: AddOnAttachmentWithInclusions[]): AddOnAt
 }
 
 /** The first config var name declared on an attachment that holds its connection URL. */
-function urlConfigVarName(configVars: string[]): string | undefined {
-  return configVars.find(name => name.endsWith('_URL'))
+function urlConfigVarName(configVars: AddOnAttachmentWithInclusions['config_vars']): string {
+  const urlVar = configVars.find(name => name.endsWith('_URL'))
+  if (!urlVar) throw new Error('Database URL not found for this attachment')
+  return urlVar
 }
 
 /** Whether every match's own URL config var resolves to the same value in `config`. */
 function allMatchSameUrl(matches: AddOnAttachmentWithInclusions[], config: ConfigVar): boolean {
-  const firstVarName = urlConfigVarName(matches[0].config_vars)
-  const firstValue = firstVarName && config[firstVarName]
+  const firstValue = config[urlConfigVarName(matches[0].config_vars)]
   if (!firstValue) {
     return false
   }
 
-  return matches.every(match => {
-    const varName = urlConfigVarName(match.config_vars)
-    return varName !== undefined && config[varName] === firstValue
-  })
+  return matches.every(match => config[urlConfigVarName(match.config_vars)] === firstValue)
 }
 
 function parseBranchReference(
