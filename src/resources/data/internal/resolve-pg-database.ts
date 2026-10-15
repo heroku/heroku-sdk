@@ -145,7 +145,7 @@ async function buildDatabaseNotFoundError(
     attachments = await listPostgresAttachments(ctx, appIdentity, signal)
   } catch (listError) {
     debug('listing attachments failed while building not-found error: %O', listError)
-    throw new PgDatabaseNotFoundError(`Could not resolve ${attachmentId} on ${appIdentity}`, {cause: error})
+    throw new PgDatabaseNotFoundError(`Could not resolve ${stripUrlSuffix(attachmentId)} on ${appIdentity}`, {cause: error})
   }
 
   if (attachments.length === 0) {

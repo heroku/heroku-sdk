@@ -233,7 +233,7 @@ describe('resolvePgDatabase', () => {
     const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
 
     expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
-    expect(error).toHaveProperty('message', 'Could not resolve DATABASE_URL on app-1')
+    expect(error).toHaveProperty('message', 'Could not resolve DATABASE on app-1')
     expect(error).toHaveProperty('cause', resolveNotFoundError)
   })
 
