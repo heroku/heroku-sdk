@@ -237,6 +237,18 @@ describe('resolvePgDatabase', () => {
     expect(error).toHaveProperty('cause', resolveNotFoundError)
   })
 
+  it('does not throw a raw NotFoundError when listing attachments 404s', async () => {
+    const listNotFoundError = notFoundError()
+    const listByApp = vi.fn().mockRejectedValue(listNotFoundError)
+    const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
+    const ctx = buildCtx({listByApp, resolutionByAttachment})
+
+    const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
+
+    expect(error).not.toBeInstanceOf(NotFoundError)
+    expect(error).toHaveProperty('message', 'Couldn\'t find that app: app-1')
+  })
+
   it('rethrows AddonAttachmentAmbiguousError when the config var lookup fails while collapsing ambiguous matches', async () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([
       pgAttachment({attachmentId: 'attachment-1', configVars: ['DATABASE_URL']}),

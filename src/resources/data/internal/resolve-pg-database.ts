@@ -26,9 +26,9 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
 }
 
 /**
- * Thrown by `resolvePgDatabase` when the identity doesn't resolve to a
- * Postgres database on the app (no match, a match that isn't the configured
- * Postgres service, or no Postgres databases at all).
+ * Thrown by `resolvePgDatabase` when the attachment resolution endpoint
+ * does not find a match, the matched attachment is not the configured
+ * Postgres service, or the app has no Postgres databases at all.
  */
 export class PgDatabaseNotFoundError extends Error {
   constructor(message: string, options?: {cause?: unknown}) {
@@ -70,6 +70,15 @@ export class PgDatabaseNotFoundError extends Error {
  * Throws an `AddonAttachmentAmbiguousError` when the remaining matches are not
  * the same database. Throws a plain `Error` if `appIdentity` is empty and `input`
  * has no `::`-prefixed app to fall back on.
+ *
+ * `resolvePgDatabase` should not throw a bare `NotFoundError`.
+ * Extensions that use it typically couple it with a second data call
+ * (e.g. `data.database.info(addon.id)`) that can also 404. Callers often
+ * catch `NotFoundError` to handle that second call's failure specifically.
+ * However, if a resolution failure surfaced as a `NotFoundError` too, that
+ * catch would swallow it and mislabel it as the second call's failure instead.
+ * Resolution failures are reported as `PgDatabaseNotFoundError` so the two stay
+ * separable by type.
  */
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -118,6 +127,8 @@ export async function resolvePgDatabase(
           .withOptions({signal: rest.signal})
           .configVar.infoForApp(equivalent[0].app.name)
       } catch (configVarError) {
+        rest.signal?.throwIfAborted()
+
         debug('config var lookup failed while collapsing ambiguous matches: %O', configVarError)
         throw error
       }
@@ -144,6 +155,16 @@ async function buildDatabaseNotFoundError(
   try {
     attachments = await listPostgresAttachments(ctx, appIdentity, signal)
   } catch (listError) {
+    signal?.throwIfAborted()
+
+    if (listError instanceof NotFoundError) {
+      // `NotFoundError` from the attachment resolution endpoint is ambiguous.
+      // It could be because the app doesn't exist, or because the attachment
+      // doesn't exist. The endpoint for listing all attachments only 404s when
+      // the app doesn't exist, so we rethrow the error to cover that case.
+      throw new PgDatabaseNotFoundError(`Couldn't find that app: ${appIdentity}`, {cause: listError})
+    }
+
     debug('listing attachments failed while building not-found error: %O', listError)
     throw new PgDatabaseNotFoundError(`Could not resolve ${stripUrlSuffix(attachmentId)} on ${appIdentity}`, {cause: error})
   }
