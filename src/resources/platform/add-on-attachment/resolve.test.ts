@@ -1,5 +1,6 @@
 import type {AddOnAttachment} from '@heroku/types/3.sdk'
 
+import {NotFoundError} from '@heroku/heroku-fetch'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -83,12 +84,6 @@ describe('resolveAddonAttachment', () => {
     expect(result.addon.id).toBe('addon-id')
   })
 
-  it('throws AddonAttachmentNotFoundError when no attachment matches', async () => {
-    const {ctx} = buildCtx({resolveByAttachmentResponses: []})
-
-    await expect(resolveAddonAttachment(ctx, 'my-app', 'NONEXISTENT')).rejects.toBeInstanceOf(AddonAttachmentNotFoundError)
-  })
-
   it('filters attachments by addon service when provided', async () => {
     const {ctx, resolutionByAttachment, withHeaders} = buildCtx({
       resolveByAttachmentResponses: [
@@ -134,6 +129,28 @@ describe('resolveAddonAttachment', () => {
     })
 
     await expect(resolveAddonAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toThrow(/missing required add-on fields/)
+  })
+
+  it('propagates NotFoundError when the resolve endpoint itself 404s', async () => {
+    const {ctx, resolutionByAttachment} = buildCtx()
+    resolutionByAttachment.mockRejectedValue(new NotFoundError(new Response(null, {status: 404}), {id: 'not_found', resource: 'add_on attachment'}))
+
+    await expect(resolveAddonAttachment(ctx, 'my-app', 'NONEXISTENT')).rejects.toBeInstanceOf(NotFoundError)
+  })
+
+  it('throws AddonAttachmentNotFoundError when no attachment matches after filtering by addon service', async () => {
+    const {ctx} = buildCtx({
+      resolveByAttachmentResponses: [
+        {
+          addon: {
+            app: {id: 'app-uuid', name: 'my-app'}, id: 'redis-id', name: 'redis-addon', plan: {name: 'heroku-redis:premium-0'},
+          },
+        } as ResolvedAddOnAttachment,
+      ],
+    })
+
+    await expect(resolveAddonAttachment(ctx, 'my-app', 'DATABASE', {addonService: 'heroku-postgresql'}))
+      .rejects.toBeInstanceOf(AddonAttachmentNotFoundError)
   })
 
   it('throws AddonAttachmentAmbiguousError when the matched attachment is ambiguous', async () => {

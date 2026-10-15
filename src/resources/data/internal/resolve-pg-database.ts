@@ -1,17 +1,17 @@
 import type {ConfigVar} from '@heroku/types/3.sdk'
 
+import {NotFoundError} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnAttachmentWithInclusions, ResolveAddonAttachmentOptions, ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
-import {AddonAttachmentAmbiguousError, resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
-import {getAddonService} from './postgres-utils.js'
+import {AddonAttachmentAmbiguousError, AddonAttachmentNotFoundError, resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
+import {getAddonService, isPostgresAddon} from './postgres-utils.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 
 const DEFAULT_PG_ATTACHMENT = 'DATABASE_URL'
-const PG_ADDON_SERVICE = getAddonService()
 
 export type ResolvedPgDatabase = ResolvedAddOnAttachment['addon']
 
@@ -21,9 +21,20 @@ export type ResolvedPgDatabaseWithAttachment = {
 }
 
 export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
-  appIdentity?: string,
   includeAttachment?: boolean
   input?: string
+}
+
+/**
+ * Thrown by `resolvePgDatabase` when the attachment resolution endpoint
+ * does not find a match, the matched attachment is not the configured
+ * Postgres service, or the app has no Postgres databases at all.
+ */
+export class PgDatabaseNotFoundError extends Error {
+  constructor(message: string, options?: {cause?: unknown}) {
+    super(message, options)
+    this.name = 'PgDatabaseNotFoundError'
+  }
 }
 
 /**
@@ -39,7 +50,8 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
  *     `::` ourselves and send `app`/`addon` as separate fields, which
  *     works for either shape.
  *   - any other string (attachment name, config var, UUID, or
- *     globally-unique add-on name) → routed through `resolveAddonAttachment`.
+ *     globally-unique add-on name) → routed through `resolveAddonAttachment`,
+ *     scoped to `appIdentity`.
  *
  * This function only uses the attachment resolver. To resolve a database
  * through the add-on resolve endpoint, call `resolveAddon` directly.
@@ -53,52 +65,145 @@ export type ResolvePgDatabaseOptions = ResolveAddonAttachmentOptions & {
  * resolves to the same value on the app, they're treated as equivalent
  * (e.g. the same database attached under two names) rather than ambiguous.
  *
- * Throws `AddonAttachmentNotFoundError` (or `AddonAttachmentAmbiguousError`)
- * from the underlying resolver. Throws if no input is given and no `appIdentity`
- * is available to default the attachment lookup to.
+ * Throws a `PgDatabaseNotFoundError` when the resolve endpoint 404s, the matched
+ * attachment is not the configured Postgres service, or the app has no databases.
+ * Throws an `AddonAttachmentAmbiguousError` when the remaining matches are not
+ * the same database. Throws a plain `Error` if `appIdentity` is empty and `input`
+ * has no `::`-prefixed app to fall back on.
+ *
+ * `resolvePgDatabase` should not throw a bare `NotFoundError`.
+ * Extensions that use it typically couple it with a second data call
+ * (e.g. `data.database.info(addon.id)`) that can also 404. Callers often
+ * catch `NotFoundError` to handle that second call's failure specifically.
+ * However, if a resolution failure surfaced as a `NotFoundError` too, that
+ * catch would swallow it and mislabel it as the second call's failure instead.
+ * Resolution failures are reported as `PgDatabaseNotFoundError` so the two stay
+ * separable by type.
  */
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
   options: ResolvePgDatabaseOptions & {includeAttachment: true},
 ): Promise<ResolvedPgDatabaseWithAttachment>
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
   options?: ResolvePgDatabaseOptions,
 ): Promise<ResolvedPgDatabase>
 
 export async function resolvePgDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
   options: ResolvePgDatabaseOptions = {},
 ): Promise<ResolvedPgDatabase | ResolvedPgDatabaseWithAttachment> {
-  const {appIdentity, includeAttachment, input, ...rest} = options
-
-  if (!input && !appIdentity) {
-    throw new Error('resolvePgDatabase requires either input or appIdentity to default to DATABASE_URL.')
-  }
+  const {includeAttachment, input, ...rest} = options
 
   const databaseReference = input ?? DEFAULT_PG_ATTACHMENT
   const {addon, app} = databaseReference.includes('::')
     ? parseBranchReference(databaseReference, appIdentity)
     : {addon: databaseReference, app: appIdentity}
 
-  debug('resolve input=%s addon=%s app=%s', input ?? '<default>', addon, app ?? '<global>')
+  if (!app) {
+    throw new Error('resolvePgDatabase requires a non-empty app identity.')
+  }
+
+  debug('resolve input=%s addon=%s app=%s', input ?? '<default>', addon, app)
 
   let attachment: ResolvedAddOnAttachment
   try {
-    attachment = await resolveAddonAttachment(ctx, app, addon, {...rest, addonService: PG_ADDON_SERVICE})
+    attachment = await resolveAddonAttachment(ctx, app, addon, {...rest, addonService: getAddonService()})
   } catch (error) {
-    if (!(error instanceof AddonAttachmentAmbiguousError)) throw error
+    if (error instanceof NotFoundError || error instanceof AddonAttachmentNotFoundError) {
+      throw await buildDatabaseNotFoundError(ctx, app, addon, error, rest.signal)
+    }
 
-    const equivalent = collapseIfEquivalent(error.matches)
-    if (!equivalent) throw error
+    if (error instanceof AddonAttachmentAmbiguousError) {
+      const equivalent = collapseIfEquivalent(error.matches)
+      if (!equivalent) throw error
 
-    const config = await ctx.platform.configVar.infoForApp(equivalent[0].app.name)
-    if (!allMatchSameUrl(equivalent, config)) throw error
+      let config: ConfigVar
+      try {
+        config = await ctx.platform
+          .withOptions({signal: rest.signal})
+          .configVar.infoForApp(equivalent[0].app.name)
+      } catch (configVarError) {
+        rest.signal?.throwIfAborted()
 
-    attachment = equivalent[0]
+        debug('config var lookup failed while collapsing ambiguous matches: %O', configVarError)
+        throw error
+      }
+
+      if (!allMatchSameUrl(equivalent, config)) throw error
+
+      attachment = equivalent[0]
+    } else {
+      throw error
+    }
   }
 
   return includeAttachment ? {addon: attachment.addon, attachment} : attachment.addon
+}
+
+async function buildDatabaseNotFoundError(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  attachmentId: string,
+  error: AddonAttachmentNotFoundError | NotFoundError,
+  signal?: AbortSignal,
+): Promise<PgDatabaseNotFoundError> {
+  let attachments: AddOnAttachmentWithInclusions[]
+  try {
+    attachments = await listPostgresAttachments(ctx, appIdentity, signal)
+  } catch (listError) {
+    signal?.throwIfAborted()
+
+    if (listError instanceof NotFoundError) {
+      // `NotFoundError` from the attachment resolution endpoint is ambiguous.
+      // It could be because the app doesn't exist, or because the attachment
+      // doesn't exist. The endpoint for listing all attachments only 404s when
+      // the app doesn't exist, so we rethrow the error to cover that case.
+      throw new PgDatabaseNotFoundError(`Couldn't find that app: ${appIdentity}`, {cause: listError})
+    }
+
+    debug('listing attachments failed while building not-found error: %O', listError)
+    throw new PgDatabaseNotFoundError(`Could not resolve ${stripUrlSuffix(attachmentId)} on ${appIdentity}`, {cause: error})
+  }
+
+  if (attachments.length === 0) {
+    return new PgDatabaseNotFoundError(`${appIdentity} has no ${getAddonService()} databases`, {cause: error})
+  }
+
+  const validOptions = attachments
+    .map(attachment => {
+      const urlVarName = urlConfigVarName(attachment.config_vars)
+      return urlVarName ? stripUrlSuffix(urlVarName) : attachment.name
+    })
+    .join(', ')
+
+  const databaseName = stripUrlSuffix(attachmentId)
+
+  if (error instanceof AddonAttachmentNotFoundError) {
+    return new PgDatabaseNotFoundError(`${databaseName} is not a ${getAddonService()} database on ${appIdentity}. Valid options are: ${validOptions}`, {cause: error})
+  }
+
+  return new PgDatabaseNotFoundError(`Unknown database: ${databaseName} on ${appIdentity}. Valid options are: ${validOptions}`, {cause: error})
+}
+
+async function listPostgresAttachments(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  signal?: AbortSignal,
+): Promise<AddOnAttachmentWithInclusions[]> {
+  const attachments = await ctx.platform
+    .withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'})
+    .withOptions({signal})
+    .addOnAttachment.listByApp(appIdentity) as AddOnAttachmentWithInclusions[]
+
+  return attachments.filter(attachment => isPostgresAddon(attachment.addon))
+}
+
+function stripUrlSuffix(name: string): string {
+  return name.endsWith('_URL') ? name.slice(0, -4) : name
 }
 
 /**
@@ -113,7 +218,7 @@ function collapseIfEquivalent(matches: AddOnAttachmentWithInclusions[]): AddOnAt
 }
 
 /** The first config var name declared on an attachment that holds its connection URL. */
-function urlConfigVarName(configVars: string[]): string | undefined {
+function urlConfigVarName(configVars: AddOnAttachmentWithInclusions['config_vars']): string | undefined {
   return configVars.find(name => name.endsWith('_URL'))
 }
 
@@ -133,12 +238,12 @@ function allMatchSameUrl(matches: AddOnAttachmentWithInclusions[], config: Confi
 
 function parseBranchReference(
   reference: string,
-  fallbackApp?: string,
-): {addon: string; app?: string} {
+  fallbackApp: string,
+): {addon: string; app: string} {
   const match = reference.match(/^(.+?)::(.+)$/)
   if (match) {
     return {addon: match[2], app: match[1]}
   }
 
-  return fallbackApp ? {addon: reference, app: fallbackApp} : {addon: reference}
+  return {addon: reference, app: fallbackApp}
 }

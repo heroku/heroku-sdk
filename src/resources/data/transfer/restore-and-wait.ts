@@ -46,7 +46,7 @@ export async function restoreAndWait(
 
   signal?.throwIfAborted()
 
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
 
   restorePoller?.onStart?.(addon)
   // eslint-disable-next-line camelcase

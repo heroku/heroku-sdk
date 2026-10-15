@@ -16,7 +16,7 @@ export async function info(
   options: MaintenanceInfoOptions = {},
 ): Promise<MaintenanceInfoResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
   return ctx.data.maintenance.info(addon.id)
 }
 

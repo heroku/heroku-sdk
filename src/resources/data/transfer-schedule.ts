@@ -43,8 +43,8 @@ export async function create(
   options: TransferScheduleOptions = {},
 ): Promise<TransferScheduleCreateResult> {
   options.signal?.throwIfAborted()
-  const {addon, attachment} = await resolvePgDatabase(ctx, {
-    appIdentity, includeAttachment: true, input: addonIdentity, ...options,
+  const {addon, attachment} = await resolvePgDatabase(ctx, appIdentity, {
+    includeAttachment: true, input: addonIdentity, ...options,
   })
 
   let requestBody = body
@@ -64,7 +64,7 @@ export async function del(
   options: TransferScheduleOptions = {},
 ): Promise<TransferScheduleDeleteResult> {
   options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, {appIdentity, input: addonIdentity, ...options})
+  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
   return ctx.data.transferSchedule.delete(addon.id, scheduleId)
 }
 
