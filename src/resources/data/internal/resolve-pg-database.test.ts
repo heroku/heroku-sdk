@@ -237,7 +237,7 @@ describe('resolvePgDatabase', () => {
     expect(error).toHaveProperty('cause', resolveNotFoundError)
   })
 
-  it('throws PgDatabaseNotFoundError when the config var lookup fails while collapsing ambiguous matches', async () => {
+  it('rethrows AddonAttachmentAmbiguousError when the config var lookup fails while collapsing ambiguous matches', async () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue([
       pgAttachment({attachmentId: 'attachment-1', configVars: ['DATABASE_URL']}),
       pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL']}),
@@ -245,11 +245,7 @@ describe('resolvePgDatabase', () => {
     const infoForApp = vi.fn().mockRejectedValue(new Error('API outage'))
     const ctx = buildCtx({infoForApp, resolutionByAttachment})
 
-    const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
-
-    expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
-    expect(error).toHaveProperty('message', 'Could not resolve DATABASE_URL on app-1')
-    expect(error.cause).toBeInstanceOf(AddonAttachmentAmbiguousError)
+    await expect(resolvePgDatabase(ctx, 'app-1')).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
   })
 
   it('collapses ambiguous matches that target the same database', async () => {

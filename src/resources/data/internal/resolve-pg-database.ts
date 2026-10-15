@@ -119,7 +119,7 @@ export async function resolvePgDatabase(
           .configVar.infoForApp(equivalent[0].app.name)
       } catch (configVarError) {
         debug('config var lookup failed while collapsing ambiguous matches: %O', configVarError)
-        throw new PgDatabaseNotFoundError(`Could not resolve ${addon} on ${app}`, {cause: error})
+        throw error
       }
 
       if (!allMatchSameUrl(equivalent, config)) throw error
