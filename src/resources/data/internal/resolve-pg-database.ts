@@ -7,7 +7,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnAttachmentWithInclusions, ResolveAddonAttachmentOptions, ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
 import {AddonAttachmentAmbiguousError, AddonAttachmentNotFoundError, resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
-import {getAddonService} from './postgres-utils.js'
+import {getAddonService, isPostgresAddon} from './postgres-utils.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 
@@ -178,7 +178,7 @@ async function listPostgresAttachments(
     .withOptions({signal})
     .addOnAttachment.listByApp(appIdentity) as AddOnAttachmentWithInclusions[]
 
-  return attachments.filter(attachment => attachment.addon?.plan?.name?.split(':', 2)[0] === getAddonService())
+  return attachments.filter(attachment => isPostgresAddon(attachment.addon))
 }
 
 function stripUrlSuffix(name: string): string {
