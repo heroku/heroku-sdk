@@ -4,8 +4,8 @@
  * Run:
  *   tsx examples/abort-signal.ts
  *
- * Reads token from HEROKU_API_KEY or ~/.netrc. Run `heroku login` first
- * if you see "Unauthorized".
+ * Reads the token from HEROKU_API_KEY. For a token stored by `heroku login`,
+ * resolve it with @heroku/heroku-credential-manager and pass it to the factory.
  */
 import {createPlatformClient} from '../src/services/platform.js'
 
