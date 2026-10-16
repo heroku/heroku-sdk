@@ -1,5 +1,6 @@
 // Run: npm run example -- examples/logs.ts <app> [--tail]
-// Requires: HEROKU_API_KEY in env (or resolve a stored token via @heroku/heroku-credential-manager).
+// Requires: HEROKU_API_KEY in env, or a stored token resolved via
+//          @heroku/heroku-credential-manager and passed as new HerokuSDK({clientOptions: {token}}).
 //
 // Mirrors a simplified `heroku logs` against the SDK's streamLogs.
 // Without --tail, prints the most recent 100 lines and exits.

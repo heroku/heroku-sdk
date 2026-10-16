@@ -1,5 +1,6 @@
 // Run: npm run example -- examples/promote-pipeline.ts
-// Requires: HEROKU_API_KEY in env (or resolve a stored token via @heroku/heroku-credential-manager).
+// Requires: HEROKU_API_KEY in env, or a stored token resolved via
+//          @heroku/heroku-credential-manager and passed as new HerokuSDK({clientOptions: {token}}).
 //          PIPELINE_ID, SOURCE_APP_ID, TARGET_APP_ID in env.
 
 import {HerokuSDK} from '../src/index.js'

@@ -1,6 +1,7 @@
 // Run: npm run example -- examples/pg-upgrade.ts
 // DESTRUCTIVE: runs an actual Postgres version upgrade.
-// Requires: HEROKU_API_KEY in env (or resolve a stored token via @heroku/heroku-credential-manager).
+// Requires: HEROKU_API_KEY in env, or a stored token resolved via
+//          @heroku/heroku-credential-manager and passed as new HerokuSDK({clientOptions: {token}}).
 //          APP=<app-name>, CONFIRM=<app-name> (must match), MODE=prepare|run.
 //          ADDON, PG_VERSION optional.
 

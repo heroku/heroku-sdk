@@ -76,7 +76,8 @@ whatever you pass in:
 > import { getAuth } from '@heroku/heroku-credential-manager'
 > import { HerokuSDK } from '@heroku/sdk'
 >
-> const { token } = await getAuth(account, host)
+> // account: your Heroku login email; host: the API host (usually api.heroku.com)
+> const { token } = await getAuth(account, 'api.heroku.com')
 > const sdk = new HerokuSDK({ clientOptions: { token } })
 > ```
 >

@@ -63,7 +63,7 @@ This is the Heroku SDK (`@heroku/sdk`). It generates fully-typed clients at runt
 
 **Resource modules (`src/resources/<service>/<resource>.ts`):** Each resource module exports both tree-shakable named functions (callable with explicit `ctx`) and an `*Extensions` bundle produced by `extendResource`. The bundle is mechanical delegation — every method delegates one-line into the corresponding named function. Cross-service helpers (e.g., the pg flow that needs both platform and data clients) destructure both services from `ctx`.
 
-**Per-service factories:** Each `src/services/<name>.ts` is a thin wrapper that imports its service's routes and types from `@heroku/types/<subpath>`, delegates to the internal `createClient` engine, and injects the matching `service` identifier so `@heroku/api-client` resolves the correct baseUrl.
+**Per-service factories:** Each `src/services/<name>.ts` is a thin wrapper that imports its service's routes and types from `@heroku/types/<subpath>`, delegates to the internal `createClient` engine, and injects the matching `service` identifier so `@heroku/heroku-fetch` resolves the correct baseUrl.
 
 **Generic engine (`createClient`)** is internal — reachable only by sibling files in `src/services/`. It returns a nested Proxy: the outer proxy resolves resource names (e.g., `client.app`), the inner proxy resolves methods (e.g., `.list()`, `.info()`). Both look up keys against the routes registry passed as a parameter. Unknown keys return `undefined`.
 
@@ -74,11 +74,11 @@ This is the Heroku SDK (`@heroku/sdk`). It generates fully-typed clients at runt
 **Adding a new service:** Create `src/services/<name>.ts` mirroring the existing factories with the correct `@heroku/types/<subpath>` imports and a `service: '<name>'` default. Add `"./<name>": "./dist/services/<name>.js"` to `package.json` exports. Add a `*.test.ts` covering the wiring contract. No changes to `core/` are needed.
 
 **Key external dependencies:**
-- `@heroku/api-client` (GitHub: `heroku/heroku-fetch`) — HTTP client (`HerokuApiClient`) that owns service-to-baseUrl resolution (`HerokuService` union, `SERVICE_CONFIGS` registry), auth (HEROKU_API_KEY or an explicit token; as of heroku-fetch 0.2.0 the `~/.netrc` fallback is removed — resolve stored CLI credentials via `@heroku/heroku-credential-manager`), headers, and raw fetch calls.
+- `@heroku/heroku-fetch` — HTTP client (`HerokuApiClient`) that owns service-to-baseUrl resolution (`HerokuService` union, `SERVICE_CONFIGS` registry), auth (HEROKU_API_KEY or an explicit token; as of heroku-fetch 0.2.0 the `~/.netrc` fallback is removed — resolve stored CLI credentials via `@heroku/heroku-credential-manager`), headers, and raw fetch calls.
 - `@heroku/types` (GitHub: `heroku/heroku-types`) — TypeScript types and route definition registries for each Heroku API, exposed via subpaths (`./3.sdk`, `./data`, more to come).
 
 **Module format:** ESM throughout (`"type": "module"` in package.json). Internal imports use `.js` extensions (TypeScript requires this for ESM emit). Target is ES2022.
 
 ## Testing
 
-Tests use vitest. Co-located `.test.ts` files. Each test file mocks `@heroku/api-client` (and, for service-factory tests, asserts on the constructor options to lock in the `service` wiring). The generic `createClient` test passes a fake routes object directly — no module mock needed.
+Tests use vitest. Co-located `.test.ts` files. Each test file mocks `@heroku/heroku-fetch` (and, for service-factory tests, asserts on the constructor options to lock in the `service` wiring). The generic `createClient` test passes a fake routes object directly — no module mock needed.
