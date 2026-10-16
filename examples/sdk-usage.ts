@@ -1,5 +1,6 @@
 // Run: npm run example -- examples/sdk-usage.ts
-// Requires: HEROKU_API_KEY in env or a valid .netrc entry for api.heroku.com.
+// Requires: HEROKU_API_KEY in env, or a stored token resolved via
+//          @heroku/heroku-credential-manager and passed as new HerokuSDK({clientOptions: {token}}).
 
 import {HerokuSDK} from '../src/index.js'
 import {databaseExtensions} from '../src/resources/extensions/data.js'

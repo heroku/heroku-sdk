@@ -16,7 +16,7 @@ The simplest entry point is the `HerokuSDK` class. It exposes both the Platform 
 import { HerokuSDK } from '@heroku/sdk'
 import { appExtensions } from '@heroku/sdk/extensions/platform'
 
-// Reads token from HEROKU_API_KEY or ~/.netrc
+// Zero-arg reads the token from HEROKU_API_KEY (see Authentication below)
 const sdk = new HerokuSDK({ extensions: [appExtensions] })
 
 // Upstream route (auto-generated from the API spec)
@@ -48,6 +48,40 @@ You can also pass options directly:
 ```ts
 const sdk = new HerokuSDK({ clientOptions: { token: 'your-api-token' } })
 ```
+
+### Authentication
+
+The SDK core is transport-agnostic: it reads no local files or keychains itself,
+so it also runs in the browser. Token resolution is handled by
+`@heroku/heroku-fetch`, which has a single default and otherwise defers to
+whatever you pass in:
+
+1. **`HEROKU_API_KEY` (the default)** — with no explicit token, heroku-fetch's
+   default provider reads `HEROKU_API_KEY` from the environment, so a zero-arg
+   `new HerokuSDK()` is authenticated whenever that variable is set.
+2. **An explicit `token` (opt in to anything else)** — pass `clientOptions.token`
+   (or a per-service `clientOptionsByService`) and the SDK uses it instead of the
+   `HEROKU_API_KEY` default. This is how you authenticate from any other
+   credential source — for example a token stored by `heroku login`, which the
+   Heroku CLI resolves and injects itself (see the note below).
+
+> **Note:** To authenticate as a logged-in Heroku CLI user, resolve the stored
+> token in your (Node) application with
+> [`@heroku/heroku-credential-manager`](https://github.com/heroku/heroku-credential-manager)
+> and pass it in:
+>
+> ```ts
+> import { getAuth } from '@heroku/heroku-credential-manager'
+> import { HerokuSDK } from '@heroku/sdk'
+>
+> // account: your Heroku login email; host: the API host (usually api.heroku.com)
+> const { token } = await getAuth(account, 'api.heroku.com')
+> const sdk = new HerokuSDK({ clientOptions: { token } })
+> ```
+>
+> This keeps keychain/filesystem access in the Node consumer (CLI, MCP server,
+> VS Code extension) rather than in the SDK core, so the SDK stays usable in the
+> browser.
 
 Common client options apply to every service. In particular, a common `baseUrl`
 overrides every service's default host, including Metrics and Repositories. Use

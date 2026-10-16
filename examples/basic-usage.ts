@@ -1,8 +1,9 @@
 import {createPlatformClient} from '../src/services/platform.js'
 
-// Create a client — automatically reads token from HEROKU_API_KEY or ~/.netrc
+// Create a client — zero-arg reads the token from HEROKU_API_KEY
 //
-// NOTE: If you're getting an "Unauthorized" response, run `heroku login` in your terminal
+// NOTE: For a token stored by `heroku login`, resolve it with
+// @heroku/heroku-credential-manager and pass it: createPlatformClient({token})
 const heroku = createPlatformClient()
 
 // List all apps

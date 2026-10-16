@@ -1,5 +1,6 @@
 // Run: npm run example -- examples/list-pipeline-apps.ts <pipeline-name-or-id>
-// Requires: HEROKU_API_KEY in env or a valid .netrc entry for api.heroku.com.
+// Requires: HEROKU_API_KEY in env, or a stored token resolved via
+//          @heroku/heroku-credential-manager and passed as new HerokuSDK({clientOptions: {token}}).
 //
 // Sanity-check that listPipelineApps still resolves apps after dropping
 // the spurious `version=3.filters` Accept variant. Accepts a pipeline
