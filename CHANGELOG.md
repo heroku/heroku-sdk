@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.10.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.9.0...sdk-v0.10.0) (2026-10-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* name the app's databases when Postgres resolution fails ([#153](https://github.com/heroku/heroku-sdk/issues/153))
+
+### Bug Fixes
+
+* name the app's databases when Postgres resolution fails ([#153](https://github.com/heroku/heroku-sdk/issues/153)) ([d03efd9](https://github.com/heroku/heroku-sdk/commit/d03efd9af7ae9b575eeed1bc707b83f321fb5009))
+
+
+### Dependencies
+
+* bump @heroku/heroku-fetch from 0.1.4 to 0.1.6 ([#146](https://github.com/heroku/heroku-sdk/issues/146)) ([f600433](https://github.com/heroku/heroku-sdk/commit/f600433e2d2c5a4ce6eff1c79fc36ad93f7b04da))
+
 ## [0.9.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.8.1...sdk-v0.9.0) (2026-10-09)
 
 
