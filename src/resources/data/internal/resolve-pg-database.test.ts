@@ -171,8 +171,9 @@ describe('resolvePgDatabase', () => {
       pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL']}),
       pgAttachment({attachmentId: 'attachment-3', planName: 'other-service:premium-0'}),
     ])
+    const infoForApp = vi.fn().mockResolvedValue({})
     const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
-    const ctx = buildCtx({listByApp, resolutionByAttachment})
+    const ctx = buildCtx({infoForApp, listByApp, resolutionByAttachment})
 
     const error = await resolvePgDatabase(ctx, 'app-1', {input: 'HEROKU_POSTGRESQL_RED'}).catch(error_ => error_)
 
@@ -184,8 +185,9 @@ describe('resolvePgDatabase', () => {
 
   it('throws PgDatabaseNotFoundError with the parsed app when a cross-app reference is not found', async () => {
     const listByApp = vi.fn().mockResolvedValue([pgAttachment()])
+    const infoForApp = vi.fn().mockResolvedValue({})
     const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
-    const ctx = buildCtx({listByApp, resolutionByAttachment})
+    const ctx = buildCtx({infoForApp, listByApp, resolutionByAttachment})
 
     const error = await resolvePgDatabase(ctx, 'app-1', {input: 'other-app::MISSING'}).catch(error_ => error_)
 
@@ -199,8 +201,9 @@ describe('resolvePgDatabase', () => {
       pgAttachment(),
       pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL'], planName: 'other-service:premium-0'}),
     ])
+    const infoForApp = vi.fn().mockResolvedValue({})
     const resolutionByAttachment = vi.fn().mockResolvedValue([pgAttachment()])
-    const ctx = buildCtx({listByApp, resolutionByAttachment})
+    const ctx = buildCtx({infoForApp, listByApp, resolutionByAttachment})
 
     vi.stubEnv('HEROKU_POSTGRESQL_ADDON_NAME', 'other-service')
 
@@ -216,13 +219,32 @@ describe('resolvePgDatabase', () => {
     const listByApp = vi.fn().mockResolvedValue([
       pgAttachment({attachmentId: 'attachment-2', configVars: ['SOME_OTHER_VAR'], name: 'TEAL'}),
     ])
+    const infoForApp = vi.fn().mockResolvedValue({})
     const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
-    const ctx = buildCtx({listByApp, resolutionByAttachment})
+    const ctx = buildCtx({infoForApp, listByApp, resolutionByAttachment})
 
     const error = await resolvePgDatabase(ctx, 'app-1').catch(error_ => error_)
 
     expect(error).toBeInstanceOf(PgDatabaseNotFoundError)
     expect(error).toHaveProperty('message', 'Unknown database: DATABASE on app-1. Valid options are: TEAL')
+  })
+
+  it('resolves via a config var name when the resolver finds no match', async () => {
+    const listByApp = vi.fn().mockResolvedValue([
+      pgAttachment({attachmentId: 'attachment-1', configVars: ['DATABASE_URL']}),
+      pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL'], name: 'HEROKU_POSTGRESQL_PINK'}),
+    ])
+    const infoForApp = vi.fn().mockResolvedValue({
+      DATABASE_URL: 'postgres://same',
+      HEROKU_POSTGRESQL_RED_URL: 'postgres://same',
+    })
+    const resolutionByAttachment = vi.fn().mockRejectedValue(resolveNotFoundError)
+    const ctx = buildCtx({infoForApp, listByApp, resolutionByAttachment})
+
+    const result = await resolvePgDatabase(ctx, 'app-1', {input: 'HEROKU_POSTGRESQL_RED'})
+
+    expect(result.id).toBe('addon-id')
+    expect(infoForApp).toHaveBeenCalledWith('app-1')
   })
 
   it('throws PgDatabaseNotFoundError when listing attachments to build the message fails', async () => {
