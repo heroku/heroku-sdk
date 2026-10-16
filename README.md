@@ -65,10 +65,8 @@ whatever you pass in:
    credential source — for example a token stored by `heroku login`, which the
    Heroku CLI resolves and injects itself (see the note below).
 
-> **Note:** As of `@heroku/heroku-fetch` `0.2.0`, `HEROKU_API_KEY` is the only
-> built-in source — the previous `~/.netrc` fallback has been removed. To
-> authenticate as a logged-in Heroku CLI user, resolve the stored token in your
-> (Node) application with
+> **Note:** To authenticate as a logged-in Heroku CLI user, resolve the stored
+> token in your (Node) application with
 > [`@heroku/heroku-credential-manager`](https://github.com/heroku/heroku-credential-manager)
 > and pass it in:
 >
