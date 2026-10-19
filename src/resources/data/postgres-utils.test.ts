@@ -4,7 +4,7 @@ import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {
   getAddonService, getArbitraryLegacyDB, isAdvancedDatabase, isLegacyDatabase, isPostgresAddon,

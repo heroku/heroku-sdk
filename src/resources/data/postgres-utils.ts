@@ -2,8 +2,8 @@ import type {AddOn} from '@heroku/types/3.sdk'
 
 import createDebug from 'debug'
 
-import {ResourceCtx} from '../../../core/extend-resource.js'
-import {AddOnAttachmentWithInclusions} from '../../platform/add-on-attachment/resolve.js'
+import {ResourceCtx} from '../../core/extend-resource.js'
+import {AddOnAttachmentWithInclusions} from '../platform/add-on-attachment/resolve.js'
 
 const debug = createDebug('postgres-utils')
 
