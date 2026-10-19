@@ -232,7 +232,9 @@ describe('resolvePgDatabase', () => {
   it('resolves via a config var name when the resolver finds no match', async () => {
     const listByApp = vi.fn().mockResolvedValue([
       pgAttachment({attachmentId: 'attachment-1', configVars: ['DATABASE_URL']}),
-      pgAttachment({attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL'], name: 'HEROKU_POSTGRESQL_PINK'}),
+      pgAttachment({
+        attachmentId: 'attachment-2', configVars: ['HEROKU_POSTGRESQL_PINK_URL'], id: 'addon-2', name: 'HEROKU_POSTGRESQL_PINK',
+      }),
     ])
     const infoForApp = vi.fn().mockResolvedValue({
       DATABASE_URL: 'postgres://same',
