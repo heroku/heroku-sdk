@@ -125,13 +125,13 @@ export async function resolvePgDatabase(
  *   - `NotFoundError` or `AddonAttachmentNotFoundError` → list the app's Postgres attachments.
  *     An empty list throws `PgDatabaseNotFoundError`. Otherwise treat `attachmentId` as a config
  *     var (adding `_URL` if missing) and keep every attachment whose own `_URL` value equals it.
- *     No matches throws `PgDatabaseNotFoundError`.
- *   - `AddonAttachmentAmbiguousError` → use the list of matches from the error.
+ *     Those matches already share one `_URL` value by construction, so only a same-add-on check
+ *     is needed before returning the first one. No matches, or matches that span more than one
+ *     add-on, throws `PgDatabaseNotFoundError`.
+ *   - `AddonAttachmentAmbiguousError` → collapse `error.matches` to one attachment via
+ *     `equivalentAttachment` when they're the same database (same add-on, same attachment app,
+ *     and the same non-empty `_URL` value fetched from the app's config vars). Otherwise rethrow.
  *   - any other error → rethrow.
- *
- * When every remaining match is the same database (same add-on, same attachment app, and the
- * same non-empty `_URL` value), returns the first attachment. Otherwise throws `PgDatabaseNotFoundError`,
- * or the original `AddonAttachmentAmbiguousError`.
  */
 async function attachmentResolutionFallback(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -140,61 +140,50 @@ async function attachmentResolutionFallback(
   error: unknown,
   signal?: AbortSignal,
 ): Promise<AddOnAttachmentWithInclusions> {
-  let matches: AddOnAttachmentWithInclusions[]
-  let resolutionError: AddonAttachmentAmbiguousError | PgDatabaseNotFoundError
-
   if (isAttachmentNotFoundError(error)) {
     const attachments = await listPostgresAttachments(ctx, appIdentity, attachmentId, error, signal)
     if (attachments.length === 0) {
       throw new PgDatabaseNotFoundError(`${appIdentity} has no ${getAddonService()} databases`, {cause: error})
     }
 
-    resolutionError = buildDatabaseNotFoundError(appIdentity, attachmentId, attachments, error)
+    const resolutionError = buildDatabaseNotFoundError(appIdentity, attachmentId, attachments, error)
+    const matches = await resolveAttachmentViaConfigVarName(ctx, appIdentity, attachmentId, attachments, resolutionError, signal)
 
-    matches = await resolveAttachmentViaConfigVarName(ctx, appIdentity, attachmentId, attachments, resolutionError, signal)
+    if (matches.length === 0 || !sameAddon(matches)) throw resolutionError
 
-    if (matches.length === 0) throw resolutionError
-  } else if (error instanceof AddonAttachmentAmbiguousError) {
-    matches = error.matches
-    resolutionError = error
-  } else {
-    throw error
+    return matches[0]
   }
 
-  const equivalent = await equivalentAttachment(ctx, matches, resolutionError, signal)
-  if (!equivalent) throw resolutionError
+  if (error instanceof AddonAttachmentAmbiguousError) {
+    const equivalent = await equivalentAttachment(ctx, error.matches, error, signal)
+    if (!equivalent) throw error
 
-  return equivalent
+    return equivalent
+  }
+
+  throw error
 }
 
 /**
- * Used by `attachmentResolutionFallback` to collapse matches to the first attachment
- * when all matches target the same database: same add-on, same attachment app,
- * and the same non-empty `_URL` value. Returns `undefined` when the matches are not
- * equivalent or the first match has no `_URL` value. `matches` must be non-empty.
+ * Used by `attachmentResolutionFallback` to collapse ambiguous matches to the first
+ * attachment when all matches target the same database: same add-on, same attachment
+ * app, and the same non-empty `_URL` value. Returns `undefined` when the matches are
+ * not equivalent or the first match has no `_URL` value. `matches` must be non-empty.
  */
 async function equivalentAttachment(
   ctx: Pick<ResourceCtx, 'platform'>,
   matches: AddOnAttachmentWithInclusions[],
-  error: AddonAttachmentAmbiguousError | PgDatabaseNotFoundError,
+  error: AddonAttachmentAmbiguousError,
   signal?: AbortSignal,
 ): Promise<AddOnAttachmentWithInclusions | undefined> {
   const [first] = matches
-  const sameAddon = matches.every(match => match.addon.id === first.addon.id && match.app.id === first.app.id)
-  if (!sameAddon) return undefined
+  if (!sameAddon(matches)) return undefined
 
   const appConfig = await listAppConfigVars(ctx, first.app.name, error, signal)
-  const firstUrlVarName = getUrlConfigVarName(first.config_vars)
-  const firstUrlVarValue = firstUrlVarName && appConfig[firstUrlVarName]
+  const firstUrlValue = getUrlConfigVarValue(first, appConfig)
+  if (!firstUrlValue) return undefined
 
-  if (!firstUrlVarValue) return undefined
-
-  const sameDatabaseUrl = matches.every(match => {
-    const matchUrlVarName = getUrlConfigVarName(match.config_vars)
-    const matchUrlVarValue = matchUrlVarName && appConfig[matchUrlVarName]
-
-    return firstUrlVarValue === matchUrlVarValue
-  })
+  const sameDatabaseUrl = matches.every(match => getUrlConfigVarValue(match, appConfig) === firstUrlValue)
 
   return sameDatabaseUrl ? first : undefined
 }
@@ -277,12 +266,7 @@ async function resolveAttachmentViaConfigVarName(
 
   if (!inputConfigVarValue) return []
 
-  return attachments.filter(attachment => {
-    const attachmentUrlVarName = getUrlConfigVarName(attachment.config_vars)
-    const attachmentConfigVarValue = attachmentUrlVarName && appConfig[attachmentUrlVarName]
-
-    return inputConfigVarValue === attachmentConfigVarValue
-  })
+  return attachments.filter(attachment => getUrlConfigVarValue(attachment, appConfig) === inputConfigVarValue)
 }
 
 /**
@@ -320,6 +304,15 @@ function getUrlConfigVarName(configVars: AddOnAttachmentWithInclusions['config_v
 }
 
 /**
+ * Looks up the value of `attachment`'s own `_URL` config var in `appConfig`, or
+ * `undefined` if the attachment has no `_URL`-suffixed config var.
+ */
+function getUrlConfigVarValue(attachment: AddOnAttachmentWithInclusions, appConfig: ConfigVar): string | undefined {
+  const urlVarName = getUrlConfigVarName(attachment.config_vars)
+  return urlVarName ? appConfig[urlVarName] : undefined
+}
+
+/**
  * Returns true if `error` is a NotFoundError (attachment resolution endpoint 404) or
  * AddonAttachmentNotFoundError (attachments did not match the add-on service filter).
  */
@@ -342,6 +335,12 @@ function parseDatabaseReference(
   }
 
   return {app: appIdentity, attachmentId: reference}
+}
+
+/** Whether every match shares the same add-on and attachment app. */
+function sameAddon(matches: AddOnAttachmentWithInclusions[]): boolean {
+  const [first] = matches
+  return matches.every(match => match.addon.id === first.addon.id && match.app.id === first.app.id)
 }
 
 /**
