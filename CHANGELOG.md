@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.11.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.10.0...sdk-v0.11.0) (2026-10-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* adopt heroku-fetch 0.2.0 (remove netrc auth fallback) + auth docs ([#155](https://github.com/heroku/heroku-sdk/issues/155))
+
+### Features
+
+* adopt heroku-fetch 0.2.0 (remove netrc auth fallback) + auth docs ([#155](https://github.com/heroku/heroku-sdk/issues/155)) ([8924291](https://github.com/heroku/heroku-sdk/commit/892429193bf50acad1ced49dd71dd07ae76f2d32))
+
+
+### Dependencies
+
+* bump @heroku/types from 5.0.0 to 5.4.0 ([#157](https://github.com/heroku/heroku-sdk/issues/157)) ([3ac7668](https://github.com/heroku/heroku-sdk/commit/3ac7668139a6966b81491341b97eef9203f6d764))
+
 ## [0.10.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.9.0...sdk-v0.10.0) (2026-10-16)
 
 
