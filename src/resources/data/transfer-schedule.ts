@@ -7,7 +7,7 @@ import type {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
-import {getArbitraryLegacyDB} from './postgres-utils.js'
+import {getArbitraryLegacyDB} from './internal/postgres-utils.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 // The OpenAPI spec declares no fixed response schema for transferSchedule.list
