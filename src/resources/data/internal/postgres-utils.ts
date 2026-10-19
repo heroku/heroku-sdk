@@ -5,12 +5,12 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnAttachmentWithInclusions} from '../../platform/add-on-attachment/resolve.js'
 
-const debug = createDebug('heroku:sdk:resources:postgres-utils')
+const debug = createDebug('heroku:sdk:resources:postgres-database')
 
 /**
- * Returns an arbitrary legacy database add-on based on the provided app name.
+ * Returns the first legacy database add-on on the app.
  */
-export async function getArbitraryLegacyDB(
+export async function findLegacyDatabase(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
 ): Promise<AddOn> {
@@ -23,14 +23,19 @@ export async function getArbitraryLegacyDB(
   return addon
 }
 
-export const getAddonService = () =>
+export const getPostgresServiceName = () =>
   process.env.HEROKU_POSTGRESQL_ADDON_NAME || process.env.HEROKU_DATA_SERVICE || 'heroku-postgresql'
 
-export const isPostgresAddon = (addon: AddOn | AddOnAttachmentWithInclusions['addon']) =>
-  addon.plan?.name?.split(':', 2)[0] === getAddonService()
+/**
+ * `AddOnAttachmentWithInclusions` is an internal type. The public `isPostgresAddon` takes `AddOn` only.
+ */
+export const isPostgresAddonInternal = (addon: AddOn | AddOnAttachmentWithInclusions['addon']) =>
+  addon.plan?.name?.split(':', 2)[0] === getPostgresServiceName()
+
+export const isPostgresAddon = (addon: AddOn) => isPostgresAddonInternal(addon)
 
 export const isAdvancedDatabase = (addon: AddOn) =>
-  isPostgresAddon(addon) && /^(advanced|performance)/.test(addon.plan?.name?.split(':', 2)[1] ?? '')
+  isPostgresAddonInternal(addon) && /^(advanced|performance)/.test(addon.plan?.name?.split(':', 2)[1] ?? '')
 
 export const isLegacyDatabase = (addon: AddOn) =>
-  isPostgresAddon(addon) && !isAdvancedDatabase(addon)
+  isPostgresAddonInternal(addon) && !isAdvancedDatabase(addon)

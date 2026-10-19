@@ -7,7 +7,7 @@ import type {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
-import {getArbitraryLegacyDB} from './internal/postgres-utils.js'
+import {findLegacyDatabase} from './internal/postgres-utils.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 // The OpenAPI spec declares no fixed response schema for transferSchedule.list
@@ -31,7 +31,7 @@ export async function list(
 ): Promise<TransferSchedule[]> {
   options.signal?.throwIfAborted()
   // Schedules are app-scoped, so any legacy DB ID unlocks the app's list.
-  const addon = await getArbitraryLegacyDB(ctx, appIdentity)
+  const addon = await findLegacyDatabase(ctx, appIdentity)
   return ctx.data.transferSchedule.list(addon.id) as unknown as Promise<TransferSchedule[]>
 }
 

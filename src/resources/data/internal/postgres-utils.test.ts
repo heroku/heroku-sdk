@@ -7,7 +7,7 @@ import {
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {
-  getAddonService, getArbitraryLegacyDB, isAdvancedDatabase, isLegacyDatabase, isPostgresAddon,
+  findLegacyDatabase, getPostgresServiceName, isAdvancedDatabase, isLegacyDatabase, isPostgresAddonInternal,
 } from './postgres-utils.js'
 
 function buildCtx(listByApp: ReturnType<typeof vi.fn>): Pick<ResourceCtx, 'platform'> {
@@ -32,22 +32,22 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-describe('getAddonService', () => {
+describe('getPostgresServiceName', () => {
   it('defaults to heroku-postgresql', () => {
-    expect(getAddonService()).toBe('heroku-postgresql')
+    expect(getPostgresServiceName()).toBe('heroku-postgresql')
   })
 
   it('prefers HEROKU_POSTGRESQL_ADDON_NAME', () => {
     vi.stubEnv('HEROKU_POSTGRESQL_ADDON_NAME', 'heroku-postgresql-dev')
     vi.stubEnv('HEROKU_DATA_SERVICE', 'other')
 
-    expect(getAddonService()).toBe('heroku-postgresql-dev')
+    expect(getPostgresServiceName()).toBe('heroku-postgresql-dev')
   })
 
   it('falls back to HEROKU_DATA_SERVICE', () => {
     vi.stubEnv('HEROKU_DATA_SERVICE', 'heroku-postgresql-staging')
 
-    expect(getAddonService()).toBe('heroku-postgresql-staging')
+    expect(getPostgresServiceName()).toBe('heroku-postgresql-staging')
   })
 })
 
@@ -55,7 +55,7 @@ describe('plan classification', () => {
   it('treats essential plans as legacy postgres', () => {
     const candidate = addon('heroku-postgresql:essential-0')
 
-    expect(isPostgresAddon(candidate)).toBe(true)
+    expect(isPostgresAddonInternal(candidate)).toBe(true)
     expect(isAdvancedDatabase(candidate)).toBe(false)
     expect(isLegacyDatabase(candidate)).toBe(true)
   })
@@ -63,7 +63,7 @@ describe('plan classification', () => {
   it('treats standard plans as legacy postgres', () => {
     const candidate = addon('heroku-postgresql:standard-0')
 
-    expect(isPostgresAddon(candidate)).toBe(true)
+    expect(isPostgresAddonInternal(candidate)).toBe(true)
     expect(isAdvancedDatabase(candidate)).toBe(false)
     expect(isLegacyDatabase(candidate)).toBe(true)
   })
@@ -71,7 +71,7 @@ describe('plan classification', () => {
   it('treats advanced plans as advanced postgres', () => {
     const candidate = addon('heroku-postgresql:advanced-0')
 
-    expect(isPostgresAddon(candidate)).toBe(true)
+    expect(isPostgresAddonInternal(candidate)).toBe(true)
     expect(isAdvancedDatabase(candidate)).toBe(true)
     expect(isLegacyDatabase(candidate)).toBe(false)
   })
@@ -79,7 +79,7 @@ describe('plan classification', () => {
   it('treats performance plans as advanced postgres', () => {
     const candidate = addon('heroku-postgresql:performance-l')
 
-    expect(isPostgresAddon(candidate)).toBe(true)
+    expect(isPostgresAddonInternal(candidate)).toBe(true)
     expect(isAdvancedDatabase(candidate)).toBe(true)
     expect(isLegacyDatabase(candidate)).toBe(false)
   })
@@ -87,7 +87,7 @@ describe('plan classification', () => {
   it('does not treat redis plans as postgres', () => {
     const candidate = addon('heroku-redis:premium-0')
 
-    expect(isPostgresAddon(candidate)).toBe(false)
+    expect(isPostgresAddonInternal(candidate)).toBe(false)
     expect(isAdvancedDatabase(candidate)).toBe(false)
     expect(isLegacyDatabase(candidate)).toBe(false)
   })
@@ -95,13 +95,13 @@ describe('plan classification', () => {
   it('treats a missing plan as not postgres', () => {
     const candidate = addon()
 
-    expect(isPostgresAddon(candidate)).toBe(false)
+    expect(isPostgresAddonInternal(candidate)).toBe(false)
     expect(isAdvancedDatabase(candidate)).toBe(false)
     expect(isLegacyDatabase(candidate)).toBe(false)
   })
 })
 
-describe('getArbitraryLegacyDB', () => {
+describe('findLegacyDatabase', () => {
   it('returns the first legacy database on the app', async () => {
     const listByApp = vi.fn().mockResolvedValue([
       addon('heroku-redis:premium-0', {id: 'redis-id'}),
@@ -111,7 +111,7 @@ describe('getArbitraryLegacyDB', () => {
       addon('heroku-postgresql:standard-0', {id: 'later-legacy-id'}),
     ])
 
-    const result = await getArbitraryLegacyDB(buildCtx(listByApp), 'app-1')
+    const result = await findLegacyDatabase(buildCtx(listByApp), 'app-1')
 
     expect(listByApp).toHaveBeenCalledWith('app-1')
     expect(result.id).toBe('legacy-id')
@@ -122,7 +122,7 @@ describe('getArbitraryLegacyDB', () => {
       addon('heroku-postgresql:advanced-0'),
     ])
 
-    await expect(getArbitraryLegacyDB(buildCtx(listByApp), 'app-1'))
+    await expect(findLegacyDatabase(buildCtx(listByApp), 'app-1'))
       .rejects.toThrow('No Heroku Postgres legacy database on app-1')
   })
 })

@@ -7,7 +7,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnAttachmentWithInclusions, ResolveAddonAttachmentOptions, ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
 import {AddonAttachmentAmbiguousError, AddonAttachmentNotFoundError, resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
-import {getAddonService, isPostgresAddon} from './postgres-utils.js'
+import {getPostgresServiceName, isPostgresAddonInternal} from './postgres-utils.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 
@@ -111,7 +111,7 @@ export async function resolvePgDatabase(
 
   let attachment: ResolvedAddOnAttachment | undefined
   try {
-    attachment = await resolveAddonAttachment(ctx, parentApp, attachmentId, {...rest, addonService: getAddonService(), signal})
+    attachment = await resolveAddonAttachment(ctx, parentApp, attachmentId, {...rest, addonService: getPostgresServiceName(), signal})
   } catch (error) {
     attachment = await attachmentResolutionFallback(ctx, parentApp, attachmentId, error, signal)
   }
@@ -143,7 +143,7 @@ async function attachmentResolutionFallback(
   if (isAttachmentNotFoundError(error)) {
     const attachments = await listPostgresAttachments(ctx, appIdentity, attachmentId, error, signal)
     if (attachments.length === 0) {
-      throw new PgDatabaseNotFoundError(`${appIdentity} has no ${getAddonService()} databases`, {cause: error})
+      throw new PgDatabaseNotFoundError(`${appIdentity} has no ${getPostgresServiceName()} databases`, {cause: error})
     }
 
     const resolutionError = buildDatabaseNotFoundError(appIdentity, attachmentId, attachments, error)
@@ -243,7 +243,7 @@ async function listPostgresAttachments(
     throw new PgDatabaseNotFoundError(`Could not resolve ${stripUrlSuffix(attachmentId)} on ${appIdentity}`, {cause: error})
   }
 
-  return attachments.filter(attachment => isPostgresAddon(attachment.addon))
+  return attachments.filter(attachment => isPostgresAddonInternal(attachment.addon))
 }
 
 /**
@@ -289,7 +289,7 @@ function buildDatabaseNotFoundError(
   const databaseName = stripUrlSuffix(attachmentId)
 
   if (error instanceof AddonAttachmentNotFoundError) {
-    return new PgDatabaseNotFoundError(`${databaseName} is not a ${getAddonService()} database on ${appIdentity}. Valid options are: ${validOptions}`, {cause: error})
+    return new PgDatabaseNotFoundError(`${databaseName} is not a ${getPostgresServiceName()} database on ${appIdentity}. Valid options are: ${validOptions}`, {cause: error})
   }
 
   return new PgDatabaseNotFoundError(`Unknown database: ${databaseName} on ${appIdentity}. Valid options are: ${validOptions}`, {cause: error})

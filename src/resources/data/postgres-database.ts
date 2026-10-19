@@ -43,3 +43,11 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
     options?: ListCredentialsOptions,
   ) => listCredentials(ctx, appIdentity, addonIdentity, options),
 }))
+
+export {
+  findLegacyDatabase,
+  getPostgresServiceName,
+  isAdvancedDatabase,
+  isLegacyDatabase,
+  isPostgresAddon,
+} from './internal/postgres-utils.js'
