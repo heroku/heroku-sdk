@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.11.0...sdk-v0.11.1) (2026-10-20)
+
+
+### Features
+
+* export postgres util functions ([#159](https://github.com/heroku/heroku-sdk/issues/159)) ([c253a81](https://github.com/heroku/heroku-sdk/commit/c253a81b93d00268bf5023de4132356d09c1e646))
+* fall back to database resolution by config var on not found error ([#158](https://github.com/heroku/heroku-sdk/issues/158)) ([8bc5ee2](https://github.com/heroku/heroku-sdk/commit/8bc5ee29109679bebb66f95214a3c6fb9be7c2ff))
+
 ## [0.11.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.10.0...sdk-v0.11.0) (2026-10-19)
 
 
