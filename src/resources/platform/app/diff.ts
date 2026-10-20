@@ -5,6 +5,8 @@ import {NotFoundError} from '@heroku/heroku-fetch'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {PlatformClient} from '../../../services/platform.js'
 
+import {withSignal} from '../../../core/with-signal.js'
+
 export type DiffAppsOptions = {
   signal?: AbortSignal
 }
@@ -128,9 +130,7 @@ export async function diffApps(
   options: DiffAppsOptions = {},
 ): Promise<DiffRow[]> {
   options.signal?.throwIfAborted()
-  const platform = options.signal
-    ? ctx.platform.withOptions({signal: options.signal})
-    : ctx.platform
+  const platform = withSignal(ctx.platform, options.signal)
 
   const files = await diffFiles(platform, app1, app2)
 

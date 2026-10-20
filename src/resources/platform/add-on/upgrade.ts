@@ -3,6 +3,7 @@ import type {AddOn} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {UpgradeAddOnOptions} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {debug} from './debug.js'
 import {resolveAddonInternal} from './resolve.js'
 
@@ -30,7 +31,10 @@ export async function upgrade(
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
 
-  const addon = await resolveAddonInternal(ctx.platform, addonIdentity, {
+  // Bind the signal so the resolve and update requests abort in flight.
+  const platform = withSignal(ctx.platform, options.signal)
+
+  const addon = await resolveAddonInternal(platform, addonIdentity, {
     addonService: options.addonService,
     appIdentity: options.appIdentity,
   })
@@ -46,5 +50,5 @@ export async function upgrade(
   }
 
   debug('upgrade addon=%s app=%s plan=%s', addon.id, addon.app.id, qualifiedPlan)
-  return ctx.platform.addOn.update(addon.app.id, addon.id, {plan: qualifiedPlan})
+  return platform.addOn.update(addon.app.id, addon.id, {plan: qualifiedPlan})
 }

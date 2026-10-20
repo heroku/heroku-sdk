@@ -28,21 +28,28 @@ function ctxFor(promotion: PipelinePromotion, listResults: PipelinePromotionTarg
   create: ReturnType<typeof vi.fn>;
   ctx: ResourceCtx;
   list: ReturnType<typeof vi.fn>;
+  withOptions: ReturnType<typeof vi.fn>;
 } {
   const create = vi.fn().mockResolvedValue(promotion)
   const list = vi.fn()
   for (const result of listResults) list.mockResolvedValueOnce(result)
 
+  const platform = {
+    pipelinePromotion: {create},
+    pipelinePromotionTarget: {list},
+    withOptions: vi.fn(),
+  }
+  // withOptions returns a same-shaped client; the mock is self-referential.
+  platform.withOptions.mockReturnValue(platform)
+
   return {
     create,
     ctx: {
       data: {} as never,
-      platform: {
-        pipelinePromotion: {create},
-        pipelinePromotionTarget: {list},
-      } as never,
+      platform: platform as never,
     },
     list,
+    withOptions: platform.withOptions,
   }
 }
 
@@ -61,22 +68,29 @@ function ctxWithRelease(
 ): {
   ctx: ResourceCtx
   releaseInfo: ReturnType<typeof vi.fn>
+  withOptions: ReturnType<typeof vi.fn>
 } {
   const create = vi.fn().mockResolvedValue(promotion)
   const list = vi.fn()
   for (const result of listResults) list.mockResolvedValueOnce(result)
   const releaseInfo = vi.fn().mockResolvedValue(release)
 
+  const platform = {
+    pipelinePromotion: {create},
+    pipelinePromotionTarget: {list},
+    release: {info: releaseInfo},
+    withOptions: vi.fn(),
+  }
+  // withOptions returns a same-shaped client; the mock is self-referential.
+  platform.withOptions.mockReturnValue(platform)
+
   return {
     ctx: {
       data: {} as never,
-      platform: {
-        pipelinePromotion: {create},
-        pipelinePromotionTarget: {list},
-        release: {info: releaseInfo},
-      } as never,
+      platform: platform as never,
     },
     releaseInfo,
+    withOptions: platform.withOptions,
   }
 }
 
@@ -162,12 +176,15 @@ describe('pipeline-promotion resource', () => {
     const promotion = {id: 'promo-4'} as PipelinePromotion
     const pending: PipelinePromotionTarget[] = [{id: 't1', status: 'pending'}]
     const list = vi.fn().mockResolvedValue(pending)
+    const platform = {
+      pipelinePromotion: {create: vi.fn().mockResolvedValue(promotion)},
+      pipelinePromotionTarget: {list},
+      withOptions: vi.fn(),
+    }
+    platform.withOptions.mockReturnValue(platform)
     const ctx: ResourceCtx = {
       data: {} as never,
-      platform: {
-        pipelinePromotion: {create: vi.fn().mockResolvedValue(promotion)},
-        pipelinePromotionTarget: {list},
-      } as never,
+      platform: platform as never,
     }
 
     const controller = new AbortController()
@@ -224,7 +241,7 @@ describe('pipeline-promotion resource', () => {
       service: 'custom',
       token: '',
     })
-    expect(stream).toHaveBeenCalledWith('/release?token=abc')
+    expect(stream).toHaveBeenCalledWith('/release?token=abc', {signal: undefined})
     expect(result.targets).toEqual(done)
   })
 
@@ -254,6 +271,53 @@ describe('pipeline-promotion resource', () => {
     await expectation
 
     expect(stream).toHaveBeenCalledTimes(3)
+  })
+
+  it('promotePipeline propagates an abort from the busl stream instead of retrying it', async () => {
+    const promotion = {id: 'promo-abort'} as PipelinePromotion
+    const pendingWithRelease: PipelinePromotionTarget[] = [{
+      app: {id: 'target-app-1'},
+      id: 't1',
+      release: {id: 'release-1'},
+      status: 'pending',
+    }]
+    const {ctx} = ctxWithRelease(promotion, [pendingWithRelease], {
+      // eslint-disable-next-line camelcase
+      output_stream_url: 'https://busl.example/release',
+    })
+
+    const controller = new AbortController()
+    // The in-flight stream request rejects with an AbortError, as fetch does
+    // when its signal fires. It must propagate, not be caught as a retryable miss.
+    const stream = vi.fn().mockImplementation(() => {
+      controller.abort()
+      return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'))
+    })
+    mockBuslClient(stream)
+
+    const promise = promotePipeline(ctx, singleTargetBody, {
+      intervalMs: 1,
+      onReleaseStream: vi.fn(),
+      releaseStreamMaxAttempts: 3,
+      signal: controller.signal,
+    })
+    const expectation = expect(promise).rejects.toThrow(/aborted/i)
+    await vi.advanceTimersByTimeAsync(100)
+    await expectation
+
+    // No retry: the abort terminated the fetch loop on the first attempt.
+    expect(stream).toHaveBeenCalledTimes(1)
+  })
+
+  it('promotePipeline threads the caller signal into the create and poll requests', async () => {
+    const promotion = {id: 'promo-signal'} as PipelinePromotion
+    const targets: PipelinePromotionTarget[] = [{id: 't1', status: 'succeeded'}]
+    const {ctx, withOptions} = ctxFor(promotion, [targets])
+    const controller = new AbortController()
+
+    await promotePipeline(ctx, createBody, {signal: controller.signal})
+
+    expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
   })
 
   it('promotePipeline skips streaming when there are multiple targets', async () => {

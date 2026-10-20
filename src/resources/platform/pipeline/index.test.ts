@@ -21,9 +21,12 @@ vi.mock('@heroku/heroku-fetch', () => ({
 const SOME_UUID = '01234567-89ab-cdef-0123-456789abcdef'
 
 function ctxWithInfo(info: ReturnType<typeof vi.fn>): ResourceCtx {
+  const platform: Record<string, unknown> = {pipeline: {info}}
+  // Self-referential so a `.withOptions({signal})` chain resolves back to platform.
+  platform.withOptions = vi.fn(() => platform)
   return {
     data: {} as never,
-    platform: {pipeline: {info}} as never,
+    platform: platform as never,
   }
 }
 
@@ -99,6 +102,31 @@ describe('pipeline resource', () => {
       const error = await resolvePipeline(ctx, 'shared').catch(error_ => error_)
       expect(error).toBeInstanceOf(PipelineAmbiguousError)
       expect((error as PipelineAmbiguousError).matches).toEqual(matches)
+    })
+
+    it('binds the signal to the platform client so the UUID lookup aborts in flight', async () => {
+      const pipeline = {id: SOME_UUID, name: 'my-pipeline'} as Pipeline
+      const info = vi.fn().mockResolvedValue(pipeline)
+      const ctx = ctxWithInfo(info)
+      const controller = new AbortController()
+
+      await resolvePipeline(ctx, SOME_UUID, {signal: controller.signal})
+
+      expect((ctx.platform as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
+        .toHaveBeenCalledWith({signal: controller.signal})
+    })
+
+    it('threads the signal into the raw HerokuApiClient request during a name lookup', async () => {
+      const ctx = ctxWithInfo(vi.fn())
+      const get = mockGet([{id: SOME_UUID, name: 'my-pipeline'} as Pipeline])
+      const controller = new AbortController()
+
+      await resolvePipeline(ctx, 'my-pipeline', {signal: controller.signal})
+
+      expect(get).toHaveBeenCalledWith('/pipelines', {
+        searchParams: {'eq[name]': 'my-pipeline'},
+        signal: controller.signal,
+      })
     })
 
     it('throws if the signal is already aborted', async () => {

@@ -5,6 +5,7 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedAddOn} from '../../platform/add-on/index.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {RedisAddonAmbiguousError, RedisAddonNotFoundError} from './errors.js'
 
 const debug = createDebug('heroku:sdk:resources:redis')
@@ -52,7 +53,7 @@ export async function resolveRedisByApp(
   options.signal?.throwIfAborted()
 
   const {addonServiceName = DEFAULT_REDIS_ADDON_SERVICE_PREFIX, database} = options
-  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, options.signal)
 
   debug('resolveByApp app=%s service-prefix=%s database=%s', appIdentity, addonServiceName, database ?? '<any>')
   const addons = await platform.addOn.listByApp(appIdentity)

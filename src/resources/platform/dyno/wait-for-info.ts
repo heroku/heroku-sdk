@@ -5,6 +5,7 @@ import {HerokuApiError, NotFoundError, RateLimitError} from '@heroku/heroku-fetc
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 
 /**
@@ -129,7 +130,7 @@ export async function waitForInfo(
 
   // Scope the in-flight info call to the caller's signal so an abort
   // takes effect during the API call, not just during the backoff.
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   let lastError: Error | undefined
   let lastDyno: Dyno | undefined

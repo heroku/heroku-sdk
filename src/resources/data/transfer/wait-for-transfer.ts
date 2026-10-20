@@ -4,6 +4,7 @@ import type {TransferInfoByAppResult} from '@heroku/types/data'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 
 const DEFAULT_INTERVAL_MS = 3000
@@ -91,7 +92,7 @@ export async function waitForTransfer(
 
   signal?.throwIfAborted()
 
-  const data = signal ? ctx.data.withOptions({signal}) : ctx.data
+  const data = withSignal(ctx.data, signal)
 
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
   let failures = 0

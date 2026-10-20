@@ -3,6 +3,7 @@ import type {Plan} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnOptions, ResolveAddonOptions} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {AddonNotFoundError} from './errors.js'
 import {resolveAddonInternal} from './resolve.js'
 
@@ -25,7 +26,9 @@ export async function listPlans(
   options: AddOnOptions = {},
 ): Promise<Plan[]> {
   options.signal?.throwIfAborted()
-  const plans = await ctx.platform.plan.listByAddOn(serviceIdentity)
+  // Bind the signal so the request aborts in flight.
+  const platform = withSignal(ctx.platform, options.signal)
+  const plans = await platform.plan.listByAddOn(serviceIdentity)
   return [...plans].sort(byPriceCentsAsc)
 }
 
@@ -49,7 +52,10 @@ export async function listPlansForAddon(
   options: ListPlansForAddonOptions = {},
 ): Promise<Plan[]> {
   options.signal?.throwIfAborted()
-  const addon = await resolveAddonInternal(ctx.platform, addonIdentity, {
+  // Bind the signal so the resolve request aborts in flight (the helper itself
+  // doesn't thread options.signal into the client).
+  const platform = withSignal(ctx.platform, options.signal)
+  const addon = await resolveAddonInternal(platform, addonIdentity, {
     appIdentity: options.appIdentity,
   })
   // The route accepts either name or id; name is stable across

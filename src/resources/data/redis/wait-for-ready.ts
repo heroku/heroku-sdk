@@ -6,6 +6,7 @@ import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 
 const debug = createDebug('heroku:sdk:resources:redis')
@@ -39,7 +40,7 @@ export type WaitForRedisReadyOptions = {
  * provision call resolves.
  *
  * Cancellation: the caller's `signal` is threaded into both the
- * in-flight request (via `withOptions`) and the poll-delay `wait()`,
+ * in-flight request (via `withSignal`) and the poll-delay `wait()`,
  * so aborting takes effect during either phase.
  */
 export async function waitForRedisReady(
@@ -51,7 +52,7 @@ export async function waitForRedisReady(
 
   signal?.throwIfAborted()
 
-  const data = signal ? ctx.data.withOptions({signal}) : ctx.data
+  const data = withSignal(ctx.data, signal)
 
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
 

@@ -5,6 +5,7 @@ import {HerokuApiClient, type HerokuApiClientOptions} from '@heroku/heroku-fetch
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {withSignal} from '../../../core/with-signal.js'
 
 export type ResolvePipelineOptions = {
   clientOptions?: HerokuApiClientOptions
@@ -69,7 +70,8 @@ export async function resolvePipeline(
   options.signal?.throwIfAborted()
 
   if (UUID_RE.test(identity)) {
-    return ctx.platform.pipeline.info(identity)
+    // Bind the signal so the lookup aborts in flight.
+    return withSignal(ctx.platform, options.signal).pipeline.info(identity)
   }
 
   const apiClient = new HerokuApiClient({
@@ -78,6 +80,7 @@ export async function resolvePipeline(
   })
   const response = await apiClient.get('/pipelines', {
     searchParams: {'eq[name]': identity},
+    signal: options.signal,
   })
   const matches = (await response.json()) as Pipeline[]
 

@@ -2,6 +2,8 @@ import type {AppTransfer, TeamApp} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
+
 export type TransferOptions = {
   personalToPersonal?: boolean
   signal?: AbortSignal
@@ -30,7 +32,7 @@ export async function transferApp(
   options: TransferOptions = {},
 ): Promise<AppTransfer | TeamApp> {
   options.signal?.throwIfAborted()
-  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, options.signal)
 
   if (options.personalToPersonal) {
     const body: {app: string; recipient: string; silent?: boolean} = {app: appIdentity, recipient}

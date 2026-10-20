@@ -4,6 +4,8 @@ import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
+
 const debug = createDebug('heroku:sdk:resources:add-on-attachment')
 
 export class AddonAttachmentNotFoundError extends Error {
@@ -96,9 +98,10 @@ export async function resolveAddonAttachment(
   signal?.throwIfAborted()
   debug('resolve app=%s attachment=%s service=%s', appIdentity ?? '<global>', attachmentName, addonService ?? '<any>')
 
-  const platform = ctx.platform
-    .withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'})
-    .withOptions({signal})
+  const platform = withSignal(
+    ctx.platform.withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'}),
+    signal,
+  )
 
   const matches = await platform.addOnAttachment.resolution({
     // eslint-disable-next-line camelcase

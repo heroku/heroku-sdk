@@ -25,6 +25,7 @@ function buildCtx(
   create: ReturnType<typeof vi.fn>
   ctx: ResourceCtx
   withHeaders: ReturnType<typeof vi.fn>
+  withOptions: ReturnType<typeof vi.fn>
 } {
   const create = vi.fn(createImpl as never)
   const appInfo = vi.fn().mockResolvedValue({generation, id: 'app-id', name: 'my-app'})
@@ -32,9 +33,11 @@ function buildCtx(
     app: {info: appInfo},
     logSession: {create},
     withHeaders: vi.fn(),
+    withOptions: vi.fn(),
   }
-  // withHeaders returns a same-shaped client; the mock is self-referential.
+  // withHeaders/withOptions return a same-shaped client; the mocks are self-referential.
   platform.withHeaders.mockReturnValue(platform)
+  platform.withOptions.mockReturnValue(platform)
 
   return {
     appInfo,
@@ -44,6 +47,7 @@ function buildCtx(
       platform: platform as never,
     },
     withHeaders: platform.withHeaders,
+    withOptions: platform.withOptions,
   }
 }
 
@@ -487,6 +491,23 @@ describe('log-session resource', () => {
 
       expect(stream).toHaveBeenCalledWith(expect.any(String), {
         headers: {Accept: 'text/event-stream'},
+      })
+    })
+
+    it('threads the caller signal into the session-create and stream requests', async () => {
+      // The in-flight create and stream requests must be abortable, not just
+      // the delay between reads: bind the signal to the platform client used
+      // for create, and pass it through to the logplex stream call.
+      const {ctx, withOptions} = buildCtx(() => ({...SESSION_BASE}))
+      const stream = mockStream(new Response(streamFromChunks([])))
+      const controller = new AbortController()
+
+      await collect(streamLogs(ctx, 'my-app', {signal: controller.signal}))
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+      expect(stream).toHaveBeenCalledWith(expect.any(String), {
+        headers: {Accept: 'text/event-stream'},
+        signal: controller.signal,
       })
     })
 

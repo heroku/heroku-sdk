@@ -153,6 +153,7 @@ function buildWaitCtx({
   info: ReturnType<typeof vi.fn>
   infoByApp: ReturnType<typeof vi.fn>
   withHeaders: ReturnType<typeof vi.fn>
+  withOptions: ReturnType<typeof vi.fn>
 } {
   const infoByApp = vi.fn()
   for (const response of infoByAppResponses) {
@@ -167,14 +168,18 @@ function buildWaitCtx({
   const platform = {
     addOn: {info, infoByApp},
     withHeaders: vi.fn(),
+    withOptions: vi.fn(),
   }
+  // Both decorators return a same-shaped client; the mocks are self-referential.
   platform.withHeaders.mockReturnValue(platform)
+  platform.withOptions.mockReturnValue(platform)
 
   return {
     ctx: {data: {} as never, platform: platform as never},
     info,
     infoByApp,
     withHeaders: platform.withHeaders,
+    withOptions: platform.withOptions,
   }
 }
 
@@ -257,6 +262,16 @@ describe('add-on resource', () => {
 
       await expect(upgrade(ctx, 'addon-1', 'plan-1', {signal: controller.signal})).rejects.toThrow()
       expect(resolution).not.toHaveBeenCalled()
+    })
+
+    it('binds the signal to the platform client so the request aborts in flight', async () => {
+      const resolved = buildAddon({app: {id: 'app-1', name: 'my-app'}, id: 'addon-1'})
+      const {ctx, withOptions} = buildCtx({resolveResponses: [[resolved]], updateResponse: resolved})
+      const controller = new AbortController()
+
+      await upgrade(ctx, 'postgres::sushi', 'heroku-postgresql:premium-0', {signal: controller.signal})
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
     })
 
     it('qualifies a bare plan name with the resolved addon_service name', async () => {
@@ -370,6 +385,15 @@ describe('add-on resource', () => {
       await expect(listPlans(ctx, 'svc', {signal: controller.signal})).rejects.toThrow()
       expect(listByAddOnService).not.toHaveBeenCalled()
     })
+
+    it('binds the signal to the platform client so the request aborts in flight', async () => {
+      const {ctx, withOptions} = buildCtx({plans: []})
+      const controller = new AbortController()
+
+      await listPlans(ctx, 'svc', {signal: controller.signal})
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+    })
   })
 
   describe('listPlansForAddon', () => {
@@ -447,6 +471,19 @@ describe('add-on resource', () => {
 
       await expect(listPlansForAddon(ctx, 'addon-id', {signal: controller.signal})).rejects.toThrow()
       expect(resolution).not.toHaveBeenCalled()
+    })
+
+    it('binds the signal to the platform client so the request aborts in flight', async () => {
+      const addon = buildAddon({
+        // eslint-disable-next-line camelcase
+        addon_service: {id: 'svc-id', name: 'heroku-postgresql'},
+      } as Partial<AddOn>)
+      const {ctx, withOptions} = buildCtx({plans: [], resolveResponses: [[addon]]})
+      const controller = new AbortController()
+
+      await listPlansForAddon(ctx, 'addon-id', {signal: controller.signal})
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
     })
   })
 
@@ -804,6 +841,19 @@ describe('add-on resource', () => {
       await expect(describeAddon(ctx, 'my-postgres', {signal: controller.signal})).rejects.toThrow()
       expect(resolution).not.toHaveBeenCalled()
     })
+
+    it('binds the signal to the platform client so the request aborts in flight', async () => {
+      const addon = buildAddon()
+      const {ctx, withOptions} = buildCtx({
+        attachments: [{id: 'att-1'} as AddOnAttachment],
+        resolveResponses: [[addon]],
+      })
+      const controller = new AbortController()
+
+      await describeAddon(ctx, 'my-postgres', {signal: controller.signal})
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+    })
   })
 
   describe('resolveAddon', () => {
@@ -848,6 +898,16 @@ describe('add-on resource', () => {
 
       await expect(resolveAddon(ctx, 'my-postgres', {signal: controller.signal})).rejects.toThrow()
       expect(resolution).not.toHaveBeenCalled()
+    })
+
+    it('binds the signal to the platform client so the request aborts in flight', async () => {
+      const addon = buildAddon()
+      const {ctx, withOptions} = buildCtx({resolveResponses: [[addon]]})
+      const controller = new AbortController()
+
+      await resolveAddon(ctx, 'my-postgres', {appIdentity: 'my-app', signal: controller.signal})
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
     })
   })
 
@@ -1136,13 +1196,16 @@ describe('add-on resource', () => {
       const {addOnDelete, ctx, withOptions} = buildDestroyCtx({infoByAppResponses: [deprovisioned]})
       addOnDelete.mockResolvedValue(deprovisioning)
 
-      await destroyAndWait(ctx, 'my-app', 'my-postgres', {force: true, wait: true, waitIntervalMs: 1})
+      const controller = new AbortController()
+      await destroyAndWait(ctx, 'my-app', 'my-postgres', {
+        force: true, signal: controller.signal, wait: true, waitIntervalMs: 1,
+      })
 
       // The force body must scope to the delete client only, never the GET
-      // poll client. The poll client is derived from the base
-      // `withOptions({headers, signal})` call (no body); the delete client is
-      // a SEPARATE `withOptions({body: {force: true}})` call. Assert both
-      // exist so a regression that folds force into the shared poll setup —
+      // poll client. The poll client is the signal-bound base derived via
+      // `withSignal` (a `withOptions({signal})` call, no body); the delete
+      // client is a SEPARATE `withOptions({body: {force: true}})` call. Assert
+      // both exist so a regression that folds force into the shared poll setup —
       // leaking the body onto every poll request — fails here.
       expect(withOptions).toHaveBeenCalledWith(expect.objectContaining({body: {force: true}}))
       expect(withOptions.mock.calls.some(([opts]) => !('body' in (opts ?? {})))).toBe(true)
@@ -1234,6 +1297,16 @@ describe('add-on resource', () => {
 
       await expect(waitForProvisioning(ctx, provisioning, {signal: controller.signal})).rejects.toThrow()
       expect(infoByApp).not.toHaveBeenCalled()
+    })
+
+    it('binds the signal to the platform client so each poll aborts in flight', async () => {
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const {ctx, withOptions} = buildWaitCtx()
+      const controller = new AbortController()
+
+      await waitForProvisioning(ctx, provisioned, {signal: controller.signal})
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
     })
   })
 

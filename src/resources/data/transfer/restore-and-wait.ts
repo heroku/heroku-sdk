@@ -4,6 +4,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
 import type {WaitForTransferOptions} from './wait-for-transfer.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {Poller} from '../../../utils/poller.js'
 import {resolvePgDatabase} from '../internal/resolve-pg-database.js'
 import {waitForTransfer} from './wait-for-transfer.js'
@@ -48,9 +49,12 @@ export async function restoreAndWait(
 
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
 
+  // Bind the signal so the create request aborts in flight, not just the wait.
+  const data = withSignal(ctx.data, signal)
+
   restorePoller?.onStart?.(addon)
   // eslint-disable-next-line camelcase
-  const restore = await ctx.data.restore.create(addon.id, {backup_url: backupUrl, extensions}) as RestoreCreateInfo
+  const restore = await data.restore.create(addon.id, {backup_url: backupUrl, extensions}) as RestoreCreateInfo
   restorePoller?.onStop?.(addon)
 
   waitPoller?.onStart?.(restore)

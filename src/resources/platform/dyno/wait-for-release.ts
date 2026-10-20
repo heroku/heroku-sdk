@@ -3,6 +3,7 @@ import type {Dyno, Release} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 
 const DEFAULT_DELAY_MS = 10_000
@@ -104,7 +105,7 @@ export async function waitForRelease(
 
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   const releases = await platform
     .withHeaders({Range: LATEST_RELEASE_RANGE})

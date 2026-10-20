@@ -3,6 +3,7 @@ import type {Release} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ContainerOptions} from './index.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {ensureContainerStack} from './ensure-container-stack.js'
 
 /**
@@ -32,7 +33,7 @@ export async function releaseDockerImages(
 ): Promise<ReleaseDockerImagesResult> {
   await ensureContainerStack(ctx, appIdentity, options)
 
-  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, options.signal)
 
   const oldReleases = await platform
     .withHeaders({Range: 'version ..; max=1, order=desc'})

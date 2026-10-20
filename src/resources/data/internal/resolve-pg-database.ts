@@ -6,6 +6,7 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {AddOnAttachmentWithInclusions, ResolveAddonAttachmentOptions, ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {AddonAttachmentAmbiguousError, AddonAttachmentNotFoundError, resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
 import {getPostgresServiceName, isPostgresAddonInternal} from './postgres-utils.js'
 
@@ -200,8 +201,7 @@ async function listAppConfigVars(
   signal?: AbortSignal,
 ): Promise<ConfigVar> {
   try {
-    return await ctx.platform
-      .withOptions({signal})
+    return await withSignal(ctx.platform, signal)
       .configVar.infoForApp(appIdentity)
   } catch (configVarError) {
     signal?.throwIfAborted()
@@ -215,7 +215,7 @@ async function listAppConfigVars(
  * Used by `attachmentResolutionFallback` to list all attachments on an app that match the
  * add-on service filter. Throws `PgDatabaseNotFoundError` if the app does not exist
  * or the listing fails for any other reason.
-*/
+ */
 async function listPostgresAttachments(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
@@ -225,10 +225,10 @@ async function listPostgresAttachments(
 ): Promise<AddOnAttachmentWithInclusions[]> {
   let attachments: AddOnAttachmentWithInclusions[]
   try {
-    attachments = await ctx.platform
-      .withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'})
-      .withOptions({signal})
-      .addOnAttachment.listByApp(appIdentity) as AddOnAttachmentWithInclusions[]
+    attachments = await withSignal(
+      ctx.platform.withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'}),
+      signal,
+    ).addOnAttachment.listByApp(appIdentity) as AddOnAttachmentWithInclusions[]
   } catch (listError) {
     signal?.throwIfAborted()
 

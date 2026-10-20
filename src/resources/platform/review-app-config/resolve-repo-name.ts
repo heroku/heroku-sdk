@@ -1,5 +1,6 @@
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {debug} from './debug.js'
 
 type ResolveRepoNameCtx = Pick<ResourceCtx, 'platform' | 'repositories'> & {
@@ -25,7 +26,7 @@ export async function resolveRepoName(
   const {signal} = options
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
   let useRepositoriesApi: boolean | undefined
   try {
     const feature = await platform.accountFeature.info('dashboard-repositories-api')
@@ -38,7 +39,7 @@ export async function resolveRepoName(
 
   if (useRepositoriesApi) {
     try {
-      const repositoriesApi = signal ? ctx.repositoriesApi.withOptions({signal}) : ctx.repositoriesApi
+      const repositoriesApi = withSignal(ctx.repositoriesApi, signal)
       const repository = await repositoriesApi.githubRepository.info(pipelineId)
       signal?.throwIfAborted()
       const repositoryName = repository.full_name?.trim()
@@ -56,7 +57,7 @@ export async function resolveRepoName(
     debug('repositories API disabled; falling back')
   }
 
-  const repositories = signal ? ctx.repositories.withOptions({signal}) : ctx.repositories
+  const repositories = withSignal(ctx.repositories, signal)
   const pipelineRepository = await repositories.pipelineRepository.info(pipelineId)
   signal?.throwIfAborted()
   const repositoryName = pipelineRepository.repository.name.trim()

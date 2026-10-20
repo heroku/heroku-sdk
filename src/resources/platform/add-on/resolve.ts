@@ -6,6 +6,7 @@ import type {
   ResolveAddonOptions, ResolvedAddOn,
 } from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {debug} from './debug.js'
 import {AddonAmbiguousError, AddonNotFoundError} from './errors.js'
 
@@ -38,7 +39,10 @@ export async function resolveAddon(
   options: ResolveAddonOptions = {},
 ): Promise<ResolvedAddOn> {
   options.signal?.throwIfAborted()
-  return resolveAddonInternal(ctx.platform, addonIdentity, options)
+  // Bind the signal so the resolve request aborts in flight (the helper itself
+  // doesn't thread options.signal into the client).
+  const platform = withSignal(ctx.platform, options.signal)
+  return resolveAddonInternal(platform, addonIdentity, options)
 }
 
 export async function resolveAddonInternal(

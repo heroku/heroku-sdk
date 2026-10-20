@@ -20,9 +20,8 @@ function buildCtx(opts: {
     transfer: {
       infoByApp: opts.infoByApp ?? vi.fn(),
     },
-    withOptions() {
-      return dataClient
-    },
+    // Self-referential and recordable so a `.withOptions({signal})` chain resolves back to dataClient.
+    withOptions: vi.fn(() => dataClient),
   }
   return {
     ...legacyResourceCtx,
@@ -69,6 +68,19 @@ describe('captureAndWait', () => {
     expect(backupCreate).toHaveBeenCalledWith('addon-1')
     expect(infoByApp).toHaveBeenCalledWith('app-1', 'xfer-1', {verbose: undefined})
     expect(result).toEqual({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'xfer-1'})
+  })
+
+  it('binds the signal to the data client so the capture request aborts in flight', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+    const backupCreate = vi.fn().mockResolvedValue({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
+    const infoByApp = vi.fn().mockResolvedValue({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'xfer-1'})
+    const ctx = buildCtx({backupCreate, infoByApp, resolutionByAttachment})
+    const controller = new AbortController()
+
+    await captureAndWait(ctx, 'app-1', 'DATABASE_URL', {signal: controller.signal})
+
+    expect((ctx.data as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
+      .toHaveBeenCalledWith({signal: controller.signal})
   })
 
   it('fires capturePoller and waitPoller hooks around their respective steps', async () => {

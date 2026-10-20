@@ -2,6 +2,8 @@
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {DomainOptions} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
+
 /**
  * Delete all custom domains from an app.
  *
@@ -17,7 +19,7 @@ export async function clearCustomDomains(
 
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   // List and filter to custom domains
   const domains = await platform.domain.list(appIdentity)

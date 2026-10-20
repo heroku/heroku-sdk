@@ -5,6 +5,7 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {withSignal} from '../../../core/with-signal.js'
 
 const debug = createDebug('heroku:sdk:resources:pipeline-coupling')
 
@@ -40,7 +41,9 @@ export async function listPipelineApps(
   options: ListPipelineAppsOptions = {},
 ): Promise<AppWithPipelineCoupling[]> {
   options.signal?.throwIfAborted()
-  const allCouplings = await ctx.platform.pipelineCoupling.listByPipeline(pipelineId)
+  // Bind the signal so both requests abort in flight, not just at the checkpoints.
+  const platform = withSignal(ctx.platform, options.signal)
+  const allCouplings = await platform.pipelineCoupling.listByPipeline(pipelineId)
   // Drop malformed couplings (no app id) before issuing the bulk filter call.
   const couplings = allCouplings.filter(coupling => coupling.app?.id)
   const skipped = allCouplings.length - couplings.length
@@ -66,7 +69,7 @@ export async function listPipelineApps(
 
   options.signal?.throwIfAborted()
   const ids = couplingsToResolve.map(coupling => coupling.app!.id!)
-  const apps = await ctx.platform
+  const apps = await platform
     .withHeaders({Range: `id ..; max=${APPS_FILTER_LIMIT};`})
     .filterApps.apps({in: {id: ids}})
   if (apps.length !== ids.length) {

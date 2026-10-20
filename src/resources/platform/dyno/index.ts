@@ -4,6 +4,7 @@ import type {StickyRouteOptions} from '../../../core/create-client.js'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {withSignal} from '../../../core/with-signal.js'
 import {
   enableExec,
   exchangeExecCredentials,
@@ -107,18 +108,20 @@ export async function restartDynos(
   options: DynoOptions = {},
 ): Promise<void> {
   options.signal?.throwIfAborted()
+  // Bind the signal so the request aborts in flight.
+  const platform = withSignal(ctx.platform, options.signal)
 
   if (!target) {
-    await ctx.platform.dyno.restartAll(appIdentity)
+    await platform.dyno.restartAll(appIdentity)
     return
   }
 
   if ('dyno' in target) {
-    await ctx.platform.dyno.restart(appIdentity, target.dyno)
+    await platform.dyno.restart(appIdentity, target.dyno)
     return
   }
 
-  await ctx.platform.dyno.restartFormation(appIdentity, target.type)
+  await platform.dyno.restartFormation(appIdentity, target.type)
 }
 
 export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({

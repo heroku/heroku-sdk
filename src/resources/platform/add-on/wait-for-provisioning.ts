@@ -3,6 +3,7 @@ import type {AddOn} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {WaitForProvisioningOptions} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 import {AddonProvisioningFailedError} from './errors.js'
 
@@ -37,7 +38,9 @@ export async function waitForProvisioning(
   options.signal?.throwIfAborted()
 
   const intervalMs = options.waitIntervalMs ?? DEFAULT_WAIT_INTERVAL_MS
-  const platform = ctx.platform.withHeaders({'Accept-Expansion': 'addon_service,plan'})
+  // Bind the signal so each poll request aborts in flight, not just the delay.
+  const platform = withSignal(ctx.platform, options.signal)
+    .withHeaders({'Accept-Expansion': 'addon_service,plan'})
 
   let current: AddOnWithDeprovisioning = addon
 

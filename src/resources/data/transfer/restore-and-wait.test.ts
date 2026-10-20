@@ -20,9 +20,8 @@ function buildCtx(opts: {
     transfer: {
       infoByApp: opts.infoByApp ?? vi.fn(),
     },
-    withOptions() {
-      return dataClient
-    },
+    // Self-referential and recordable so a `.withOptions({signal})` chain resolves back to dataClient.
+    withOptions: vi.fn(() => dataClient),
   }
   return {
     ...legacyResourceCtx,
@@ -80,6 +79,19 @@ describe('restoreAndWait', () => {
     await restoreAndWait(ctx, 'app-1', 'DATABASE_URL', 'https://example.com/backup.dump', {extensions: ['postgis']})
 
     expect(restoreCreate).toHaveBeenCalledWith('addon-1', {backup_url: 'https://example.com/backup.dump', extensions: ['postgis']})
+  })
+
+  it('binds the signal to the data client so the restore request aborts in flight', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+    const restoreCreate = vi.fn().mockResolvedValue({from_type: 'gof3r', to_type: 'pg_dump', uuid: 'restore-1'})
+    const infoByApp = vi.fn().mockResolvedValue({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'restore-1'})
+    const ctx = buildCtx({infoByApp, resolutionByAttachment, restoreCreate})
+    const controller = new AbortController()
+
+    await restoreAndWait(ctx, 'app-1', 'DATABASE_URL', 'https://example.com/backup.dump', {signal: controller.signal})
+
+    expect((ctx.data as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
+      .toHaveBeenCalledWith({signal: controller.signal})
   })
 
   it('fires restorePoller and waitPoller hooks around their respective steps', async () => {

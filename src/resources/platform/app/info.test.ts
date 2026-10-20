@@ -106,6 +106,18 @@ describe('describeApp', () => {
     expect(result.pipelineCoupling).toBeNull()
   })
 
+  it('propagates an abort from a soft-failed sub-request instead of swallowing it', async () => {
+    // dyno.list is soft-failed (a generic error collapses to []), but an abort
+    // must not be swallowed — otherwise a cancelled describe returns a partial
+    // view instead of rejecting.
+    const abort = new DOMException('The operation was aborted.', 'AbortError')
+    const {ctx} = buildCtx({
+      dynoList: vi.fn().mockRejectedValue(abort),
+    })
+
+    await expect(describeApp(ctx, 'my-app')).rejects.toThrow(/aborted/i)
+  })
+
   it('propagates an error from addOn.listByApp', async () => {
     const {ctx} = buildCtx({
       addOnListByApp: vi.fn().mockRejectedValue(new Error('addon-boom')),

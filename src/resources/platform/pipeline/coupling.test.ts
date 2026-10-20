@@ -21,13 +21,16 @@ function ctxWith(
   listByPipeline: ReturnType<typeof vi.fn>,
   platform: PlatformMock = buildPlatformMock(vi.fn()),
 ): {ctx: ResourceCtx; platform: PlatformMock} {
+  const platformClient: Record<string, unknown> = {
+    pipelineCoupling: {listByPipeline},
+    withHeaders: platform.withHeaders,
+  }
+  // Self-referential so a `.withOptions({signal})` chain resolves back to the platform client.
+  platformClient.withOptions = vi.fn(() => platformClient)
   return {
     ctx: {
       data: {} as never,
-      platform: {
-        pipelineCoupling: {listByPipeline},
-        withHeaders: platform.withHeaders,
-      } as never,
+      platform: platformClient as never,
     },
     platform,
   }
@@ -84,6 +87,18 @@ describe('pipeline-coupling resource', () => {
 
     await expect(listPipelineApps(ctx, 'pipeline-1', {signal: controller.signal})).rejects.toThrow()
     expect(listByPipeline).not.toHaveBeenCalled()
+  })
+
+  it('listPipelineApps binds the signal to the platform client so the requests abort in flight', async () => {
+    const listByPipeline = vi.fn().mockResolvedValue([{app: {id: 'app-1'}, id: 'c1'}])
+    const filterAppsApps = vi.fn().mockResolvedValue([{id: 'app-1', name: 'staging-app'}])
+    const {ctx} = ctxWith(listByPipeline, buildPlatformMock(filterAppsApps))
+    const controller = new AbortController()
+
+    await listPipelineApps(ctx, 'pipeline-1', {signal: controller.signal})
+
+    expect((ctx.platform as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
+      .toHaveBeenCalledWith({signal: controller.signal})
   })
 
   it('listPipelineApps skips couplings missing app.id', async () => {

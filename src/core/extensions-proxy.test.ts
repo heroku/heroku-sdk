@@ -109,6 +109,68 @@ describe('mergeExtensions', () => {
     expect(scoped.app.hello()).toBe('world')
   })
 
+  it('threads a derived withOptions signal into the ctx clients extensions use', () => {
+    // A fake platform ctx client whose `withOptions` returns a derived client
+    // that records the signal its route call runs under — mirroring how a real
+    // extension reaches through `ctx.platform` to make nested requests.
+    const seen: Array<AbortSignal | undefined> = []
+    const makePlatform = (signal?: AbortSignal): Record<string, unknown> => ({
+      app: {info: () => seen.push(signal)},
+      withHeaders: () => makePlatform(signal),
+      withOptions: (opts: {signal?: AbortSignal}) => makePlatform(opts.signal ?? signal),
+    })
+    const ctx = {data: {} as never, platform: makePlatform()} as unknown as ResourceCtx
+
+    // Extension method that issues its request through ctx.platform (like app.describe).
+    const ext = extendResource('platform', 'app', c => ({
+      describe: () => (c.platform as {app: {info: () => void}}).app.info(),
+    }))
+
+    const inner = {app: {}}
+    const withOptions = vi.fn().mockReturnValue(inner)
+    const routes = {app: {}, withOptions} as Record<string, unknown>
+
+    const merged = mergeExtensions(routes, [ext], ctx) as {
+      app: {describe: () => void};
+      withOptions: (opts: object) => {app: {describe: () => void}};
+    }
+
+    const {signal} = new AbortController()
+    merged.withOptions({signal}).app.describe()
+
+    expect(seen).toEqual([signal])
+  })
+
+  it('keeps derived-client cancellation isolated across the base and sibling derived clients', () => {
+    const seen: Array<AbortSignal | undefined> = []
+    const makePlatform = (signal?: AbortSignal): Record<string, unknown> => ({
+      app: {info: () => seen.push(signal)},
+      withHeaders: () => makePlatform(signal),
+      withOptions: (opts: {signal?: AbortSignal}) => makePlatform(opts.signal ?? signal),
+    })
+    const ctx = {data: {} as never, platform: makePlatform()} as unknown as ResourceCtx
+
+    const ext = extendResource('platform', 'app', c => ({
+      describe: () => (c.platform as {app: {info: () => void}}).app.info(),
+    }))
+    const withOptions = vi.fn().mockImplementation(() => ({app: {}}))
+    const routes = {app: {}, withOptions} as Record<string, unknown>
+
+    const merged = mergeExtensions(routes, [ext], ctx) as {
+      app: {describe: () => void};
+      withOptions: (opts: object) => {app: {describe: () => void}};
+    }
+
+    const a = new AbortController()
+    const b = new AbortController()
+    merged.app.describe()
+    merged.withOptions({signal: a.signal}).app.describe()
+    merged.withOptions({signal: b.signal}).app.describe()
+
+    // Base client sends no signal; each derived client carries only its own.
+    expect(seen).toEqual([undefined, a.signal, b.signal])
+  })
+
   it('preserves extension methods after withHeaders', () => {
     const ext = extendResource('platform', 'app', () => ({hello: () => 'world'}))
     const inner = {app: {info: vi.fn()}}
