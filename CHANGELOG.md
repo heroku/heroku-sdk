@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.11.1...sdk-v0.11.2) (2026-10-21)
+
+
+### Features
+
+* add delinquency-aware account and team getters ([#163](https://github.com/heroku/heroku-sdk/issues/163)) ([ede5e3a](https://github.com/heroku/heroku-sdk/commit/ede5e3a05997efffc9e3e7e722b34411c17299f1))
+
+
+### Bug Fixes
+
+* apply caller cancellation to all extension requests ([#161](https://github.com/heroku/heroku-sdk/issues/161)) ([686e165](https://github.com/heroku/heroku-sdk/commit/686e1650b36c3fdaadf26a6e813043c210d97c62))
+
 ## [0.11.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.11.0...sdk-v0.11.1) (2026-10-20)
 
 
