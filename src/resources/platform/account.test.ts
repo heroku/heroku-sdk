@@ -73,6 +73,23 @@ describe('getAccountWithDelinquency', () => {
     await expect(getAccountWithDelinquency(ctx)).rejects.toThrow('account-boom')
   })
 
+  it('rethrows a delinquency failure instead of nulling it once the signal has aborted', async () => {
+    const controller = new AbortController()
+    const account = {id: 'acct-1'} as Account
+    const abortError = Object.assign(new Error('aborted'), {name: 'AbortError'})
+    // The account read resolves; the delinquency read aborts in flight. Nulling
+    // it would misreport a delinquent account as current, so it must reject.
+    const {ctx} = buildCtx({
+      accountInfo: vi.fn().mockResolvedValue(account),
+      delinquencyInfo: vi.fn().mockImplementation(() => {
+        controller.abort()
+        return Promise.reject(abortError)
+      }),
+    })
+
+    await expect(getAccountWithDelinquency(ctx, {signal: controller.signal})).rejects.toBe(abortError)
+  })
+
   it('throws if the abort signal is already aborted, without calling any route', async () => {
     const {ctx, platform} = buildCtx()
     const controller = new AbortController()

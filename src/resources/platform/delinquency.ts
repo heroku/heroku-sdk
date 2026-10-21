@@ -19,7 +19,8 @@ export type DelinquencyResource = 'account' | 'team'
  * Produces a message for an upcoming suspension, a past suspension with an
  * upcoming deletion, or an upcoming deletion. Returns `undefined` when neither
  * timestamp is set, or when a suspension is already past with no deletion
- * scheduled. `now` defaults to the wall clock and is injectable for testing.
+ * scheduled. Dates render in UTC so the message reads the same for every
+ * consumer. `now` defaults to the wall clock and is injectable for testing.
  */
 export function formatDelinquencyWarning(
   resource: DelinquencyResource,
@@ -32,19 +33,19 @@ export function formatDelinquencyWarning(
 
   if (suspension) {
     if (suspension > now) {
-      return `This ${resource} is delinquent with payment and we'll suspend it on ${new Date(suspension).toString()}.`
+      return `This ${resource} is delinquent with payment and we'll suspend it on ${new Date(suspension).toUTCString()}.`
     }
 
     if (deletion) {
-      return `This ${resource} is delinquent with payment and we suspended it on ${new Date(suspension).toString()}.`
-        + ` If the ${resource} is still delinquent, we'll delete it on ${new Date(deletion).toString()}.`
+      return `This ${resource} is delinquent with payment and we suspended it on ${new Date(suspension).toUTCString()}.`
+        + ` If the ${resource} is still delinquent, we'll delete it on ${new Date(deletion).toUTCString()}.`
     }
 
     return undefined
   }
 
   if (deletion) {
-    return `This ${resource} is delinquent with payment and we'll delete it on ${new Date(deletion).toString()}.`
+    return `This ${resource} is delinquent with payment and we'll delete it on ${new Date(deletion).toUTCString()}.`
   }
 
   return undefined

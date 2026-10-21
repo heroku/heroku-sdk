@@ -73,6 +73,23 @@ describe('getTeamWithDelinquency', () => {
     await expect(getTeamWithDelinquency(ctx, 'my-team')).rejects.toThrow('team-boom')
   })
 
+  it('rethrows a delinquency failure instead of nulling it once the signal has aborted', async () => {
+    const controller = new AbortController()
+    const team = {id: 'team-1'} as Team
+    const abortError = Object.assign(new Error('aborted'), {name: 'AbortError'})
+    // The team read resolves; the delinquency read aborts in flight. Nulling it
+    // would misreport a delinquent team as current, so it must reject.
+    const {ctx} = buildCtx({
+      delinquencyInfo: vi.fn().mockImplementation(() => {
+        controller.abort()
+        return Promise.reject(abortError)
+      }),
+      teamInfo: vi.fn().mockResolvedValue(team),
+    })
+
+    await expect(getTeamWithDelinquency(ctx, 'my-team', {signal: controller.signal})).rejects.toBe(abortError)
+  })
+
   it('throws if the abort signal is already aborted, without calling any route', async () => {
     const {ctx, platform} = buildCtx()
     const controller = new AbortController()

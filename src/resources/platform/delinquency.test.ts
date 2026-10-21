@@ -27,7 +27,7 @@ describe('formatDelinquencyWarning', () => {
       scheduled_suspension_time: FUTURE,
     }, NOW)
 
-    expect(message).toBe(`This account is delinquent with payment and we'll suspend it on ${new Date(Date.parse(FUTURE)).toString()}.`)
+    expect(message).toBe(`This account is delinquent with payment and we'll suspend it on ${new Date(Date.parse(FUTURE)).toUTCString()}.`)
   })
 
   it('warns about a past suspension and upcoming deletion when the suspension is in the past', () => {
@@ -36,8 +36,8 @@ describe('formatDelinquencyWarning', () => {
       scheduled_suspension_time: PAST,
     }, NOW)
 
-    expect(message).toBe(`This team is delinquent with payment and we suspended it on ${new Date(Date.parse(PAST)).toString()}. `
-      + `If the team is still delinquent, we'll delete it on ${new Date(Date.parse(LATER_FUTURE)).toString()}.`)
+    expect(message).toBe(`This team is delinquent with payment and we suspended it on ${new Date(Date.parse(PAST)).toUTCString()}. `
+      + `If the team is still delinquent, we'll delete it on ${new Date(Date.parse(LATER_FUTURE)).toUTCString()}.`)
   })
 
   it('returns undefined for a past suspension with no deletion scheduled', () => {
@@ -53,7 +53,7 @@ describe('formatDelinquencyWarning', () => {
       scheduled_suspension_time: null,
     }, NOW)
 
-    expect(message).toBe(`This account is delinquent with payment and we'll delete it on ${new Date(Date.parse(FUTURE)).toString()}.`)
+    expect(message).toBe(`This account is delinquent with payment and we'll delete it on ${new Date(Date.parse(FUTURE)).toUTCString()}.`)
   })
 
   it('uses the resource word in the message', () => {
@@ -110,6 +110,6 @@ describe('formatDelinquencyWarning', () => {
       scheduled_suspension_time: 'not-a-date',
     }, NOW)
 
-    expect(message).toBe(`This account is delinquent with payment and we'll delete it on ${new Date(Date.parse(FUTURE)).toString()}.`)
+    expect(message).toBe(`This account is delinquent with payment and we'll delete it on ${new Date(Date.parse(FUTURE)).toUTCString()}.`)
   })
 })

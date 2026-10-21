@@ -1,8 +1,12 @@
 import type {Account, AccountDelinquency} from '@heroku/types/3.sdk'
 
+import createDebug from 'debug'
+
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+
+const debug = createDebug('heroku:sdk:resources:account')
 
 export type GetAccountWithDelinquencyOptions = {
   signal?: AbortSignal
@@ -33,7 +37,14 @@ export async function getAccountWithDelinquency(
 
   const [account, delinquency] = await Promise.all([
     platform.account.info(),
-    platform.accountDelinquency.info().catch((): null => null),
+    platform.accountDelinquency.info().catch((error: unknown): null => {
+      // Soft-fail a secondary-call hiccup to null, but rethrow a cancellation:
+      // if the caller aborted, returning null would misreport a delinquent
+      // account as current. Anything else is logged and swallowed.
+      if (options.signal?.aborted) throw error
+      debug('account delinquency lookup failed; treating as not delinquent: %O', error)
+      return null
+    }),
   ])
 
   return {account, delinquency}

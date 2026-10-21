@@ -1,8 +1,12 @@
 import type {Team, TeamDelinquency} from '@heroku/types/3.sdk'
 
+import createDebug from 'debug'
+
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+
+const debug = createDebug('heroku:sdk:resources:team')
 
 export type GetTeamWithDelinquencyOptions = {
   signal?: AbortSignal
@@ -34,7 +38,14 @@ export async function getTeamWithDelinquency(
 
   const [team, delinquency] = await Promise.all([
     platform.team.info(teamIdentity),
-    platform.teamDelinquency.info(teamIdentity).catch((): null => null),
+    platform.teamDelinquency.info(teamIdentity).catch((error: unknown): null => {
+      // Soft-fail a secondary-call hiccup to null, but rethrow a cancellation:
+      // if the caller aborted, returning null would misreport a delinquent team
+      // as current. Anything else is logged and swallowed.
+      if (options.signal?.aborted) throw error
+      debug('team delinquency lookup failed; treating as not delinquent: %O', error)
+      return null
+    }),
   ])
 
   return {delinquency, team}
