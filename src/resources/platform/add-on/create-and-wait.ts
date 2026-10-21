@@ -5,6 +5,7 @@ import {HerokuApiError} from '@heroku/heroku-fetch'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {CreateAndWaitOptions} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 import {AddonConfirmationRequiredError, AddonProvisioningFailedError} from './errors.js'
 
@@ -42,7 +43,10 @@ export async function createAndWait(
 ): Promise<AddOn> {
   options.signal?.throwIfAborted()
 
-  const platform = ctx.platform.withHeaders({'Accept-Expansion': 'addon_service,plan'})
+  // Bind the signal to the client so the create and poll requests abort in
+  // flight, not just the delay between polls.
+  const platform = withSignal(ctx.platform, options.signal)
+    .withHeaders({'Accept-Expansion': 'addon_service,plan'})
 
   let addon: AddOn
   try {

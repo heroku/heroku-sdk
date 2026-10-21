@@ -8,6 +8,7 @@ import {HerokuApiClient, NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 import {waitForInfo, type WaitForInfoOptions} from './wait-for-info.js'
 
@@ -64,7 +65,7 @@ export async function execPrereqs(
   options: ExecOptions = {},
 ): Promise<ExecPrereqs> {
   options.signal?.throwIfAborted()
-  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, options.signal)
 
   const [app, buildpacks, configVars, feature] = await Promise.all([
     platform.app.info(appIdentity),
@@ -101,7 +102,7 @@ export async function enableExec(
   options: ExecOptions = {},
 ): Promise<void> {
   options.signal?.throwIfAborted()
-  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, options.signal)
   await platform.appFeature.update(appIdentity, EXEC_FEATURE, {enabled: true})
 }
 
@@ -148,7 +149,7 @@ export async function restartForExec(
   const {signal} = waitOptions
 
   signal?.throwIfAborted()
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   await wait(settleMs, signal)
   await platform.dyno.restartAll(appIdentity)

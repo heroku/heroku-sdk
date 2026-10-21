@@ -6,6 +6,8 @@ import {HerokuApiClient, HerokuApiError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
+
 const DEFAULT_RUN_RETRIES = 2
 
 const ACCEPT_RUN_INSIDE = 'application/vnd.heroku+json; version=3.sdk'
@@ -138,6 +140,6 @@ async function postRun(
     return (await response.json()) as Dyno
   }
 
-  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, options.signal)
   return platform.dyno.create(appIdentity, body)
 }

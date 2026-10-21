@@ -3,6 +3,7 @@ import type {MaintenanceInfoResult} from '@heroku/types/data'
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+import {withSignal} from '../../core/with-signal.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 export type MaintenanceInfoOptions = {
@@ -17,7 +18,9 @@ export async function info(
 ): Promise<MaintenanceInfoResult> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  return ctx.data.maintenance.info(addon.id)
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.maintenance.info(addon.id)
 }
 
 export const maintenanceExtensions = extendResource('data', 'maintenance', ctx => ({

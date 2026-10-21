@@ -3,6 +3,8 @@ import type {TelemetryDrain} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {TelemetryDrainOptions, TelemetryDrainTarget} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
+
 /**
  * Remove all telemetry drains for a given app or space.
  *
@@ -22,7 +24,7 @@ export async function removeDrainsForTarget(
 
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   let drains: TelemetryDrain[] = []
 

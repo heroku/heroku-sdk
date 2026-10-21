@@ -4,6 +4,7 @@ import type {StickyRouteOptions} from '../../../core/create-client.js'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {withSignal} from '../../../core/with-signal.js'
 import {
   enableExec,
   exchangeExecCredentials,
@@ -66,6 +67,11 @@ type FormationClient = {
   update(appIdentity: string, type: string, body: Omit<ScaleDynosUpdate, 'type'>): Promise<Formation>
 }
 
+// Intentionally narrow: exposes only the `formation` resource and a
+// self-returning `withOptions`. It does not satisfy `withSignal`'s
+// `RoutesClientExtras<T> & T` constraint, so `scaleDynos` binds the signal with
+// an inline ternary rather than `withSignal`. Don't widen this to fit the
+// helper — that would enlarge this function's public ctx surface for no gain.
 type ScalePlatform = {
   formation: FormationClient
   withOptions(opts: StickyRouteOptions): ScalePlatform
@@ -107,18 +113,20 @@ export async function restartDynos(
   options: DynoOptions = {},
 ): Promise<void> {
   options.signal?.throwIfAborted()
+  // Bind the signal so the request aborts in flight.
+  const platform = withSignal(ctx.platform, options.signal)
 
   if (!target) {
-    await ctx.platform.dyno.restartAll(appIdentity)
+    await platform.dyno.restartAll(appIdentity)
     return
   }
 
   if ('dyno' in target) {
-    await ctx.platform.dyno.restart(appIdentity, target.dyno)
+    await platform.dyno.restart(appIdentity, target.dyno)
     return
   }
 
-  await ctx.platform.dyno.restartFormation(appIdentity, target.type)
+  await platform.dyno.restartFormation(appIdentity, target.type)
 }
 
 export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({

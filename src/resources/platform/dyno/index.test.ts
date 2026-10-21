@@ -107,6 +107,19 @@ describe('dyno resource', () => {
     expect(restart).toHaveBeenCalledWith('app-1', 'web.1')
   })
 
+  it('restartDynos binds the signal to the platform client so the request aborts in flight', async () => {
+    const restartAll = vi.fn()
+    const restart = vi.fn()
+    const restartFormation = vi.fn()
+    const ctx = platformCtx({dyno: {restart, restartAll, restartFormation}})
+    const controller = new AbortController()
+
+    await restartDynos(ctx, 'app-1', undefined, {signal: controller.signal})
+
+    expect((ctx.platform as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
+      .toHaveBeenCalledWith({signal: controller.signal})
+  })
+
   it('dynoExtensions declares service: platform, resource: dyno', () => {
     expect(dynoExtensions.service).toBe('platform')
     expect(dynoExtensions.resource).toBe('dyno')

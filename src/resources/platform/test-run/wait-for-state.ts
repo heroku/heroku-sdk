@@ -3,6 +3,7 @@ import type {TestRun} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 
 /**
@@ -103,7 +104,7 @@ export async function waitForState(
 
   // Scope the in-flight info call to the caller's signal so an abort takes
   // effect during the API call, not just during the backoff.
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   const deadline = Date.now() + timeoutMs
 

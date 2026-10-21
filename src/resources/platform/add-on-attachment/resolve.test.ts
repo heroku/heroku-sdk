@@ -187,7 +187,7 @@ describe('resolveAddonAttachment', () => {
     expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
   })
 
-  it('calls withOptions with an undefined signal when none is provided', async () => {
+  it('does not derive a signal-scoped client when no signal is provided', async () => {
     const {ctx, withOptions} = buildCtx({
       resolveByAttachmentResponses: [
         {addon: {app: {id: 'app-uuid', name: 'my-app'}, id: 'addon-id', name: 'postgres-addon'}} as AddOnAttachment,
@@ -196,6 +196,6 @@ describe('resolveAddonAttachment', () => {
 
     await resolveAddonAttachment(ctx, 'my-app', 'DATABASE_URL')
 
-    expect(withOptions).toHaveBeenCalledWith({signal: undefined})
+    expect(withOptions).not.toHaveBeenCalled()
   })
 })

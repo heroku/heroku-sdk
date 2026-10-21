@@ -8,6 +8,7 @@ import type {TransferOptions} from './transfer.js'
 import type {WaitForACMCertificatesOptions} from './wait-for-acm-certificates.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {withSignal} from '../../../core/with-signal.js'
 import {createAndSetup} from './create-and-setup.js'
 import {diffApps} from './diff.js'
 import {describeApp} from './info.js'
@@ -50,7 +51,9 @@ export async function enableMaintenance(
   options: AppMaintenanceOptions = {},
 ): Promise<App> {
   options.signal?.throwIfAborted()
-  return ctx.platform.app.update(appIdentity, {maintenance: true})
+  // Bind the signal so the request aborts in flight.
+  const platform = withSignal(ctx.platform, options.signal)
+  return platform.app.update(appIdentity, {maintenance: true})
 }
 
 export async function disableMaintenance(
@@ -59,7 +62,9 @@ export async function disableMaintenance(
   options: AppMaintenanceOptions = {},
 ): Promise<App> {
   options.signal?.throwIfAborted()
-  return ctx.platform.app.update(appIdentity, {maintenance: false})
+  // Bind the signal so the request aborts in flight.
+  const platform = withSignal(ctx.platform, options.signal)
+  return platform.app.update(appIdentity, {maintenance: false})
 }
 
 /**
@@ -77,7 +82,8 @@ export async function getGeneration(
   options: GetGenerationOptions = {},
 ): Promise<GenerationKind | undefined> {
   options.signal?.throwIfAborted()
-  const platform = ctx.platform.withHeaders({
+  // Bind the signal so the request aborts in flight.
+  const platform = withSignal(ctx.platform, options.signal).withHeaders({
     Accept: 'application/vnd.heroku+json; version=3.sdk',
   })
   const app = await platform.app.info(appIdentity)
@@ -98,6 +104,11 @@ type AppInfoResult = App & {
   space?: null | {shield?: boolean}
 }
 
+// Intentionally narrow: exposes only the `app` resource and a self-returning
+// `withOptions`. It does not satisfy `withSignal`'s `RoutesClientExtras<T> & T`
+// constraint, so `isShielded` / `getProcessTier` bind the signal with an inline
+// ternary rather than `withSignal`. Don't widen this to fit the helper — that
+// would enlarge these functions' public ctx surface for no behavioral gain.
 type AppInfoPlatform = {
   app: {info(appIdentity: string): Promise<AppInfoResult>}
   withOptions(opts: {signal: AbortSignal}): AppInfoPlatform

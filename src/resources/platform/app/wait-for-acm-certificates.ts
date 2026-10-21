@@ -3,6 +3,7 @@ import type {Domain} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 
 const DEFAULT_WAIT_INTERVAL_MS = 15_000
@@ -50,7 +51,7 @@ export async function waitForACMCertificates(
 
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   function terminal(domains: Domain[]): boolean {
     return domains

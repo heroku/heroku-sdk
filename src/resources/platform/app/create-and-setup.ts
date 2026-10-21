@@ -4,6 +4,8 @@ import type {
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
+
 // `poller` matches the SDK-standard progress-reporting convention.
 // `'setup'` is the discriminant for the single combined window fired around
 // the whole parallel batch (the per-kind values describe individual steps).
@@ -43,10 +45,9 @@ export type CreateAndSetupInput = {
  * spinner. Per the poller contract, `onStart` fires BEFORE any request is
  * dispatched, and `onStop` fires ONLY on success — if a step rejects, the
  * error propagates and `onStop` is never called (there is no try/finally, so
- * the caller's error path stops the spinner). Signal threading uses the
- * standard `withOptions({signal})`
- * scoped-client idiom so an abort cancels in-flight requests, not just the
- * pre-flight `throwIfAborted()`.
+ * the caller's error path stops the spinner). Signal threading binds the
+ * signal to a scoped client (via `withSignal`) so an abort cancels in-flight
+ * requests, not just the pre-flight `throwIfAborted()`.
  *
  * The CLI parses flags / heroku.yml into `input` and owns git-remote setup
  * and rendering; this method owns the API orchestration only.
@@ -57,7 +58,7 @@ export async function createAndSetup(
   options: CreateAndSetupOptions = {},
 ): Promise<App> {
   options.signal?.throwIfAborted()
-  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, options.signal)
 
   const {addons, buildpack, configVars, ...createParams} = input
 

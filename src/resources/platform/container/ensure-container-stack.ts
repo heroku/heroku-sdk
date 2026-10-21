@@ -3,6 +3,8 @@ import type {App} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ContainerOptions} from './index.js'
 
+import {withSignal} from '../../../core/with-signal.js'
+
 export class NotAContainerAppError extends Error {
   public readonly id = 'not_a_container_app'
 
@@ -25,7 +27,7 @@ export async function ensureContainerStack(
 
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   const app = await platform.app.info(appIdentity)
   const allowedStack = 'container'

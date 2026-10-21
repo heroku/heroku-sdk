@@ -3,6 +3,7 @@ import type {AddOn, Plan} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {DescribedAddOn, ResolveAddonOptions} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {resolveAddonInternal} from './resolve.js'
 
 /**
@@ -24,11 +25,14 @@ export async function describeAddon(
 ): Promise<DescribedAddOn> {
   options.signal?.throwIfAborted()
 
+  // Bind the signal so both requests abort in flight, not just at the checkpoints.
+  const base = withSignal(ctx.platform, options.signal)
+
   // Accept-Expansion is scoped to the resolve call (addOn.resolution
   // serializer accepts addon_service + plan expansions). The
   // /addons/:id/addon-attachments endpoint uses Accept-Inclusion, not
   // Accept-Expansion, and rejects an unknown expansion header.
-  const resolvingPlatform = ctx.platform.withHeaders({
+  const resolvingPlatform = base.withHeaders({
     Accept: 'application/vnd.heroku+json; version=3.sdk',
     'Accept-Expansion': 'addon_service,plan',
   })
@@ -39,7 +43,7 @@ export async function describeAddon(
   })
 
   options.signal?.throwIfAborted()
-  const attachments = await ctx.platform.addOnAttachment.listByAddOn(addon.id)
+  const attachments = await base.addOnAttachment.listByAddOn(addon.id)
 
   const plan = addon.plan as Plan | undefined
   return {

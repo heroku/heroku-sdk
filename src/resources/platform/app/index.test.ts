@@ -11,10 +11,10 @@ import {
 } from './index.js'
 
 function ctxWithAppUpdate(update: ReturnType<typeof vi.fn>): ResourceCtx {
-  return {
-    data: {} as never,
-    platform: {app: {update}} as never,
-  }
+  const platform: Record<string, unknown> = {app: {update}}
+  // Self-referential so a `.withOptions({signal})` chain resolves back to platform.
+  platform.withOptions = vi.fn().mockReturnValue(platform)
+  return {data: {} as never, platform: platform as never}
 }
 
 function ctxWithAppInfo(info: ReturnType<typeof vi.fn>): {
@@ -24,8 +24,11 @@ function ctxWithAppInfo(info: ReturnType<typeof vi.fn>): {
   const platform = {
     app: {info},
     withHeaders: vi.fn(),
+    withOptions: vi.fn(),
   }
   platform.withHeaders.mockReturnValue(platform)
+  // Self-referential so a `.withOptions({signal})` chain resolves back to platform.
+  platform.withOptions.mockReturnValue(platform)
   return {
     ctx: {data: {} as never, platform: platform as never},
     withHeaders: platform.withHeaders,
@@ -55,6 +58,17 @@ describe('appExtensions and named functions', () => {
 
     await expect(enableMaintenance(ctxWithAppUpdate(update), 'app-1', {signal: controller.signal})).rejects.toThrow()
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it('enableMaintenance binds the signal to the platform client so the request aborts in flight', async () => {
+    const update = vi.fn().mockResolvedValue({} as App)
+    const ctx = ctxWithAppUpdate(update)
+    const controller = new AbortController()
+
+    await enableMaintenance(ctx, 'app-1', {signal: controller.signal})
+
+    expect((ctx.platform as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
+      .toHaveBeenCalledWith({signal: controller.signal})
   })
 
   it('disableMaintenance calls platform.app.update with maintenance: false', async () => {
@@ -128,6 +142,17 @@ describe('appExtensions and named functions', () => {
 
       await expect(getGeneration(ctx, 'my-app', {signal: controller.signal})).rejects.toThrow()
       expect(info).not.toHaveBeenCalled()
+    })
+
+    it('binds the signal to the platform client so the request aborts in flight', async () => {
+      const info = vi.fn().mockResolvedValue({generation: 'cedar'})
+      const {ctx} = ctxWithAppInfo(info)
+      const controller = new AbortController()
+
+      await getGeneration(ctx, 'my-app', {signal: controller.signal})
+
+      expect((ctx.platform as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
+        .toHaveBeenCalledWith({signal: controller.signal})
     })
 
     it('exposed on appExtensions.factory', () => {

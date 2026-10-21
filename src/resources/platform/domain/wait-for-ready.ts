@@ -4,6 +4,7 @@ import type {Domain} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {WaitForReadyOptions} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 
 const DEFAULT_WAIT_INTERVAL_MS = 5000
@@ -32,7 +33,7 @@ export async function waitForReady(
 
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   let domains
   if (domain) {

@@ -5,6 +5,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {Poller} from '../../../utils/poller.js'
 import type {VpnConnectionOptions} from './index.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 
 const DEFAULT_INTERVAL_MS = 10 * 1000
@@ -72,7 +73,7 @@ export async function waitForActive(
 
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   const deadline = Date.now() + timeoutMs
 

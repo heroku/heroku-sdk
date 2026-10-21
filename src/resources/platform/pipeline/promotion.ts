@@ -10,6 +10,8 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {withSignal} from '../../../core/with-signal.js'
+import {isAbortError} from '../../../utils/is-abort-error.js'
 import {wait} from '../../../utils/wait.js'
 
 const debug = createDebug('heroku:sdk:resources:pipeline-promotion')
@@ -48,8 +50,12 @@ export async function promotePipeline(
     timeoutMs,
   } = options
 
+  // Bind the signal to the client so the create/poll/release-info requests
+  // abort in flight, not just the delay between polls.
+  const platform = withSignal(ctx.platform, signal)
+
   debug('promote source=%s targets=%d', body.source?.app?.id ?? '<unknown>', body.targets?.length ?? 0)
-  const promotion = await ctx.platform.pipelinePromotion.create(body)
+  const promotion = await platform.pipelinePromotion.create(body)
   if (!promotion.id) {
     throw new Error('Pipeline promotion response did not include an id')
   }
@@ -58,7 +64,7 @@ export async function promotePipeline(
 
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
   const streamRunner = onReleaseStream
-    ? createReleaseStreamRunner(ctx, onReleaseStream, releaseStreamMaxAttempts, intervalMs, signal)
+    ? createReleaseStreamRunner(platform, onReleaseStream, releaseStreamMaxAttempts, intervalMs, signal)
     : undefined
 
   let poll = 0
@@ -67,7 +73,7 @@ export async function promotePipeline(
     poll++
 
     // eslint-disable-next-line no-await-in-loop
-    const targets = await ctx.platform.pipelinePromotionTarget.list(promotion.id)
+    const targets = await platform.pipelinePromotionTarget.list(promotion.id)
     debug('promote poll=%d promotion=%s statuses=%o', poll, promotion.id, targets.map(target => target.status))
     if (targets.every(target => target.status !== 'pending')) {
       debug('promote terminal promotion=%s polls=%d', promotion.id, poll)
@@ -93,7 +99,7 @@ export async function promotePipeline(
  * no-ops; the stream is one-shot per promotion.
  */
 function createReleaseStreamRunner(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  platform: Pick<ResourceCtx, 'platform'>['platform'],
   onReleaseStream: NonNullable<PromotePipelineOptions['onReleaseStream']>,
   releaseStreamMaxAttempts: number,
   intervalMs: number,
@@ -107,7 +113,7 @@ function createReleaseStreamRunner(
 
     handled = true
     debug('promote release-stream lookup app=%s release=%s', target.app.id, target.release.id)
-    const release = await ctx.platform.release.info(target.app.id, target.release.id)
+    const release = await platform.release.info(target.app.id, target.release.id)
     if (!release.output_stream_url) {
       debug('promote release-stream skipped reason=no-output-stream-url')
       return
@@ -153,8 +159,10 @@ async function fetchReleaseOutput(
     let response: Response | undefined
     try {
       // eslint-disable-next-line no-await-in-loop
-      response = await buslClient.stream(path)
-    } catch {
+      response = await buslClient.stream(path, {signal})
+    } catch (error) {
+      // An abort is terminal, not a retryable miss — let it propagate.
+      if (signal?.aborted || isAbortError(error)) throw error
       // Treat HTTP errors thrown by the api-client as a retryable miss.
       response = undefined
     }

@@ -5,6 +5,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {Poller} from '../../../utils/poller.js'
 import type {ContainerOptions} from './index.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {ensureContainerStack} from './ensure-container-stack.js'
 
 export type RemoveProcessTypesOpts = {
@@ -41,7 +42,7 @@ export async function removeProcessTypes(
 ): Promise<Formation[]> {
   await ensureContainerStack(ctx, appIdentity, options)
 
-  const platform = options.signal ? ctx.platform.withOptions({signal: options.signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, options.signal)
 
   // eslint-disable-next-line camelcase
   const requestBody: DockerReleasesUpdateOpts = {docker_image: null}

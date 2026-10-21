@@ -4,6 +4,9 @@ import type {
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {withSignal} from '../../../core/with-signal.js'
+import {isAbortError} from '../../../utils/is-abort-error.js'
+
 export type DescribeAppOptions = {
   signal?: AbortSignal
 }
@@ -30,24 +33,36 @@ export type AppInfo = {
  * any error collapses to an empty default. The broad .catch is
  * intentional v1 fidelity with the Heroku CLI's apps:info; a future
  * tightening to specific status codes is non-breaking.
+ *
+ * Cancellation is exempt from the soft-fail: an aborted sub-request
+ * rethrows so the whole describe rejects instead of silently returning a
+ * partial view when the caller cancelled.
  */
 export async function describeApp(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   options: DescribeAppOptions = {},
 ): Promise<AppInfo> {
-  options.signal?.throwIfAborted()
-  const platform = options.signal
-    ? ctx.platform.withOptions({signal: options.signal})
-    : ctx.platform
+  const {signal} = options
+  signal?.throwIfAborted()
+  const platform = withSignal(ctx.platform, signal)
+
+  // Collapse an expected soft error to a default, but never swallow an abort.
+  // Checks the signal's `aborted` flag as well as the error shape so a
+  // custom-reason abort (`controller.abort(reason)`), which `isAbortError`
+  // alone can't detect, still rejects instead of returning a partial view.
+  const softFail = <T>(fallback: T) => (error: unknown): T => {
+    if (signal?.aborted || isAbortError(error)) throw error
+    return fallback
+  }
 
   const [addons, app, dynos, collaborators, pipelineCoupling] = await Promise.all([
     platform.addOn.listByApp(appIdentity),
     platform.app.info(appIdentity),
-    platform.dyno.list(appIdentity).catch((): Dyno[] => []),
-    platform.collaborator.list(appIdentity).catch((): Collaborator[] => []),
-    platform.pipelineCoupling.infoByApp(appIdentity)
-      .catch((): null => null) as Promise<null | PipelineCouplingDetail>,
+    platform.dyno.list(appIdentity).catch(softFail<Dyno[]>([])),
+    platform.collaborator.list(appIdentity).catch(softFail<Collaborator[]>([])),
+    (platform.pipelineCoupling.infoByApp(appIdentity) as Promise<null | PipelineCouplingDetail>)
+      .catch(softFail<null | PipelineCouplingDetail>(null)),
   ])
 
   return {

@@ -3,6 +3,7 @@ import type {Domain} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {CreateAndWaitOptions} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {waitForReady} from './wait-for-ready.js'
 
 /**
@@ -32,7 +33,7 @@ export async function createAndWait(
 
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   let resolvedSniEndpoint: null | string = null
 

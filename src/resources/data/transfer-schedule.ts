@@ -7,6 +7,7 @@ import type {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+import {withSignal} from '../../core/with-signal.js'
 import {findLegacyDatabase} from './internal/postgres-utils.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
@@ -32,7 +33,9 @@ export async function list(
   options.signal?.throwIfAborted()
   // Schedules are app-scoped, so any legacy DB ID unlocks the app's list.
   const addon = await findLegacyDatabase(ctx, appIdentity)
-  return ctx.data.transferSchedule.list(addon.id) as unknown as Promise<TransferSchedule[]>
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.transferSchedule.list(addon.id) as unknown as Promise<TransferSchedule[]>
 }
 
 export async function create(
@@ -53,7 +56,9 @@ export async function create(
     requestBody = {...body, schedule_name: `${attachment.name}_URL`}
   }
 
-  return ctx.data.transferSchedule.create(addon.id, requestBody)
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.transferSchedule.create(addon.id, requestBody)
 }
 
 export async function del(
@@ -65,7 +70,9 @@ export async function del(
 ): Promise<TransferScheduleDeleteResult> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  return ctx.data.transferSchedule.delete(addon.id, scheduleId)
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.transferSchedule.delete(addon.id, scheduleId)
 }
 
 export const transferScheduleExtensions = extendResource('data', 'transferSchedule', ctx => ({

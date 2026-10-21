@@ -17,15 +17,19 @@ function buildCtx(opts: {
   list?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
+  const data: Record<string, unknown> = {
+    transferSchedule: {
+      create: opts.create ?? vi.fn(),
+      delete: opts.delete ?? vi.fn(),
+      list: opts.list ?? vi.fn(),
+    },
+  }
+  // Self-referential so a `.withOptions({signal})` chain resolves back to data.
+  data.withOptions = vi.fn(() => data)
+
   return {
     ...legacyResourceCtx,
-    data: {
-      transferSchedule: {
-        create: opts.create ?? vi.fn(),
-        delete: opts.delete ?? vi.fn(),
-        list: opts.list ?? vi.fn(),
-      },
-    } as never,
+    data: data as never,
     platform: {
       addOn: {listByApp: opts.addonListByApp ?? vi.fn()},
       addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
@@ -106,6 +110,18 @@ describe('transferSchedule resource', () => {
 
     expect(deleteStub).toHaveBeenCalledWith('addon-1', 'sched-1')
     expect(result).toEqual({name: 'DATABASE_URL', uuid: 'sched-1'})
+  })
+
+  it('delete binds the signal to the data client so the request aborts in flight', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
+    const deleteStub = vi.fn().mockResolvedValue({})
+    const ctx = buildCtx({delete: deleteStub, resolutionByAttachment})
+    const controller = new AbortController()
+
+    await del(ctx, 'app-1', 'DATABASE_URL', 'sched-1', {signal: controller.signal})
+
+    expect((ctx.data as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
+      .toHaveBeenCalledWith({signal: controller.signal})
   })
 
   it('transferScheduleExtensions declares service: data, resource: transferSchedule', () => {

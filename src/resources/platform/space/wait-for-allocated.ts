@@ -4,6 +4,7 @@ import type {Space, SpaceNat} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {WaitForAllocatedOptions} from './types.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 import {SpaceNotAllocatedError, SpaceNotReadyError} from './errors.js'
 
@@ -50,10 +51,7 @@ export async function waitForAllocated(
 
   signal?.throwIfAborted()
 
-  let platform = ctx.platform.withHeaders({'Accept-Expansion': 'region'})
-  if (signal) {
-    platform = platform.withOptions({signal})
-  }
+  const platform = withSignal(ctx.platform.withHeaders({'Accept-Expansion': 'region'}), signal)
 
   const deadline = Date.now() + timeoutMs
 

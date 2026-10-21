@@ -1,6 +1,7 @@
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+import {withSignal} from '../../core/with-signal.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 export type ListCredentialsOptions = {
@@ -33,7 +34,9 @@ export async function listCredentials(
 ): Promise<CredentialInfo[]> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  return ctx.data.postgresDatabase.listCredentials(addon.id) as unknown as Promise<CredentialInfo[]>
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.postgresDatabase.listCredentials(addon.id) as unknown as Promise<CredentialInfo[]>
 }
 
 export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', ctx => ({

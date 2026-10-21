@@ -4,6 +4,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
 import type {WaitForTransferOptions} from './wait-for-transfer.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {Poller} from '../../../utils/poller.js'
 import {resolvePgDatabase} from '../internal/resolve-pg-database.js'
 import {waitForTransfer} from './wait-for-transfer.js'
@@ -42,8 +43,11 @@ export async function captureAndWait(
 
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
 
+  // Bind the signal so the create request aborts in flight, not just the wait.
+  const data = withSignal(ctx.data, signal)
+
   capturePoller?.onStart?.(addon)
-  const backup = await ctx.data.backup.create(addon.id) as BackupCreateInfo
+  const backup = await data.backup.create(addon.id) as BackupCreateInfo
   capturePoller?.onStop?.(addon)
 
   waitPoller?.onStart?.(backup)

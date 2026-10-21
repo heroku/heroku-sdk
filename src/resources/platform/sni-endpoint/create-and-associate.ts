@@ -4,6 +4,7 @@ import type {SniEndpoint} from '@heroku/types/3.sdk'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {Poller} from '../../../utils/poller.js'
 
+import {withSignal} from '../../../core/with-signal.js'
 import {waitForReady} from '../domain/wait-for-ready.js'
 
 const DEFAULT_WAIT_INTERVAL_MS = 1000
@@ -71,7 +72,7 @@ export async function createAndAssociate(
 
   signal?.throwIfAborted()
 
-  const platform = signal ? ctx.platform.withOptions({signal}) : ctx.platform
+  const platform = withSignal(ctx.platform, signal)
 
   const sniEndpoint = await platform.sniEndpoint.create(appIdentity, {
     certificate_chain: certificateChain,

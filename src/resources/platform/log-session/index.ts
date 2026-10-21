@@ -6,6 +6,7 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {withSignal} from '../../../core/with-signal.js'
 import {getGeneration} from '../app/index.js'
 import {parseHerokuLogLine} from './parser.js'
 
@@ -146,6 +147,10 @@ export async function * streamLogs(
 
   signal?.throwIfAborted()
 
+  // Bind the caller's signal to the platform client so the session-create
+  // request below aborts in flight, not merely between reads of the stream.
+  const platform = withSignal(ctx.platform, signal)
+
   const generation = await getGeneration(ctx, appIdentity, {signal})
   const isFir = generation === 'fir'
   // Fir doesn't support a bounded session; the platform always streams.
@@ -163,7 +168,7 @@ export async function * streamLogs(
   let consecutiveTransportErrors = 0
   while (true) {
     debug('streamLogs creating session app=%s generation=%s tail=%s', appIdentity, generation ?? '<unknown>', effectiveTail)
-    const session: LogSession = await ctx.platform.logSession.create(appIdentity, createOpts)
+    const session: LogSession = await platform.logSession.create(appIdentity, createOpts)
     if (!session.logplex_url) {
       throw new Error('Log session response did not include a logplex_url.')
     }
@@ -195,6 +200,7 @@ export async function * streamLogs(
       // header and keeps sending `text/plain`).
       const response = await logplexClient.stream(`${parsed.pathname}${parsed.search}`, {
         headers: {Accept: 'text/event-stream'},
+        signal,
       })
       if (!response.body) {
         throw new Error('Logplex stream returned no body.')

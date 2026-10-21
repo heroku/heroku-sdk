@@ -13,6 +13,7 @@ import type {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {extendResource} from '../../core/extend-resource.js'
+import {withSignal} from '../../core/with-signal.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 export type DatabaseOptions = {
@@ -36,7 +37,9 @@ export async function describe(
 ): Promise<DatabaseDescribeResult> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  return ctx.data.database.info(addon.id)
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.database.info(addon.id)
 }
 
 export async function upgradeWaitStatus(
@@ -47,7 +50,9 @@ export async function upgradeWaitStatus(
 ): Promise<DatabaseUpgradeWaitStatusResult> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  return ctx.data.database.upgradeWaitStatus(addon.id)
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.database.upgradeWaitStatus(addon.id)
 }
 
 export async function dryRunUpgrade(
@@ -59,7 +64,9 @@ export async function dryRunUpgrade(
 ): Promise<DatabaseDryRunUpgradeResult> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  return ctx.data.database.dryRunUpgrade(addon.id, body)
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.database.dryRunUpgrade(addon.id, body)
 }
 
 export async function runUpgrade(
@@ -71,7 +78,9 @@ export async function runUpgrade(
 ): Promise<DatabaseRunUpgradeResult> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  return ctx.data.database.runUpgrade(addon.id, body)
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.database.runUpgrade(addon.id, body)
 }
 
 export async function prepareUpgrade(
@@ -83,7 +92,9 @@ export async function prepareUpgrade(
 ): Promise<DatabasePrepareUpgradeResult> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  return ctx.data.database.prepareUpgrade(addon.id, body)
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.database.prepareUpgrade(addon.id, body)
 }
 
 export async function cancelUpgrade(
@@ -94,7 +105,9 @@ export async function cancelUpgrade(
 ): Promise<DatabaseCancelUpgradeResult> {
   options.signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  return ctx.data.database.cancelUpgrade(addon.id)
+  // Bind the signal so the request aborts in flight, not just during resolution.
+  const data = withSignal(ctx.data, options.signal)
+  return data.database.cancelUpgrade(addon.id)
 }
 
 export const databaseExtensions = extendResource('data', 'database', ctx => ({

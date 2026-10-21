@@ -18,17 +18,21 @@ function buildCtx(opts: {
   runUpgrade?: ReturnType<typeof vi.fn>
   upgradeWaitStatus?: ReturnType<typeof vi.fn>
 }): ResourceCtx {
+  const data: Record<string, unknown> = {
+    database: {
+      cancelUpgrade: opts.cancelUpgrade ?? vi.fn(),
+      dryRunUpgrade: opts.dryRunUpgrade ?? vi.fn(),
+      info: opts.databaseInfo ?? vi.fn(),
+      prepareUpgrade: opts.prepareUpgrade ?? vi.fn(),
+      runUpgrade: opts.runUpgrade ?? vi.fn(),
+      upgradeWaitStatus: opts.upgradeWaitStatus ?? vi.fn(),
+    },
+  }
+  // Self-referential so a `.withOptions({signal})` chain resolves back to data.
+  data.withOptions = vi.fn(() => data)
+
   return {
-    data: {
-      database: {
-        cancelUpgrade: opts.cancelUpgrade ?? vi.fn(),
-        dryRunUpgrade: opts.dryRunUpgrade ?? vi.fn(),
-        info: opts.databaseInfo ?? vi.fn(),
-        prepareUpgrade: opts.prepareUpgrade ?? vi.fn(),
-        runUpgrade: opts.runUpgrade ?? vi.fn(),
-        upgradeWaitStatus: opts.upgradeWaitStatus ?? vi.fn(),
-      },
-    } as never,
+    data: data as never,
     platform: {
       addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
       withHeaders() {
@@ -90,6 +94,18 @@ describe('database resource', () => {
     controller.abort()
 
     await expect(describeFn(ctx, 'app-1', undefined, {signal: controller.signal})).rejects.toThrow()
+  })
+
+  it('describe binds the signal to the data client so the request aborts in flight', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(oneAttachmentMatch)
+    const databaseInfo = vi.fn().mockResolvedValue({})
+    const ctx = buildCtx({databaseInfo, resolutionByAttachment})
+    const controller = new AbortController()
+
+    await describeFn(ctx, 'app-1', 'DATABASE_URL', {signal: controller.signal})
+
+    expect((ctx.data as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
+      .toHaveBeenCalledWith({signal: controller.signal})
   })
 
   it('runUpgrade resolves the addon and calls database.runUpgrade with the body', async () => {
