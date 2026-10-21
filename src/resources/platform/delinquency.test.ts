@@ -82,4 +82,34 @@ describe('formatDelinquencyWarning', () => {
 
     expect(message).toContain("we'll suspend it on")
   })
+
+  it('treats a suspension exactly at now as past (strict > comparison)', () => {
+    const atNow = new Date(NOW).toISOString()
+
+    expect(formatDelinquencyWarning('account', {
+      scheduled_deletion_time: FUTURE,
+      scheduled_suspension_time: atNow,
+    }, NOW)).toContain('we suspended it on')
+
+    expect(formatDelinquencyWarning('account', {
+      scheduled_deletion_time: null,
+      scheduled_suspension_time: atNow,
+    }, NOW)).toBeUndefined()
+  })
+
+  it('treats epoch-zero and empty-string timestamps as absent', () => {
+    expect(formatDelinquencyWarning('account', {
+      scheduled_deletion_time: '1970-01-01T00:00:00.000Z',
+      scheduled_suspension_time: '',
+    }, NOW)).toBeUndefined()
+  })
+
+  it('falls back to the deletion-only message when only the suspension is unparseable', () => {
+    const message = formatDelinquencyWarning('account', {
+      scheduled_deletion_time: FUTURE,
+      scheduled_suspension_time: 'not-a-date',
+    }, NOW)
+
+    expect(message).toBe(`This account is delinquent with payment and we'll delete it on ${new Date(Date.parse(FUTURE)).toString()}.`)
+  })
 })

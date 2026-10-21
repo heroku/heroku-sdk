@@ -99,6 +99,42 @@ describe('getAccountWithDelinquency', () => {
 
     expect(platform.withOptions).not.toHaveBeenCalled()
   })
+
+  it('starts both reads concurrently, not sequentially', async () => {
+    let resolveAccount!: (value: Account) => void
+    const accountInfo = vi.fn().mockReturnValue(new Promise<Account>(resolve => {
+      resolveAccount = resolve
+    }))
+    const delinquencyInfo = vi.fn().mockResolvedValue(null)
+    const {ctx} = buildCtx({accountInfo, delinquencyInfo})
+
+    const pending = getAccountWithDelinquency(ctx)
+
+    // the delinquency read is issued before the (still-pending) account read settles;
+    // a sequential `await account; await delinquency` implementation would fail this
+    expect(accountInfo).toHaveBeenCalledOnce()
+    expect(delinquencyInfo).toHaveBeenCalledOnce()
+
+    resolveAccount({id: 'acct-1'} as Account)
+    await expect(pending).resolves.toMatchObject({account: {id: 'acct-1'}, delinquency: null})
+  })
+
+  it('issues the reads on the signal-scoped client returned by withOptions', async () => {
+    const scopedAccountInfo = vi.fn().mockResolvedValue({id: 'acct-1'} as Account)
+    const scopedDelinquencyInfo = vi.fn().mockResolvedValue(null)
+    const {ctx, platform} = buildCtx()
+    platform.withOptions.mockReturnValue({
+      account: {info: scopedAccountInfo},
+      accountDelinquency: {info: scopedDelinquencyInfo},
+    })
+
+    await getAccountWithDelinquency(ctx, {signal: new AbortController().signal})
+
+    expect(scopedAccountInfo).toHaveBeenCalledOnce()
+    expect(scopedDelinquencyInfo).toHaveBeenCalledOnce()
+    expect(platform.account.info).not.toHaveBeenCalled()
+    expect(platform.accountDelinquency.info).not.toHaveBeenCalled()
+  })
 })
 
 describe('accountExtensions.getWithDelinquency wiring', () => {

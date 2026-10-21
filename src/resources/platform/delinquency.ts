@@ -13,22 +13,13 @@ export interface DelinquencySchedule {
 export type DelinquencyResource = 'account' | 'team'
 
 /**
- * Build the user-facing delinquency warning sentence for a resource, or
- * `undefined` when nothing should be surfaced. Pure: it only formats the
- * message — emitting it (to stderr, a log, a UI) is the caller's concern.
+ * Format the delinquency warning sentence for a resource, or `undefined` when
+ * there is nothing to say. Pure — formatting only; the caller emits it.
  *
- * Mirrors the three cases the Heroku CLI has historically shown:
- *  - a suspension still in the future → when we'll suspend it;
- *  - a suspension already in the past with a deletion scheduled → when we
- *    suspended it and when we'll delete it;
- *  - a deletion with no suspension → when we'll delete it.
- *
- * A suspension already in the past with no deletion scheduled yields no message
- * (the suspension has happened and there is nothing further to warn about), as
- * does a payload with neither timestamp set.
- *
- * `now` is injectable so the future-vs-past comparison is testable; it defaults
- * to the wall clock.
+ * Produces a message for an upcoming suspension, a past suspension with an
+ * upcoming deletion, or an upcoming deletion. Returns `undefined` when neither
+ * timestamp is set, or when a suspension is already past with no deletion
+ * scheduled. `now` defaults to the wall clock and is injectable for testing.
  */
 export function formatDelinquencyWarning(
   resource: DelinquencyResource,

@@ -99,6 +99,42 @@ describe('getTeamWithDelinquency', () => {
 
     expect(platform.withOptions).not.toHaveBeenCalled()
   })
+
+  it('starts both reads concurrently, not sequentially', async () => {
+    let resolveTeam!: (value: Team) => void
+    const teamInfo = vi.fn().mockReturnValue(new Promise<Team>(resolve => {
+      resolveTeam = resolve
+    }))
+    const delinquencyInfo = vi.fn().mockResolvedValue(null)
+    const {ctx} = buildCtx({delinquencyInfo, teamInfo})
+
+    const pending = getTeamWithDelinquency(ctx, 'my-team')
+
+    // the delinquency read is issued before the (still-pending) team read settles;
+    // a sequential `await team; await delinquency` implementation would fail this
+    expect(teamInfo).toHaveBeenCalledOnce()
+    expect(delinquencyInfo).toHaveBeenCalledOnce()
+
+    resolveTeam({id: 'team-1'} as Team)
+    await expect(pending).resolves.toMatchObject({delinquency: null, team: {id: 'team-1'}})
+  })
+
+  it('issues the reads on the signal-scoped client returned by withOptions', async () => {
+    const scopedTeamInfo = vi.fn().mockResolvedValue({id: 'team-1'} as Team)
+    const scopedDelinquencyInfo = vi.fn().mockResolvedValue(null)
+    const {ctx, platform} = buildCtx()
+    platform.withOptions.mockReturnValue({
+      team: {info: scopedTeamInfo},
+      teamDelinquency: {info: scopedDelinquencyInfo},
+    })
+
+    await getTeamWithDelinquency(ctx, 'my-team', {signal: new AbortController().signal})
+
+    expect(scopedTeamInfo).toHaveBeenCalledExactlyOnceWith('my-team')
+    expect(scopedDelinquencyInfo).toHaveBeenCalledExactlyOnceWith('my-team')
+    expect(platform.team.info).not.toHaveBeenCalled()
+    expect(platform.teamDelinquency.info).not.toHaveBeenCalled()
+  })
 })
 
 describe('teamExtensions.getWithDelinquency wiring', () => {
