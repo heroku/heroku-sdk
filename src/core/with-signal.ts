@@ -10,6 +10,12 @@ import type {RoutesClientExtras} from './create-client.js'
  * in-flight request unless it's pushed onto the client. This returns a derived,
  * signal-bearing client (the original is never mutated) — or the client
  * unchanged when no signal is supplied, so a signal-less call stays a no-op.
+ *
+ * Signals do not combine: `withOptions` is last-wins, so binding a per-call
+ * signal here replaces any signal already set on the client (e.g. a
+ * session-level one) for the requests this derived client issues. A caller that
+ * needs both to abort the request must combine them itself (e.g.
+ * `AbortSignal.any([sessionSignal, callSignal])`) before passing one in.
  */
 export function withSignal<T>(client: RoutesClientExtras<T> & T, signal?: AbortSignal): RoutesClientExtras<T> & T {
   return signal ? client.withOptions({signal}) : client

@@ -70,17 +70,46 @@ describe('captureAndWait', () => {
     expect(result).toEqual({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'xfer-1'})
   })
 
-  it('binds the signal to the data client so the capture request aborts in flight', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue(attachmentMatch)
-    const backupCreate = vi.fn().mockResolvedValue({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
-    const infoByApp = vi.fn().mockResolvedValue({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'xfer-1'})
-    const ctx = buildCtx({backupCreate, infoByApp, resolutionByAttachment})
+  it('runs the capture and the wait poll on the signal-bound client, never the unbound base', async () => {
     const controller = new AbortController()
+
+    // The signal-bound client is a DISTINCT object from the base, each with its
+    // own spies. A self-referential mock (withOptions returning the same object)
+    // can't tell the two apart, so a regression that dropped the pre-wait
+    // binding and captured via the unbound `ctx.data` would still pass because
+    // `waitForTransfer` re-binds downstream. Here both the capture and the wait
+    // poll must land on the bound client and never the base.
+    const boundCreate = vi.fn().mockResolvedValue({from_type: 'pg_dump', to_type: 'gof3r', uuid: 'xfer-1'})
+    const boundInfoByApp = vi.fn().mockResolvedValue({finished_at: '2024-01-01 00:00:00 UTC', succeeded: true, uuid: 'xfer-1'})
+    const bound = {backup: {create: boundCreate}, transfer: {infoByApp: boundInfoByApp}}
+
+    const baseCreate = vi.fn()
+    const baseInfoByApp = vi.fn()
+    const base: Record<string, unknown> = {backup: {create: baseCreate}, transfer: {infoByApp: baseInfoByApp}}
+    const withOptions = vi.fn((opts: {signal?: AbortSignal}) => (opts.signal ? bound : base))
+    base.withOptions = withOptions
+
+    const ctx: ResourceCtx = {
+      ...legacyResourceCtx,
+      data: base as never,
+      platform: {
+        addOnAttachment: {resolution: vi.fn().mockResolvedValue(attachmentMatch)},
+        withHeaders() {
+          return this
+        },
+        withOptions() {
+          return this
+        },
+      } as never,
+    }
 
     await captureAndWait(ctx, 'app-1', 'DATABASE_URL', {signal: controller.signal})
 
-    expect((ctx.data as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
-      .toHaveBeenCalledWith({signal: controller.signal})
+    expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+    expect(boundCreate).toHaveBeenCalledOnce()
+    expect(boundInfoByApp).toHaveBeenCalled()
+    expect(baseCreate).not.toHaveBeenCalled()
+    expect(baseInfoByApp).not.toHaveBeenCalled()
   })
 
   it('fires capturePoller and waitPoller hooks around their respective steps', async () => {

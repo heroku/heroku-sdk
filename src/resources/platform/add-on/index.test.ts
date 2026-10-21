@@ -473,17 +473,42 @@ describe('add-on resource', () => {
       expect(resolution).not.toHaveBeenCalled()
     })
 
-    it('binds the signal to the platform client so the request aborts in flight', async () => {
+    it('runs the resolve and the plans lookup on the signal-bound client, never the unbound base', async () => {
+      const controller = new AbortController()
       const addon = buildAddon({
         // eslint-disable-next-line camelcase
         addon_service: {id: 'svc-id', name: 'heroku-postgresql'},
       } as Partial<AddOn>)
-      const {ctx, withOptions} = buildCtx({plans: [], resolveResponses: [[addon]]})
-      const controller = new AbortController()
+      const plans = [{id: 'p1', name: 'mini', price: {cents: 500, unit: 'month'}}] as Plan[]
+
+      // The signal-bound client is a DISTINCT object from the base, each with
+      // its own spies. A self-referential mock (withOptions returning the same
+      // object) can't tell the two apart, so a regression that dropped the
+      // pre-resolve binding and resolved via the unbound `ctx.platform` would
+      // still pass because the inner `listPlans` re-binds downstream. Here both
+      // the resolve and the plans lookup must land on the bound client.
+      const boundResolution = vi.fn().mockResolvedValue([addon])
+      const boundListByAddOn = vi.fn().mockResolvedValue(plans)
+      const bound = {addOn: {resolution: boundResolution}, plan: {listByAddOn: boundListByAddOn}}
+
+      const baseResolution = vi.fn()
+      const baseListByAddOn = vi.fn()
+      const base: Record<string, unknown> = {
+        addOn: {resolution: baseResolution},
+        plan: {listByAddOn: baseListByAddOn},
+      }
+      const withOptions = vi.fn((opts: {signal?: AbortSignal}) => (opts.signal ? bound : base))
+      base.withOptions = withOptions
+
+      const ctx = {data: {} as never, platform: base as never} as unknown as ResourceCtx
 
       await listPlansForAddon(ctx, 'addon-id', {signal: controller.signal})
 
       expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+      expect(boundResolution).toHaveBeenCalledOnce()
+      expect(boundListByAddOn).toHaveBeenCalledOnce()
+      expect(baseResolution).not.toHaveBeenCalled()
+      expect(baseListByAddOn).not.toHaveBeenCalled()
     })
   })
 

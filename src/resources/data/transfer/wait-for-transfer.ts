@@ -5,6 +5,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
+import {isAbortError} from '../../../utils/is-abort-error.js'
 import {wait} from '../../../utils/wait.js'
 
 const DEFAULT_INTERVAL_MS = 3000
@@ -104,6 +105,12 @@ export async function waitForTransfer(
     try {
       transfer = await data.transfer.infoByApp(appIdentity, transferId, {verbose})
     } catch (error) {
+      // Never retry a cancellation: a client- or caller-level abort must stop
+      // the poll immediately rather than burn up to MAX_FAILURES attempts.
+      if (signal?.aborted || isAbortError(error)) {
+        throw error
+      }
+
       failures++
       if (failures > MAX_FAILURES) {
         throw error

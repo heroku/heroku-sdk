@@ -119,4 +119,28 @@ describe('waitForTransfer', () => {
     await expect(waitForTransfer(ctx, 'app-1', 'xfer-1', {intervalMs: DEFAULT_INTERVAL_MS})).rejects.toBe(error)
     expect(infoByAppMock).toHaveBeenCalledTimes(21)
   })
+
+  it('stops immediately on an AbortError instead of counting it as a retryable failure', async () => {
+    const abortError = Object.assign(new Error('aborted'), {name: 'AbortError'})
+    const infoByAppMock = vi.fn().mockRejectedValue(abortError)
+    const ctx = buildCtx({infoByApp: infoByAppMock})
+
+    await expect(waitForTransfer(ctx, 'app-1', 'xfer-1', {intervalMs: DEFAULT_INTERVAL_MS})).rejects.toBe(abortError)
+    expect(infoByAppMock).toHaveBeenCalledOnce()
+  })
+
+  it('stops immediately once the signal has aborted, whatever the poll error', async () => {
+    const controller = new AbortController()
+    const error = new Error('socket hang up')
+    // The request fails and the signal aborts in the same tick (e.g. a
+    // client-level cancellation): the abort must win over the retry counter.
+    const infoByAppMock = vi.fn().mockImplementation(() => {
+      controller.abort()
+      return Promise.reject(error)
+    })
+    const ctx = buildCtx({infoByApp: infoByAppMock})
+
+    await expect(waitForTransfer(ctx, 'app-1', 'xfer-1', {intervalMs: DEFAULT_INTERVAL_MS, signal: controller.signal})).rejects.toBe(error)
+    expect(infoByAppMock).toHaveBeenCalledOnce()
+  })
 })
