@@ -1,3 +1,4 @@
+export {accountExtensions, type AccountWithDelinquency, type GetAccountWithDelinquencyOptions} from '../platform/account.js'
 export {addOnAttachmentExtensions} from '../platform/add-on-attachment/index.js'
 export {addOnExtensions} from '../platform/add-on/index.js'
 export {
@@ -10,6 +11,9 @@ export {
   type ReleaseDockerImagesResult,
   type RemoveProcessTypesOpts,
 } from '../platform/container/index.js'
+export {
+  type DelinquencyResource, type DelinquencySchedule, formatDelinquencyWarning,
+} from '../platform/delinquency.js'
 export {
   type CreateAndWaitOptions,
   domainExtensions,
@@ -74,6 +78,7 @@ export {
   waitForAllocated,
   type WaitForAllocatedOptions,
 } from '../platform/space/index.js'
+export {type GetTeamWithDelinquencyOptions, teamExtensions, type TeamWithDelinquency} from '../platform/team.js'
 export {telemetryDrainExtensions, type TelemetryDrainOptions, type TelemetryDrainTarget} from '../platform/telemetry-drain/index.js'
 export {
   testRunExtensions, TestRunNotReadyError, type TestRunStatus, waitForState, type WaitForStateOptions,

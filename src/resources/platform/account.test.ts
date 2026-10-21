@@ -1,0 +1,169 @@
+/* eslint-disable camelcase -- platform delinquency wire format */
+import type {Account, AccountDelinquency} from '@heroku/types/3.sdk'
+
+import {
+  describe, expect, it, vi,
+} from 'vitest'
+
+import type {ResourceCtx} from '../../core/extend-resource.js'
+
+import {accountExtensions, getAccountWithDelinquency} from './account.js'
+
+type FakePlatform = {
+  account: {info: ReturnType<typeof vi.fn>}
+  accountDelinquency: {info: ReturnType<typeof vi.fn>}
+  withOptions: ReturnType<typeof vi.fn>
+}
+
+function buildCtx(stubs: {
+  accountInfo?: ReturnType<typeof vi.fn>
+  delinquencyInfo?: ReturnType<typeof vi.fn>
+} = {}): {ctx: ResourceCtx; platform: FakePlatform} {
+  const platform: FakePlatform = {
+    account: {info: stubs.accountInfo ?? vi.fn().mockResolvedValue({})},
+    accountDelinquency: {info: stubs.delinquencyInfo ?? vi.fn().mockResolvedValue(null)},
+    withOptions: vi.fn(),
+  }
+  platform.withOptions.mockReturnValue(platform)
+
+  return {
+    ctx: {platform: platform as never} as ResourceCtx,
+    platform,
+  }
+}
+
+describe('getAccountWithDelinquency', () => {
+  it('returns the account together with its delinquency', async () => {
+    const account = {email: 'a@b.com', id: 'acct-1'} as Account
+    const delinquency = {
+      scheduled_deletion_time: null,
+      scheduled_suspension_time: '2026-02-01T00:00:00.000Z',
+    } as AccountDelinquency
+
+    const {ctx, platform} = buildCtx({
+      accountInfo: vi.fn().mockResolvedValue(account),
+      delinquencyInfo: vi.fn().mockResolvedValue(delinquency),
+    })
+
+    const result = await getAccountWithDelinquency(ctx)
+
+    expect(result).toEqual({account, delinquency})
+    expect(platform.account.info).toHaveBeenCalledExactlyOnceWith()
+    expect(platform.accountDelinquency.info).toHaveBeenCalledExactlyOnceWith()
+  })
+
+  it('soft-fails the delinquency lookup to null without sinking the account fetch', async () => {
+    const account = {id: 'acct-1'} as Account
+    const {ctx} = buildCtx({
+      accountInfo: vi.fn().mockResolvedValue(account),
+      delinquencyInfo: vi.fn().mockRejectedValue(new Error('boom')),
+    })
+
+    const result = await getAccountWithDelinquency(ctx)
+
+    expect(result.account).toEqual(account)
+    expect(result.delinquency).toBeNull()
+  })
+
+  it('propagates an error from the account lookup', async () => {
+    const {ctx} = buildCtx({
+      accountInfo: vi.fn().mockRejectedValue(new Error('account-boom')),
+    })
+
+    await expect(getAccountWithDelinquency(ctx)).rejects.toThrow('account-boom')
+  })
+
+  it('rethrows a delinquency failure instead of nulling it once the signal has aborted', async () => {
+    const controller = new AbortController()
+    const account = {id: 'acct-1'} as Account
+    const abortError = Object.assign(new Error('aborted'), {name: 'AbortError'})
+    // The account read resolves; the delinquency read aborts in flight. Nulling
+    // it would misreport a delinquent account as current, so it must reject.
+    const {ctx} = buildCtx({
+      accountInfo: vi.fn().mockResolvedValue(account),
+      delinquencyInfo: vi.fn().mockImplementation(() => {
+        controller.abort()
+        return Promise.reject(abortError)
+      }),
+    })
+
+    await expect(getAccountWithDelinquency(ctx, {signal: controller.signal})).rejects.toBe(abortError)
+  })
+
+  it('throws if the abort signal is already aborted, without calling any route', async () => {
+    const {ctx, platform} = buildCtx()
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(getAccountWithDelinquency(ctx, {signal: controller.signal})).rejects.toThrow()
+    expect(platform.account.info).not.toHaveBeenCalled()
+    expect(platform.accountDelinquency.info).not.toHaveBeenCalled()
+  })
+
+  it('threads the signal through withOptions when provided', async () => {
+    const {ctx, platform} = buildCtx()
+    const controller = new AbortController()
+
+    await getAccountWithDelinquency(ctx, {signal: controller.signal})
+
+    expect(platform.withOptions).toHaveBeenCalledExactlyOnceWith({signal: controller.signal})
+  })
+
+  it('does not call withOptions when no signal is provided', async () => {
+    const {ctx, platform} = buildCtx()
+
+    await getAccountWithDelinquency(ctx)
+
+    expect(platform.withOptions).not.toHaveBeenCalled()
+  })
+
+  it('starts both reads concurrently, not sequentially', async () => {
+    let resolveAccount!: (value: Account) => void
+    const accountInfo = vi.fn().mockReturnValue(new Promise<Account>(resolve => {
+      resolveAccount = resolve
+    }))
+    const delinquencyInfo = vi.fn().mockResolvedValue(null)
+    const {ctx} = buildCtx({accountInfo, delinquencyInfo})
+
+    const pending = getAccountWithDelinquency(ctx)
+
+    // the delinquency read is issued before the (still-pending) account read settles;
+    // a sequential `await account; await delinquency` implementation would fail this
+    expect(accountInfo).toHaveBeenCalledOnce()
+    expect(delinquencyInfo).toHaveBeenCalledOnce()
+
+    resolveAccount({id: 'acct-1'} as Account)
+    await expect(pending).resolves.toMatchObject({account: {id: 'acct-1'}, delinquency: null})
+  })
+
+  it('issues the reads on the signal-scoped client returned by withOptions', async () => {
+    const scopedAccountInfo = vi.fn().mockResolvedValue({id: 'acct-1'} as Account)
+    const scopedDelinquencyInfo = vi.fn().mockResolvedValue(null)
+    const {ctx, platform} = buildCtx()
+    platform.withOptions.mockReturnValue({
+      account: {info: scopedAccountInfo},
+      accountDelinquency: {info: scopedDelinquencyInfo},
+    })
+
+    await getAccountWithDelinquency(ctx, {signal: new AbortController().signal})
+
+    expect(scopedAccountInfo).toHaveBeenCalledOnce()
+    expect(scopedDelinquencyInfo).toHaveBeenCalledOnce()
+    expect(platform.account.info).not.toHaveBeenCalled()
+    expect(platform.accountDelinquency.info).not.toHaveBeenCalled()
+  })
+})
+
+describe('accountExtensions.getWithDelinquency wiring', () => {
+  it('exposes a getWithDelinquency method that delegates to getAccountWithDelinquency', async () => {
+    const {ctx, platform} = buildCtx({
+      accountInfo: vi.fn().mockResolvedValue({id: 'acct-1'} as Account),
+    })
+    const methods = accountExtensions.factory(ctx)
+
+    expect(typeof methods.getWithDelinquency).toBe('function')
+    const result = await methods.getWithDelinquency()
+    expect(result.account).toEqual({id: 'acct-1'})
+    expect(platform.account.info).toHaveBeenCalledExactlyOnceWith()
+  })
+})
