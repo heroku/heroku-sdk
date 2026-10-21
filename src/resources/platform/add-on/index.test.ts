@@ -1051,6 +1051,49 @@ describe('add-on resource', () => {
       )).rejects.toThrow()
       expect(create).not.toHaveBeenCalled()
     })
+
+    it('runs the create and every poll on the signal-bound client, never the unbound base', async () => {
+      const provisioning = buildAddon({state: 'provisioning'} as Partial<AddOn>)
+      const provisioned = buildAddon({state: 'provisioned'} as Partial<AddOn>)
+      const controller = new AbortController()
+
+      // The signal-bound client is a DISTINCT object from the base, each with
+      // its own spies. A self-referential mock (withOptions returning the same
+      // object) could not tell the two apart, so a regression that polled via
+      // the unbound `ctx.platform` — the exact W-24448322 bug — would pass. Here
+      // the create and poll must land on the bound client and never the base.
+      const boundCreate = vi.fn().mockResolvedValue(provisioning)
+      const boundInfoByApp = vi.fn()
+        .mockResolvedValueOnce(provisioning)
+        .mockResolvedValueOnce(provisioned)
+      const bound: Record<string, unknown> = {addOn: {create: boundCreate, infoByApp: boundInfoByApp}}
+      bound.withHeaders = vi.fn(() => bound)
+
+      const baseCreate = vi.fn().mockResolvedValue(provisioning)
+      const baseInfoByApp = vi.fn().mockResolvedValue(provisioned)
+      const base: Record<string, unknown> = {addOn: {create: baseCreate, infoByApp: baseInfoByApp}}
+      base.withHeaders = vi.fn(() => base)
+      const withOptions = vi.fn((opts: {signal?: AbortSignal}) => (opts.signal ? bound : base))
+      base.withOptions = withOptions
+
+      const ctx = {data: {} as never, platform: base as never} as unknown as ResourceCtx
+
+      const result = await createAndWait(
+        ctx,
+        'my-app',
+        {plan: 'heroku-redis:hobby'},
+        {signal: controller.signal, wait: true, waitIntervalMs: 1},
+      )
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+      // Create and both polls ran on the signal-bound client…
+      expect(boundCreate).toHaveBeenCalledOnce()
+      expect(boundInfoByApp).toHaveBeenCalledTimes(2)
+      // …and the unbound base client issued no add-on requests.
+      expect(baseCreate).not.toHaveBeenCalled()
+      expect(baseInfoByApp).not.toHaveBeenCalled()
+      expect(result).toBe(provisioned)
+    })
   })
 
   describe('destroyAndWait', () => {

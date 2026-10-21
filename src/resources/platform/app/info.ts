@@ -24,12 +24,6 @@ export type AppInfo = {
   pipelineCoupling: null | PipelineCouplingDetail
 }
 
-// Collapse an expected soft error to a default, but never swallow an abort.
-const softFail = <T>(fallback: T) => (error: unknown): T => {
-  if (isAbortError(error)) throw error
-  return fallback
-}
-
 /**
  * Composite "describe this app" view: parallel-fetches add-ons, the app
  * itself, dynos, collaborators, and the pipeline coupling.
@@ -49,8 +43,18 @@ export async function describeApp(
   appIdentity: string,
   options: DescribeAppOptions = {},
 ): Promise<AppInfo> {
-  options.signal?.throwIfAborted()
-  const platform = withSignal(ctx.platform, options.signal)
+  const {signal} = options
+  signal?.throwIfAborted()
+  const platform = withSignal(ctx.platform, signal)
+
+  // Collapse an expected soft error to a default, but never swallow an abort.
+  // Checks the signal's `aborted` flag as well as the error shape so a
+  // custom-reason abort (`controller.abort(reason)`), which `isAbortError`
+  // alone can't detect, still rejects instead of returning a partial view.
+  const softFail = <T>(fallback: T) => (error: unknown): T => {
+    if (signal?.aborted || isAbortError(error)) throw error
+    return fallback
+  }
 
   const [addons, app, dynos, collaborators, pipelineCoupling] = await Promise.all([
     platform.addOn.listByApp(appIdentity),

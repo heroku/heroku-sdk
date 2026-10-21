@@ -1,28 +1,42 @@
 import createDebug from 'debug'
 
+import type {StickyRouteOptions} from './create-client.js'
 import type {ResourceCtx, ResourceExtension, ResourceMethods} from './extend-resource.js'
 
 const debug = createDebug('heroku:sdk:extensions')
 
 /**
- * Re-derive the extension context so that a `withOptions` / `withHeaders` call
- * on a service client also applies to the clients its extensions reach through
- * `ctx`.
+ * Re-derive the extension context so that an operation-wide cancellation set
+ * via `sdk.platform.withOptions({signal})` also reaches the clients its
+ * extensions issue requests through `ctx`.
  *
  * Extension factories close over `ctx.*` (e.g. `ctx.platform`) to issue their
  * own — often nested, sometimes cross-service — requests. Without this, a signal
- * set via `sdk.platform.withOptions({signal})` would reach generated route
- * methods but never the requests an extension method makes through `ctx`, so
- * cancellation could not stop the work an extension started. The same derivation
- * is applied to *every* service client in `ctx` because cancellation is
- * operation-wide and extensions cross services (e.g. a `data` extension polls
- * through `ctx.platform`).
+ * set on a service client would reach generated route methods but never the
+ * requests an extension method makes through `ctx`, so cancellation could not
+ * stop the work an extension started. The derivation is applied to *every*
+ * service client in `ctx` because cancellation is operation-wide and extensions
+ * cross services (e.g. a `data` extension polls through `ctx.platform`).
  *
- * `withOptions` / `withHeaders` returns a fresh client without mutating the
- * original, and the derived clients are memoized per key, so sibling derived
- * clients — and the base client — stay isolated from one another.
+ * Only the operation-wide `signal` / `timeout` are propagated. A `withHeaders`
+ * call, and the `headers` / `body` fields of a `withOptions` call, are
+ * endpoint-specific and must not ride cross-service onto unrelated requests
+ * (e.g. an `Accept-Expansion` header a sibling endpoint rejects), so they stay
+ * on the routes client the caller scoped and are not re-derived here.
+ *
+ * `withOptions` returns a fresh client without mutating the original, and the
+ * derived clients are memoized per key, so sibling derived clients — and the
+ * base client — stay isolated from one another.
  */
 function deriveCtx(ctx: ResourceCtx, method: 'withHeaders' | 'withOptions', args: unknown[]): ResourceCtx {
+  if (method !== 'withOptions') return ctx
+
+  const options = args[0] as StickyRouteOptions | undefined
+  const scoped: StickyRouteOptions = {}
+  if (options?.signal !== undefined) scoped.signal = options.signal
+  if (options?.timeout !== undefined) scoped.timeout = options.timeout
+  if (Object.keys(scoped).length === 0) return ctx
+
   const cache = new Map<keyof ResourceCtx, unknown>()
   const derived = {} as ResourceCtx
 
@@ -31,12 +45,8 @@ function deriveCtx(ctx: ResourceCtx, method: 'withHeaders' | 'withOptions', args
       enumerable: true,
       get() {
         if (!cache.has(key)) {
-          const client = ctx[key] as Record<string, unknown> | undefined
-          const derive = client?.[method]
-          cache.set(
-            key,
-            typeof derive === 'function' ? (derive as (...a: unknown[]) => unknown).apply(client, args) : client,
-          )
+          const client = ctx[key] as undefined | {withOptions?: (opts: StickyRouteOptions) => unknown}
+          cache.set(key, typeof client?.withOptions === 'function' ? client.withOptions(scoped) : client)
         }
 
         return cache.get(key)

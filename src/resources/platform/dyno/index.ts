@@ -67,6 +67,11 @@ type FormationClient = {
   update(appIdentity: string, type: string, body: Omit<ScaleDynosUpdate, 'type'>): Promise<Formation>
 }
 
+// Intentionally narrow: exposes only the `formation` resource and a
+// self-returning `withOptions`. It does not satisfy `withSignal`'s
+// `RoutesClientExtras<T> & T` constraint, so `scaleDynos` binds the signal with
+// an inline ternary rather than `withSignal`. Don't widen this to fit the
+// helper — that would enlarge this function's public ctx surface for no gain.
 type ScalePlatform = {
   formation: FormationClient
   withOptions(opts: StickyRouteOptions): ScalePlatform

@@ -171,6 +171,67 @@ describe('mergeExtensions', () => {
     expect(seen).toEqual([undefined, a.signal, b.signal])
   })
 
+  it('propagates only signal/timeout from a client-level withOptions to ctx clients', () => {
+    // Record the exact options each ctx sibling is re-derived with, so we can
+    // assert the endpoint-specific body/headers do NOT ride cross-service.
+    const seenOpts: Array<Record<string, unknown>> = []
+    const makePlatform = (): Record<string, unknown> => ({
+      app: {info() {}},
+      withHeaders: () => makePlatform(),
+      withOptions(opts: Record<string, unknown>) {
+        seenOpts.push(opts)
+        return makePlatform()
+      },
+    })
+    const ctx = {data: {} as never, platform: makePlatform()} as unknown as ResourceCtx
+
+    const ext = extendResource('platform', 'app', c => ({
+      describe: () => (c.platform as {app: {info: () => void}}).app.info(),
+    }))
+    const withOptions = vi.fn().mockReturnValue({app: {}})
+    const routes = {app: {}, withOptions} as Record<string, unknown>
+
+    const merged = mergeExtensions(routes, [ext], ctx) as {
+      withOptions: (opts: object) => {app: {describe: () => void}};
+    }
+
+    const {signal} = new AbortController()
+    merged
+
+      .withOptions({body: {force: true}, headers: {'Accept-Expansion': 'region'}, signal})
+      .app.describe()
+
+    // The ctx.platform sibling is re-derived with only the operation-wide
+    // signal; the endpoint-specific body/headers stay on the routes client.
+    expect(seenOpts).toEqual([{signal}])
+  })
+
+  it('does not ride a client-level withHeaders onto the ctx clients extensions reach', () => {
+    const seenHeaders: Array<Record<string, string> | undefined> = []
+    const makePlatform = (headers?: Record<string, string>): Record<string, unknown> => ({
+      app: {info: () => seenHeaders.push(headers)},
+      withHeaders: (h: Record<string, string>) => makePlatform({...headers, ...h}),
+      withOptions: () => makePlatform(headers),
+    })
+    const ctx = {data: {} as never, platform: makePlatform()} as unknown as ResourceCtx
+
+    const ext = extendResource('platform', 'app', c => ({
+      describe: () => (c.platform as {app: {info: () => void}}).app.info(),
+    }))
+    const withHeaders = vi.fn().mockReturnValue({app: {}})
+    const routes = {app: {}, withHeaders} as Record<string, unknown>
+
+    const merged = mergeExtensions(routes, [ext], ctx) as {
+      withHeaders: (headers: object) => {app: {describe: () => void}};
+    }
+
+    merged.withHeaders({'Accept-Expansion': 'region'}).app.describe()
+
+    // The endpoint-specific header stays on the routes client; the ctx.platform
+    // client the extension reaches through is not re-derived with it.
+    expect(seenHeaders).toEqual([undefined])
+  })
+
   it('preserves extension methods after withHeaders', () => {
     const ext = extendResource('platform', 'app', () => ({hello: () => 'world'}))
     const inner = {app: {info: vi.fn()}}

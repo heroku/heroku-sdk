@@ -104,6 +104,11 @@ type AppInfoResult = App & {
   space?: null | {shield?: boolean}
 }
 
+// Intentionally narrow: exposes only the `app` resource and a self-returning
+// `withOptions`. It does not satisfy `withSignal`'s `RoutesClientExtras<T> & T`
+// constraint, so `isShielded` / `getProcessTier` bind the signal with an inline
+// ternary rather than `withSignal`. Don't widen this to fit the helper — that
+// would enlarge these functions' public ctx surface for no behavioral gain.
 type AppInfoPlatform = {
   app: {info(appIdentity: string): Promise<AppInfoResult>}
   withOptions(opts: {signal: AbortSignal}): AppInfoPlatform
