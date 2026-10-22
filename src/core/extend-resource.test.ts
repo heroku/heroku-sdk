@@ -5,6 +5,19 @@ import {
 
 import {extendResource, makeCtxClient} from './extend-resource.js'
 
+const clientConstructorSpy = vi.fn()
+
+// vitest hoists vi.mock above the imports above, so HerokuApiClient here (and
+// the one extend-resource.ts builds in the makeClient-absent fallback) is this
+// constructor-recording stand-in.
+vi.mock('@heroku/heroku-fetch', () => ({
+  HerokuApiClient: class {
+    constructor(options: unknown) {
+      clientConstructorSpy(options)
+    }
+  },
+}))
+
 const descriptorFactory = () => ({foo: () => 'bar'})
 
 describe('extendResource', () => {
@@ -47,12 +60,19 @@ describe('makeCtxClient', () => {
   })
 
   it('falls back to a bare HerokuApiClient carrying only the overrides when makeClient is absent', () => {
-    const client = makeCtxClient({}, 'platform', {
+    clientConstructorSpy.mockClear()
+    const overrides = {
       baseUrl: 'https://stream.example.com',
-      service: 'custom',
+      service: 'custom' as const,
       token: '',
-    })
+    }
+
+    const client = makeCtxClient({}, 'platform', overrides)
 
     expect(client).toBeInstanceOf(HerokuApiClient)
+    // The overrides — notably service: 'custom' and the empty token — are what
+    // keep the Heroku token off third-party stream hosts, so assert they reach
+    // the constructor rather than just that *some* client was built.
+    expect(clientConstructorSpy).toHaveBeenCalledWith(overrides)
   })
 })

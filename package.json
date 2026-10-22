@@ -123,20 +123,24 @@
   },
   "scripts": {
     "clean": "rimraf dist",
-    "prebuild": "node scripts/write-version.mjs",
+    "generate:version": "node scripts/write-version.mjs",
+    "prebuild": "npm run generate:version",
     "build": "npm run clean && tsc",
+    "prelint": "npm run generate:version",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "pretest": "npm run generate:version",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=lcovonly",
+    "pretest:types": "npm run generate:version",
     "test:types": "tsc --noEmit -p tsconfig.type-tests.json",
     "prepare": "npm run build",
     "example": "tsx"
   },
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "files": [
     "dist"

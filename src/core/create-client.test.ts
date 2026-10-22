@@ -227,14 +227,16 @@ describe('createClient', () => {
       const controller = new AbortController()
       const layered = client
         .withOptions({reauthorize: false, signal: controller.signal})
-        .withOptions({headers: {Accept: 'b'}})
+        .withOptions({headers: {Accept: 'b'}, reauthorize: true})
 
       await layered.app.list()
 
       const apiClient = apiClientInstances.at(-1)
+      // The later withOptions replaces reauthorize (false -> true); signal, set
+      // only in the first and left unset in the second, is preserved.
       expect(apiClient.get).toHaveBeenCalledWith('/apps', {
         headers: {Accept: 'b'},
-        reauthorize: false,
+        reauthorize: true,
         signal: controller.signal,
       })
     })

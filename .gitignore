@@ -6,3 +6,7 @@ dist/
 docs/superpowers/
 node_modules/
 npm-shrinkwrap.json
+
+# Generated from package.json by scripts/write-version.mjs (see generate:version).
+# Not committed so a release-time package.json bump never leaves a stale diff here.
+src/version.ts
