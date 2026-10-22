@@ -16,7 +16,7 @@ type RoutesModule = Record<string, Record<string, RouteDefinition>>
  * and `stream` are deliberately excluded — those belong on the
  * individual route call, not on the client wrapper.
  */
-export type StickyRouteOptions = Pick<RequestOptions, 'headers' | 'signal' | 'timeout'> & {
+export type StickyRouteOptions = Pick<RequestOptions, 'headers' | 'reauthorize' | 'signal' | 'timeout'> & {
   /**
    * Request body applied to write calls on the derived client. Primarily
    * for methods whose route metadata lacks `hasRequestBody` (e.g. DELETE
@@ -41,7 +41,12 @@ export type RoutesClientExtras<T> = {
    * Returns a same-shaped client where each route call applies the
    * provided options. Caller-supplied headers override the api-client's
    * defaults; subsequent `withOptions` calls layer headers and replace
-   * signal / timeout.
+   * signal / timeout / reauthorize.
+   *
+   * Pass `reauthorize: false` to opt the derived client's calls out of the
+   * client-level 401 refresh (see {@link RequestOptions.reauthorize}) — for
+   * call sites where a 401 means something other than an expired Heroku
+   * credential and must not drive a login.
    *
    * The original client is not mutated.
    */
@@ -62,10 +67,12 @@ function mergeStickyOptions(
     merged.headers = {...base?.headers, ...next.headers}
   }
 
-  // signal, timeout, and body are not additive — last wins, but only if
-  // the caller actually set them. Otherwise the previous value persists.
+  // signal, timeout, reauthorize, and body are not additive — last wins,
+  // but only if the caller actually set them. Otherwise the previous value
+  // persists.
   if (next.signal !== undefined) merged.signal = next.signal
   if (next.timeout !== undefined) merged.timeout = next.timeout
+  if (next.reauthorize !== undefined) merged.reauthorize = next.reauthorize
   if (next.body !== undefined) merged.body = next.body
   return merged
 }

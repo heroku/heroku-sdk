@@ -1,10 +1,9 @@
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {Pipeline} from '@heroku/types/3.sdk'
-
-import {HerokuApiClient, type HerokuApiClientOptions} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../../core/extend-resource.js'
+import {extendResource, makeCtxClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 
 export type ResolvePipelineOptions = {
@@ -63,7 +62,7 @@ const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i
  *     `error.matches`.
  */
 export async function resolvePipeline(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>,
   identity: string,
   options: ResolvePipelineOptions = {},
 ): Promise<Pipeline> {
@@ -74,7 +73,7 @@ export async function resolvePipeline(
     return withSignal(ctx.platform, options.signal).pipeline.info(identity)
   }
 
-  const apiClient = new HerokuApiClient({
+  const apiClient = makeCtxClient(ctx, 'platform', {
     ...options.clientOptions,
     service: 'platform',
   })

@@ -4,12 +4,11 @@ import type {
   PipelinePromotionTarget,
 } from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../../core/extend-resource.js'
+import {extendResource, makeCustomHostClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 import {isAbortError} from '../../../utils/is-abort-error.js'
 import {wait} from '../../../utils/wait.js'
@@ -38,7 +37,7 @@ const DEFAULT_INTERVAL_MS = 1000
 const DEFAULT_RELEASE_STREAM_MAX_ATTEMPTS = 100
 
 export async function promotePipeline(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>,
   body: PipelinePromotionCreateOpts,
   options: PromotePipelineOptions = {},
 ): Promise<PromotePipelineResult> {
@@ -64,7 +63,7 @@ export async function promotePipeline(
 
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
   const streamRunner = onReleaseStream
-    ? createReleaseStreamRunner(platform, onReleaseStream, releaseStreamMaxAttempts, intervalMs, signal)
+    ? createReleaseStreamRunner(ctx, platform, onReleaseStream, releaseStreamMaxAttempts, intervalMs, signal)
     : undefined
 
   let poll = 0
@@ -99,6 +98,7 @@ export async function promotePipeline(
  * no-ops; the stream is one-shot per promotion.
  */
 function createReleaseStreamRunner(
+  ctx: Pick<ResourceCtx, 'makeClient'>,
   platform: Pick<ResourceCtx, 'platform'>['platform'],
   onReleaseStream: NonNullable<PromotePipelineOptions['onReleaseStream']>,
   releaseStreamMaxAttempts: number,
@@ -121,6 +121,7 @@ function createReleaseStreamRunner(
 
     debug('promote release-stream fetching url=%s maxAttempts=%d', release.output_stream_url, releaseStreamMaxAttempts)
     const stream = await fetchReleaseOutput(
+      ctx,
       release.output_stream_url,
       releaseStreamMaxAttempts,
       intervalMs,
@@ -136,6 +137,7 @@ export const pipelinePromotionExtensions = extendResource('platform', 'pipelineP
 }))
 
 async function fetchReleaseOutput(
+  ctx: Pick<ResourceCtx, 'makeClient'>,
   url: string,
   maxAttempts: number,
   intervalMs: number,
@@ -144,13 +146,10 @@ async function fetchReleaseOutput(
   const parsed = new URL(url)
   const path = `${parsed.pathname}${parsed.search}`
   // The release output URL points at a third-party stream host (e.g. busl).
-  // Use a custom-service client so the platform prefixUrl and bearer token
-  // don't leak across origins.
-  const buslClient = new HerokuApiClient({
-    baseUrl: parsed.origin,
-    service: 'custom',
-    token: '',
-  })
+  // Use a custom-host client so the platform prefixUrl, bearer token, and
+  // other auth/routing options don't leak across origins, while still
+  // inheriting the SDK's identity (User-Agent) and cancellation signal.
+  const buslClient = makeCustomHostClient(ctx, parsed.origin)
 
   let attempt = 0
   while (true) {

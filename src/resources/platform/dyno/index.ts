@@ -135,7 +135,7 @@ export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
   ),
 
   exchangeExecCredentials: (appIdentity: string, options: ExchangeExecCredentialsOptions) => (
-    exchangeExecCredentials(appIdentity, options)
+    exchangeExecCredentials(appIdentity, options, ctx)
   ),
 
   execPrereqs: (appIdentity: string, options?: ExecOptions) => (
@@ -143,11 +143,11 @@ export const dynoExtensions = extendResource('platform', 'dyno', ctx => ({
   ),
 
   execStatus: (appIdentity: string, options: ExecStatusOptions) => (
-    execStatus(appIdentity, options)
+    execStatus(appIdentity, options, ctx)
   ),
 
   listExtended: (appIdentity: string, options?: ListExtendedOptions) => (
-    listExtended(appIdentity, options)
+    listExtended(appIdentity, options, ctx)
   ),
 
   restart: (appIdentity: string, target?: RestartDynosTarget, options?: DynoOptions) => (

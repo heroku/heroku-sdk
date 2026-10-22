@@ -2,10 +2,11 @@
 import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {Dyno, DynoCreateOpts} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient, HerokuApiError} from '@heroku/heroku-fetch'
+import {HerokuApiError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {makeCtxClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 
 const DEFAULT_RUN_RETRIES = 2
@@ -86,7 +87,7 @@ export type RunDynoOptions = {
  * session, spawn ssh, or manage TTY state.
  */
 export async function runDyno(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>,
   appIdentity: string,
   command: string,
   options: RunDynoOptions = {},
@@ -122,13 +123,13 @@ export async function runDyno(
 }
 
 async function postRun(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>,
   appIdentity: string,
   body: DynoCreateOpts,
   options: RunDynoOptions,
 ): Promise<Dyno> {
   if (options.dyno) {
-    const apiClient = new HerokuApiClient({
+    const apiClient = makeCtxClient(ctx, 'platform', {
       ...options.clientOptions,
       service: 'platform',
     })

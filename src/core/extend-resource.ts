@@ -1,3 +1,7 @@
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
+
+import {HerokuApiClient} from '@heroku/heroku-fetch'
+
 import type {DashboardBackendClient} from '../services/dashboard-backend.js'
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
@@ -17,9 +21,73 @@ type BaseResourceCtx = {
   repositories: RepositoriesClient
 }
 
-export type ResourceCtx = BaseResourceCtx & {
+export type ResourceCtx = {
+  /**
+   * Build a raw {@link HerokuApiClient} that inherits the SDK's resolved
+   * client options for the `inheritFrom` service bundle (token,
+   * `userAgent`/headers, `signal`, `timeout`, `warn`, …), with `overrides`
+   * applied last.
+   *
+   * `inheritFrom` selects *which resolved option bundle to start from* — not
+   * the wire service; pass `service` in `overrides` to redirect the client to
+   * a different host and auth behavior. The returned client is raw, NOT the
+   * managed service client: it does not carry that client's `defaultAccept`
+   * (e.g. the platform's `version=3.sdk`) or routes proxy, so callers issue
+   * `get`/`post`/`stream` directly and set `Accept` per call.
+   *
+   * When `overrides.service === 'custom'` the inherited bundle is narrowed to
+   * identity and cancellation only (never auth/routing), so a custom stream
+   * host can't receive the Heroku token, a `reauthorize` login callback, or
+   * consumer headers. Prefer {@link makeCustomHostClient} for that case rather
+   * than assembling the overrides by hand.
+   *
+   * Optional for compatibility with existing extension contexts; prefer
+   * {@link makeCtxClient} at call sites so a context predating this stays
+   * on the pre-threading behavior.
+   *
+   * TODO(next major): make this required on ResourceCtx and drop the
+   * {@link makeCtxClient} fallback once external hand-built contexts are no
+   * longer supported.
+   */
+  makeClient?: (inheritFrom: ServiceName, overrides?: HerokuApiClientOptions) => HerokuApiClient
   /** Available to SDK-provided extensions; optional for compatibility with existing extension contexts. */
   repositoriesApi?: RepositoriesApiClient
+} & BaseResourceCtx
+
+/**
+ * Build a raw {@link HerokuApiClient} from a resource context, inheriting the
+ * SDK's resolved client options for the `inheritFrom` service bundle
+ * (identity, `signal`, `warn`, token, …) with `overrides` applied last. Falls
+ * back to a bare client carrying only `overrides` when the context predates
+ * {@link ResourceCtx.makeClient} (e.g. a hand-built test ctx, or a standalone
+ * call with no SDK behind it), preserving the pre-threading behavior exactly.
+ */
+export function makeCtxClient(
+  ctx: Pick<ResourceCtx, 'makeClient'>,
+  inheritFrom: ServiceName,
+  overrides: HerokuApiClientOptions = {},
+): HerokuApiClient {
+  return ctx.makeClient ? ctx.makeClient(inheritFrom, overrides) : new HerokuApiClient(overrides)
+}
+
+/**
+ * Build a raw {@link HerokuApiClient} for a non-Heroku-credential host — a
+ * custom stream/API host the routes-generated clients don't cover (logplex,
+ * busl, exec-manager). Inherits only the SDK's identity and cancellation from
+ * the platform option bundle; forces `service: 'custom'`, the given `baseUrl`,
+ * and an empty `token`, and drops every auth/routing option (`reauthorize`,
+ * `headers`, `hooks`, `twoFactor`, `region`, …) so none crosses to the
+ * third-party origin. `overrides` the call site explicitly sets still apply —
+ * use them for a per-host header or timeout, not to smuggle inherited auth.
+ */
+export function makeCustomHostClient(
+  ctx: Pick<ResourceCtx, 'makeClient'>,
+  baseUrl: string,
+  overrides: Omit<HerokuApiClientOptions, 'baseUrl' | 'service' | 'token'> = {},
+): HerokuApiClient {
+  return makeCtxClient(ctx, 'platform', {
+    ...overrides, baseUrl, service: 'custom', token: '',
+  })
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

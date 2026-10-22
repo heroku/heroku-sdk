@@ -488,6 +488,202 @@ describe('HerokuSDK', () => {
     expect(repositoriesApiConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 6}))
   })
 
+  it('applies a default @heroku/sdk User-Agent to every service client', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {SDK_VERSION} = await import('../version.js')
+    const sdk = new HerokuSDK()
+
+    const clients = [
+      sdk.dashboardBackend,
+      sdk.data,
+      sdk.metrics,
+      sdk.notifications,
+      sdk.platform,
+      sdk.repositories,
+      sdk.repositoriesApi,
+    ]
+    expect(clients).toHaveLength(7)
+    expect(clientConstructorSpy.mock.calls).toHaveLength(7)
+    for (const [options] of clientConstructorSpy.mock.calls) {
+      expect(options).toEqual(expect.objectContaining({
+        userAgent: {name: '@heroku/sdk', version: SDK_VERSION},
+      }))
+    }
+  })
+
+  it('lets a consumer-supplied clientOptions.userAgent override the SDK default', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({clientOptions: {userAgent: {name: 'heroku-cli', version: '11.4.0'}}})
+
+    const _touch = sdk.platform
+    expect(_touch).toBeDefined()
+    expect(platformConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      userAgent: {name: 'heroku-cli', version: '11.4.0'},
+    }))
+  })
+
+  it('lets a per-service userAgent override win while other services keep the default', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {SDK_VERSION} = await import('../version.js')
+    const sdk = new HerokuSDK({
+      clientOptionsByService: {
+        platform: {userAgent: {name: 'custom-platform', version: '9.9.9'}},
+      },
+    })
+
+    const clients = [sdk.platform, sdk.data]
+    expect(clients).toHaveLength(2)
+
+    expect(platformConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      userAgent: {name: 'custom-platform', version: '9.9.9'},
+    }))
+    expect(dataConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      userAgent: {name: '@heroku/sdk', version: SDK_VERSION},
+    }))
+  })
+
+  it('routes the notifications client through the shared option merge (common + per-service + default UA)', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {SDK_VERSION} = await import('../version.js')
+    const sdk = new HerokuSDK({
+      clientOptions: {token: 'abc'},
+      clientOptionsByService: {notifications: {timeout: 42}},
+    })
+
+    const _touch = sdk.notifications
+    expect(_touch).toBeDefined()
+    expect(notificationsConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      timeout: 42,
+      token: 'abc',
+      userAgent: {name: '@heroku/sdk', version: SDK_VERSION},
+    }))
+  })
+
+  it('exposes ctx.makeClient that threads resolved options into a custom-host client', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+    const {SDK_VERSION} = await import('../version.js')
+
+    const {signal} = new AbortController()
+    const probe = extendResource('platform', 'app', ctx => ({
+      makeStreamClient: () => ctx.makeClient?.('platform', {
+        baseUrl: 'https://stream.example.com',
+        service: 'custom',
+        token: '',
+      }),
+    }))
+
+    const sdk = new HerokuSDK({
+      clientOptions: {signal, token: 'abc'},
+      extensions: [probe],
+    })
+
+    // Build the managed platform client first, then isolate the makeClient call.
+    const {platform} = sdk
+    expect(platform).toBeDefined()
+    clientConstructorSpy.mockClear()
+
+    const client = (platform.app as unknown as {makeStreamClient: () => unknown}).makeStreamClient()
+    expect(client).toBeDefined()
+
+    // The custom-host client inherits the SDK identity + signal but overrides
+    // service/baseUrl/token — the exact threading the hot streaming paths need.
+    expect(clientConstructorSpy).toHaveBeenLastCalledWith({
+      baseUrl: 'https://stream.example.com',
+      service: 'custom',
+      signal,
+      token: '',
+      userAgent: {name: '@heroku/sdk', version: SDK_VERSION},
+    })
+  })
+
+  it('narrows a custom-host makeClient to identity/cancellation, dropping token/reauthorize/headers/hooks/twoFactor', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+
+    const {signal} = new AbortController()
+    const userAgent = {name: 'heroku-cli', version: '11.4.0'}
+    const probe = extendResource('platform', 'app', ctx => ({
+      makeCustomClient: () => ctx.makeClient?.('platform', {
+        baseUrl: 'https://stream.example.com',
+        service: 'custom',
+        token: '',
+      }),
+    }))
+
+    const sdk = new HerokuSDK({
+      clientOptions: {
+        headers: {Authorization: 'Bearer x', 'X-Custom': 'y'},
+        hooks: {beforeRequest: [vi.fn()]},
+        reauthorize: vi.fn(),
+        signal,
+        timeout: 5,
+        token: 'abc',
+        twoFactor: {onChallenge: vi.fn()},
+        userAgent,
+      },
+      extensions: [probe],
+    })
+
+    // Build the managed platform client first, then isolate the makeClient call.
+    const {platform} = sdk
+    expect(platform).toBeDefined()
+    clientConstructorSpy.mockClear();
+    (platform.app as unknown as {makeCustomClient: () => unknown}).makeCustomClient()
+
+    // The headline F1 fix: only identity + cancellation cross to the
+    // third-party origin. An exact match asserts no extra keys slipped in.
+    expect(clientConstructorSpy).toHaveBeenLastCalledWith({
+      baseUrl: 'https://stream.example.com',
+      service: 'custom',
+      signal,
+      timeout: 5,
+      token: '',
+      userAgent,
+    })
+    const options = clientConstructorSpy.mock.lastCall?.[0] as Record<string, unknown>
+    expect(options).not.toHaveProperty('reauthorize')
+    expect(options).not.toHaveProperty('headers')
+    expect(options).not.toHaveProperty('hooks')
+    expect(options).not.toHaveProperty('twoFactor')
+  })
+
+  it('inherits the full resolved bundle for a non-custom makeClient (auth/routing preserved)', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+
+    const reauthorize = vi.fn()
+    const headers = {Authorization: 'Bearer x', 'X-Custom': 'y'}
+    const hooks = {beforeRequest: [vi.fn()]}
+    const twoFactor = {onChallenge: vi.fn()}
+    const probe = extendResource('platform', 'app', ctx => ({
+      makePlatformClient: () => ctx.makeClient?.('platform'),
+    }))
+
+    const sdk = new HerokuSDK({
+      clientOptions: {
+        headers, hooks, reauthorize, timeout: 5, token: 'abc', twoFactor,
+      },
+      extensions: [probe],
+    })
+
+    const {platform} = sdk
+    expect(platform).toBeDefined()
+    clientConstructorSpy.mockClear();
+    (platform.app as unknown as {makePlatformClient: () => unknown}).makePlatformClient()
+
+    // A same-domain client (no service:'custom' override) keeps the Heroku
+    // bundle intact — the allowlist narrowing applies only to custom hosts.
+    expect(clientConstructorSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      headers,
+      hooks,
+      reauthorize,
+      timeout: 5,
+      token: 'abc',
+      twoFactor,
+    }))
+  })
+
   it('prevents keyed options from changing each service transport', async () => {
     const {HerokuSDK} = await import('./heroku-sdk.js')
     const sdk = new HerokuSDK({

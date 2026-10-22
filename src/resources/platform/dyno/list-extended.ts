@@ -1,7 +1,9 @@
 import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {Dyno} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/heroku-fetch'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
+
+import {makeCtxClient} from '../../../core/extend-resource.js'
 
 const ACCEPT_EXTENDED = 'application/vnd.heroku+json; version=3.sdk'
 
@@ -54,14 +56,20 @@ export type ListExtendedOptions = {
  *
  * Unlike the routes client, this does not auto-paginate — it issues a
  * single GET, matching the historical CLI behavior.
+ *
+ * @param ctx - Internal: supplied by the SDK's dyno extension to thread the
+ * resolved client identity and cancellation signal into the bare client.
+ * Standalone callers omit it, and the client falls back to the pre-threading
+ * bare construction.
  */
 export async function listExtended(
   appIdentity: string,
   options: ListExtendedOptions = {},
+  ctx: Pick<ResourceCtx, 'makeClient'> = {},
 ): Promise<DynoExtended[]> {
   options.signal?.throwIfAborted()
 
-  const apiClient = new HerokuApiClient({
+  const apiClient = makeCtxClient(ctx, 'platform', {
     ...options.clientOptions,
     service: 'platform',
   })

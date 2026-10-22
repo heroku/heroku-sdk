@@ -129,6 +129,29 @@ describe('pipeline resource', () => {
       })
     })
 
+    it('builds the client through ctx.makeClient when threaded, not a bare HerokuApiClient', async () => {
+      const pipeline = {id: SOME_UUID, name: 'my-pipeline'} as Pipeline
+      const get = vi.fn().mockResolvedValue(new Response(JSON.stringify([pipeline]), {
+        headers: {'content-type': 'application/json'},
+        status: 200,
+      }))
+      const fakeClient = {get} as unknown as HerokuApiClient
+      const makeClient = vi.fn(() => fakeClient)
+      const ctx = ctxWithInfo(vi.fn())
+      ctx.makeClient = makeClient
+
+      const result = await resolvePipeline(ctx, 'my-pipeline')
+
+      // The name lookup inherits the resolved platform bundle via makeClient;
+      // the bare fallback constructor must not run.
+      expect(makeClient).toHaveBeenCalledWith('platform', expect.objectContaining({service: 'platform'}))
+      expect(HerokuApiClient).not.toHaveBeenCalled()
+      expect(get).toHaveBeenCalledExactlyOnceWith('/pipelines', {
+        searchParams: {'eq[name]': 'my-pipeline'},
+      })
+      expect(result).toEqual(pipeline)
+    })
+
     it('throws if the signal is already aborted', async () => {
       const info = vi.fn()
       const ctx = ctxWithInfo(info)

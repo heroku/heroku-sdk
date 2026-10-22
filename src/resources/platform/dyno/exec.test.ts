@@ -280,6 +280,24 @@ describe('exchangeExecCredentials', () => {
     expect(result).toEqual(creds)
   })
 
+  it('builds the exec-manager client through ctx.makeClient when threaded, not a bare HerokuApiClient', async () => {
+    const put = vi.fn().mockResolvedValue(jsonResponse(creds))
+    const fakeClient = {put} as unknown as HerokuApiClient
+    const makeClient = vi.fn(() => fakeClient)
+
+    await exchangeExecCredentials('app-1', {
+      apiKey: 'key-123', dyno: 'web.1', publicKey: 'ssh-rsa PUBKEY',
+    }, {makeClient})
+
+    // The custom-host exec-manager client is built via makeClient (inheriting
+    // only identity/cancellation); the bare fallback constructor must not run.
+    expect(makeClient).toHaveBeenCalledWith('platform', {
+      baseUrl: 'https://exec-manager.heroku.com', service: 'custom', token: '',
+    })
+    expect(HerokuApiClient).not.toHaveBeenCalled()
+    expect(put).toHaveBeenCalledWith('/api/v2/web.1', {client_key: 'ssh-rsa PUBKEY'}, expect.anything())
+  })
+
   it('uses the embedded credentials and /api/v1 when HEROKU_EXEC_URL is a config var', async () => {
     const put = vi.fn().mockResolvedValue(jsonResponse(creds))
     mockClient({put})
@@ -399,6 +417,22 @@ describe('execStatus', () => {
       {headers: {Authorization: basic('app-1', 'key-123')}, signal: undefined},
     )
     expect(result).toEqual(reservations)
+  })
+
+  it('builds the exec-manager client through ctx.makeClient when threaded, not a bare HerokuApiClient', async () => {
+    const get = vi.fn().mockResolvedValue(jsonResponse([{dyno_name: 'web.1'}]))
+    const fakeClient = {get} as unknown as HerokuApiClient
+    const makeClient = vi.fn(() => fakeClient)
+
+    await execStatus('app-1', {apiKey: 'key-123'}, {makeClient})
+
+    // The custom-host exec-manager client is built via makeClient (inheriting
+    // only identity/cancellation); the bare fallback constructor must not run.
+    expect(makeClient).toHaveBeenCalledWith('platform', {
+      baseUrl: 'https://exec-manager.heroku.com', service: 'custom', token: '',
+    })
+    expect(HerokuApiClient).not.toHaveBeenCalled()
+    expect(get).toHaveBeenCalledWith('/api/v2', expect.anything())
   })
 
   it('throws immediately when the signal is already aborted', async () => {

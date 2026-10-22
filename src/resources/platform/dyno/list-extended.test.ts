@@ -69,6 +69,23 @@ describe('listExtended', () => {
     expect(get).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({signal: controller.signal}))
   })
 
+  it('builds the client through ctx.makeClient when threaded, not a bare HerokuApiClient', async () => {
+    const get = vi.fn().mockResolvedValue(jsonResponse([]))
+    const fakeClient = {get} as unknown as HerokuApiClient
+    const makeClient = vi.fn(() => fakeClient)
+
+    await listExtended('app-1', {}, {makeClient})
+
+    // The SDK path inherits the resolved platform bundle via makeClient; the
+    // bare fallback constructor must not run.
+    expect(makeClient).toHaveBeenCalledWith('platform', expect.objectContaining({service: 'platform'}))
+    expect(HerokuApiClient).not.toHaveBeenCalled()
+    expect(get).toHaveBeenCalledWith(
+      '/apps/app-1/dynos?extended=true',
+      {headers: {Accept: 'application/vnd.heroku+json; version=3.sdk'}, signal: undefined},
+    )
+  })
+
   it('throws immediately when the signal is already aborted', async () => {
     const get = vi.fn()
     mockGet(get)

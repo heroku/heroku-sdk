@@ -123,19 +123,24 @@
   },
   "scripts": {
     "clean": "rimraf dist",
+    "generate:version": "node scripts/write-version.mjs",
+    "prebuild": "npm run generate:version",
     "build": "npm run clean && tsc",
+    "prelint": "npm run generate:version",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "pretest": "npm run generate:version",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=lcovonly",
+    "pretest:types": "npm run generate:version",
     "test:types": "tsc --noEmit -p tsconfig.type-tests.json",
     "prepare": "npm run build",
     "example": "tsx"
   },
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "files": [
     "dist"
@@ -145,16 +150,16 @@
     "@types/debug": "^4.1.12",
     "@types/node": "^26.5.1",
     "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/eslint-plugin": "^1.6.0",
     "eslint": "^9.39.4",
     "eslint-config-oclif": "^6.0.167",
-    "@vitest/eslint-plugin": "^1.6.0",
     "rimraf": "^6.1.3",
     "tsx": "^4.22.4",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },
   "dependencies": {
-    "@heroku/heroku-fetch": "^0.2.0",
+    "@heroku/heroku-fetch": "^0.2.3",
     "@heroku/types": "^5.0.0",
     "debug": "^4.4.0"
   }

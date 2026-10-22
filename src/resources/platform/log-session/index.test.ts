@@ -208,6 +208,26 @@ describe('log-session resource', () => {
       expect(lines).toEqual(['only line'])
     })
 
+    it('opens the logplex stream through ctx.makeClient when threaded, not a bare HerokuApiClient', async () => {
+      const {ctx} = buildCtx(() => ({...SESSION_BASE}))
+      const stream = vi.fn().mockResolvedValue(new Response(streamFromChunks(['only line\n'])))
+      const fakeClient = {stream} as unknown as HerokuApiClient
+      const makeClient = vi.fn(() => fakeClient)
+      ctx.makeClient = makeClient
+
+      const lines = await collect(streamLogs(ctx, 'my-app'))
+
+      // The custom-host logplex client is built via makeClient (inheriting only
+      // identity/cancellation); the bare fallback constructor must not run.
+      expect(makeClient).toHaveBeenCalledWith('platform', {
+        baseUrl: 'https://logs.example.com',
+        service: 'custom',
+        token: '',
+      })
+      expect(HerokuApiClient).not.toHaveBeenCalled()
+      expect(lines).toEqual(['only line'])
+    })
+
     it('recreates the session when tailing and the stream stalls past sessionTimeoutMs', async () => {
       const {create, ctx} = buildCtx(() => ({...SESSION_BASE}))
       const stream = vi.fn()
