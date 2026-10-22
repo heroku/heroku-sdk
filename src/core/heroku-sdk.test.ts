@@ -488,6 +488,77 @@ describe('HerokuSDK', () => {
     expect(repositoriesApiConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({timeout: 6}))
   })
 
+  it('applies a default @heroku/sdk User-Agent to every service client', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {SDK_VERSION} = await import('../version.js')
+    const sdk = new HerokuSDK()
+
+    const clients = [
+      sdk.dashboardBackend,
+      sdk.data,
+      sdk.metrics,
+      sdk.notifications,
+      sdk.platform,
+      sdk.repositories,
+      sdk.repositoriesApi,
+    ]
+    expect(clients).toHaveLength(7)
+    expect(clientConstructorSpy.mock.calls).toHaveLength(7)
+    for (const [options] of clientConstructorSpy.mock.calls) {
+      expect(options).toEqual(expect.objectContaining({
+        userAgent: {name: '@heroku/sdk', version: SDK_VERSION},
+      }))
+    }
+  })
+
+  it('lets a consumer-supplied clientOptions.userAgent override the SDK default', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const sdk = new HerokuSDK({clientOptions: {userAgent: {name: 'heroku-cli', version: '11.4.0'}}})
+
+    const _touch = sdk.platform
+    expect(_touch).toBeDefined()
+    expect(platformConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      userAgent: {name: 'heroku-cli', version: '11.4.0'},
+    }))
+  })
+
+  it('lets a per-service userAgent override win while other services keep the default', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {SDK_VERSION} = await import('../version.js')
+    const sdk = new HerokuSDK({
+      clientOptionsByService: {
+        platform: {userAgent: {name: 'custom-platform', version: '9.9.9'}},
+      },
+    })
+
+    const clients = [sdk.platform, sdk.data]
+    expect(clients).toHaveLength(2)
+
+    expect(platformConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      userAgent: {name: 'custom-platform', version: '9.9.9'},
+    }))
+    expect(dataConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      userAgent: {name: '@heroku/sdk', version: SDK_VERSION},
+    }))
+  })
+
+  it('routes the notifications client through the shared option merge (common + per-service + default UA)', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {SDK_VERSION} = await import('../version.js')
+    const sdk = new HerokuSDK({
+      clientOptions: {token: 'abc'},
+      clientOptionsByService: {notifications: {timeout: 42}},
+    })
+
+    const _touch = sdk.notifications
+    expect(_touch).toBeDefined()
+    expect(notificationsConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      timeout: 42,
+      token: 'abc',
+      userAgent: {name: '@heroku/sdk', version: SDK_VERSION},
+    }))
+  })
+
   it('prevents keyed options from changing each service transport', async () => {
     const {HerokuSDK} = await import('./heroku-sdk.js')
     const sdk = new HerokuSDK({
