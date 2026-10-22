@@ -167,6 +167,26 @@ describe('runDyno', () => {
     )
   })
 
+  it('builds the exec-inside client through ctx.makeClient when threaded, not a bare HerokuApiClient', async () => {
+    const post = vi.fn().mockResolvedValue(jsonResponse(DYNO))
+    const fakeClient = {post} as unknown as HerokuApiClient
+    const makeClient = vi.fn(() => fakeClient)
+    const ctx: ResourceCtx = {...ctxWith(vi.fn()), makeClient}
+
+    const result = await runDyno(ctx, 'app-1', 'bash', {dyno: 'web.1'})
+
+    // The exec-inside path inherits the resolved platform bundle via
+    // makeClient; the bare fallback constructor must not run.
+    expect(makeClient).toHaveBeenCalledWith('platform', expect.objectContaining({service: 'platform'}))
+    expect(HerokuApiClient).not.toHaveBeenCalled()
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      '/apps/app-1/dynos/web.1',
+      {command: 'bash'},
+      {headers: {Accept: 'application/vnd.heroku+json; version=3.sdk'}, signal: undefined},
+    )
+    expect(result).toEqual(DYNO)
+  })
+
   it('forwards clientOptions to the raw HerokuApiClient (exec-inside)', async () => {
     const ctx = ctxWith(vi.fn())
     const post = vi.fn().mockResolvedValue(jsonResponse(DYNO))

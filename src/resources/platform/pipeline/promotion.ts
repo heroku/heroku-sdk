@@ -8,7 +8,7 @@ import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource, makeCtxClient} from '../../../core/extend-resource.js'
+import {extendResource, makeCustomHostClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 import {isAbortError} from '../../../utils/is-abort-error.js'
 import {wait} from '../../../utils/wait.js'
@@ -146,14 +146,10 @@ async function fetchReleaseOutput(
   const parsed = new URL(url)
   const path = `${parsed.pathname}${parsed.search}`
   // The release output URL points at a third-party stream host (e.g. busl).
-  // Use a custom-service client so the platform prefixUrl and bearer token
-  // don't leak across origins, while still inheriting the SDK's identity
-  // (User-Agent) and cancellation signal.
-  const buslClient = makeCtxClient(ctx, 'platform', {
-    baseUrl: parsed.origin,
-    service: 'custom',
-    token: '',
-  })
+  // Use a custom-host client so the platform prefixUrl, bearer token, and
+  // other auth/routing options don't leak across origins, while still
+  // inheriting the SDK's identity (User-Agent) and cancellation signal.
+  const buslClient = makeCustomHostClient(ctx, parsed.origin)
 
   let attempt = 0
   while (true) {

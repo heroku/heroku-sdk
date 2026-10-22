@@ -59,6 +59,27 @@ function partitionByService(extensions: readonly ResourceExtension[]): Map<Servi
   return map
 }
 
+/**
+ * The options a custom-host client (`service: 'custom'`) inherits from the
+ * SDK's resolved bundle: identity and cancellation only. Every
+ * Heroku-credential-domain option — auth (`token`, `reauthorize`, `twoFactor`),
+ * routing (`headers`, `region`, `defaultAccept`), and consumer
+ * `hooks`/`onResponseMetadata` — is intentionally dropped so it never reaches a
+ * third-party origin (logplex, busl, exec-manager): sending the bearer token or
+ * a consumer `Authorization` header cross-origin would leak credentials, and
+ * inheriting `reauthorize` would turn a non-Heroku 401 into a spurious
+ * `heroku login`.
+ */
+function pickCustomHostOptions(options: HerokuApiClientOptions): HerokuApiClientOptions {
+  return {
+    ...(options.debug !== undefined && {debug: options.debug}),
+    ...(options.signal !== undefined && {signal: options.signal}),
+    ...(options.timeout !== undefined && {timeout: options.timeout}),
+    ...(options.userAgent !== undefined && {userAgent: options.userAgent}),
+    ...(options.warn !== undefined && {warn: options.warn}),
+  }
+}
+
 export class HerokuSDK<
   const Exts extends readonly ResourceExtension[] = readonly ResourceExtension[],
 > {
@@ -180,8 +201,14 @@ export class HerokuSDK<
       },
       makeClient: {
         enumerable: true,
-        value: (service: ServiceName, overrides: HerokuApiClientOptions = {}): HerokuApiClient =>
-          new HerokuApiClient({...this.#getClientOptions(service), ...overrides}),
+        value: (inheritFrom: ServiceName, overrides: HerokuApiClientOptions = {}): HerokuApiClient => {
+          const resolved = this.#getClientOptions(inheritFrom)
+          // A custom host is not the Heroku credential domain: start from
+          // identity/cancellation only, never the auth/routing options that
+          // would leak across origins or drive a re-login on a foreign 401.
+          const base = overrides.service === 'custom' ? pickCustomHostOptions(resolved) : resolved
+          return new HerokuApiClient({...base, ...overrides})
+        },
       },
       metrics: {
         enumerable: true,

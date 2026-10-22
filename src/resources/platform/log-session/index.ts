@@ -4,7 +4,7 @@ import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource, makeCtxClient} from '../../../core/extend-resource.js'
+import {extendResource, makeCustomHostClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 import {getGeneration} from '../app/index.js'
 import {parseHerokuLogLine} from './parser.js'
@@ -182,15 +182,12 @@ export async function * streamLogs(
     try {
       // Logplex URLs hit a region-specific stream host (e.g.
       // virginia.sessions.logs.heroku.com). The token is embedded in
-      // the URL, so we use a custom-service client with no auth and
-      // a per-call baseUrl; this also picks up heroku-fetch's
-      // env-var proxy support.
+      // the URL, so we use a custom-host client with no auth and a
+      // per-call baseUrl, inheriting only the SDK's identity and
+      // cancellation; this also picks up heroku-fetch's env-var proxy
+      // support.
       const parsed = new URL(session.logplex_url)
-      const logplexClient = makeCtxClient(ctx, 'platform', {
-        baseUrl: parsed.origin,
-        service: 'custom',
-        token: '',
-      })
+      const logplexClient = makeCustomHostClient(ctx, parsed.origin)
       // Fir's telemetry-proxy sends newline-delimited plain text by
       // default, but concatenates records with zero delimiter bytes —
       // splitting on '\n' yields nothing. Requesting SSE flips the

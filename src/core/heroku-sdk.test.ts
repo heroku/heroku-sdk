@@ -597,6 +597,93 @@ describe('HerokuSDK', () => {
     })
   })
 
+  it('narrows a custom-host makeClient to identity/cancellation, dropping token/reauthorize/headers/hooks/twoFactor', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+
+    const {signal} = new AbortController()
+    const userAgent = {name: 'heroku-cli', version: '11.4.0'}
+    const probe = extendResource('platform', 'app', ctx => ({
+      makeCustomClient: () => ctx.makeClient?.('platform', {
+        baseUrl: 'https://stream.example.com',
+        service: 'custom',
+        token: '',
+      }),
+    }))
+
+    const sdk = new HerokuSDK({
+      clientOptions: {
+        headers: {Authorization: 'Bearer x', 'X-Custom': 'y'},
+        hooks: {beforeRequest: [vi.fn()]},
+        reauthorize: vi.fn(),
+        signal,
+        timeout: 5,
+        token: 'abc',
+        twoFactor: {onChallenge: vi.fn()},
+        userAgent,
+      },
+      extensions: [probe],
+    })
+
+    // Build the managed platform client first, then isolate the makeClient call.
+    const {platform} = sdk
+    expect(platform).toBeDefined()
+    clientConstructorSpy.mockClear();
+    (platform.app as unknown as {makeCustomClient: () => unknown}).makeCustomClient()
+
+    // The headline F1 fix: only identity + cancellation cross to the
+    // third-party origin. An exact match asserts no extra keys slipped in.
+    expect(clientConstructorSpy).toHaveBeenLastCalledWith({
+      baseUrl: 'https://stream.example.com',
+      service: 'custom',
+      signal,
+      timeout: 5,
+      token: '',
+      userAgent,
+    })
+    const options = clientConstructorSpy.mock.lastCall?.[0] as Record<string, unknown>
+    expect(options).not.toHaveProperty('reauthorize')
+    expect(options).not.toHaveProperty('headers')
+    expect(options).not.toHaveProperty('hooks')
+    expect(options).not.toHaveProperty('twoFactor')
+  })
+
+  it('inherits the full resolved bundle for a non-custom makeClient (auth/routing preserved)', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+
+    const reauthorize = vi.fn()
+    const headers = {Authorization: 'Bearer x', 'X-Custom': 'y'}
+    const hooks = {beforeRequest: [vi.fn()]}
+    const twoFactor = {onChallenge: vi.fn()}
+    const probe = extendResource('platform', 'app', ctx => ({
+      makePlatformClient: () => ctx.makeClient?.('platform'),
+    }))
+
+    const sdk = new HerokuSDK({
+      clientOptions: {
+        headers, hooks, reauthorize, timeout: 5, token: 'abc', twoFactor,
+      },
+      extensions: [probe],
+    })
+
+    const {platform} = sdk
+    expect(platform).toBeDefined()
+    clientConstructorSpy.mockClear();
+    (platform.app as unknown as {makePlatformClient: () => unknown}).makePlatformClient()
+
+    // A same-domain client (no service:'custom' override) keeps the Heroku
+    // bundle intact — the allowlist narrowing applies only to custom hosts.
+    expect(clientConstructorSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      headers,
+      hooks,
+      reauthorize,
+      timeout: 5,
+      token: 'abc',
+      twoFactor,
+    }))
+  })
+
   it('prevents keyed options from changing each service transport', async () => {
     const {HerokuSDK} = await import('./heroku-sdk.js')
     const sdk = new HerokuSDK({

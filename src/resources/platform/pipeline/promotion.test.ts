@@ -245,6 +245,55 @@ describe('pipeline-promotion resource', () => {
     expect(result.targets).toEqual(done)
   })
 
+  it('opens the busl stream through ctx.makeClient when threaded, not a bare HerokuApiClient', async () => {
+    const promotion = {id: 'promo-makeclient'} as PipelinePromotion
+    const pendingWithRelease: PipelinePromotionTarget[] = [{
+      app: {id: 'target-app-1'},
+      id: 't1',
+      release: {id: 'release-1'},
+      status: 'pending',
+    }]
+    const done: PipelinePromotionTarget[] = [{
+      app: {id: 'target-app-1'},
+      id: 't1',
+      release: {id: 'release-1'},
+      status: 'succeeded',
+    }]
+    const {ctx} = ctxWithRelease(promotion, [pendingWithRelease, done], {
+      // eslint-disable-next-line camelcase
+      output_stream_url: 'https://busl.example/release?token=abc',
+    })
+
+    const streamBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('Release Command Output'))
+        controller.close()
+      },
+    })
+    const stream = vi.fn().mockResolvedValue(new Response(streamBody, {status: 200}))
+    const fakeClient = {stream} as unknown as HerokuApiClient
+    const makeClient = vi.fn(() => fakeClient)
+    ctx.makeClient = makeClient
+
+    const onReleaseStream = vi.fn(async ({stream: body}: {stream: ReadableStream<Uint8Array>}) => {
+      await body.cancel()
+    })
+
+    const promise = promotePipeline(ctx, singleTargetBody, {intervalMs: 100, onReleaseStream})
+    await vi.advanceTimersByTimeAsync(500)
+    await promise
+
+    // The custom-host busl client is built via makeClient (inheriting only
+    // identity/cancellation); the bare fallback constructor must not run.
+    expect(makeClient).toHaveBeenCalledWith('platform', {
+      baseUrl: 'https://busl.example',
+      service: 'custom',
+      token: '',
+    })
+    expect(HerokuApiClient).not.toHaveBeenCalled()
+    expect(stream).toHaveBeenCalledWith('/release?token=abc', {signal: undefined})
+  })
+
   it('promotePipeline retries the busl fetch up to releaseStreamMaxAttempts before failing', async () => {
     const promotion = {id: 'promo-retry'} as PipelinePromotion
     const pendingWithRelease: PipelinePromotionTarget[] = [{

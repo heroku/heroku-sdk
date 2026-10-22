@@ -1,3 +1,4 @@
+import type {HerokuApiClient} from '@heroku/heroku-fetch'
 import type {Formation} from '@heroku/types/3.sdk'
 
 import {
@@ -118,6 +119,31 @@ describe('dyno resource', () => {
 
     expect((ctx.platform as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
       .toHaveBeenCalledWith({signal: controller.signal})
+  })
+
+  it('threads ctx into exchangeExecCredentials, execStatus, and listExtended via makeClient', async () => {
+    const headers = {'content-type': 'application/json'}
+    // Bodies are intentionally minimal — this test asserts the wiring (that
+    // makeClient is called), not the parsed payloads. A fresh Response per call
+    // avoids reusing an already-read body across the two GETs.
+    const put = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', {headers})))
+    const get = vi.fn().mockImplementation(() => Promise.resolve(new Response('[]', {headers})))
+    const fakeClient = {get, put} as unknown as HerokuApiClient
+    const makeClient = vi.fn(() => fakeClient)
+    const ctx: ResourceCtx = {...platformCtx({dyno: {}, formation: {}}), makeClient}
+    const methods = dynoExtensions.factory(ctx)
+
+    await methods.exchangeExecCredentials('app-1', {apiKey: 'k', dyno: 'web.1', publicKey: 'ssh-rsa X'})
+    await methods.execStatus('app-1', {apiKey: 'k'})
+    await methods.listExtended('app-1')
+
+    // Each standalone helper must receive ctx so its client is built through
+    // makeClient. A dropped ctx arg at the wiring site would silently fall back
+    // to a bare HerokuApiClient and lose the threaded identity/signal.
+    expect(makeClient).toHaveBeenCalledTimes(3)
+    expect(makeClient).toHaveBeenNthCalledWith(1, 'platform', expect.objectContaining({service: 'custom'}))
+    expect(makeClient).toHaveBeenNthCalledWith(2, 'platform', expect.objectContaining({service: 'custom'}))
+    expect(makeClient).toHaveBeenNthCalledWith(3, 'platform', expect.objectContaining({service: 'platform'}))
   })
 
   it('dynoExtensions declares service: platform, resource: dyno', () => {

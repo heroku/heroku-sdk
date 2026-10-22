@@ -8,7 +8,7 @@ import {NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {makeCtxClient} from '../../../core/extend-resource.js'
+import {makeCustomHostClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 import {waitForInfo, type WaitForInfoOptions} from './wait-for-info.js'
@@ -209,6 +209,11 @@ export type ExchangeExecCredentialsOptions = {
  * `Authorization` header survive). The caller feeds the returned info,
  * plus the private key it holds, to its own SSH transport; the SDK does
  * not open the connection.
+ *
+ * @param ctx - Internal: supplied by the SDK's dyno extension to thread the
+ * resolved client identity and cancellation signal into the custom-host
+ * client. Standalone callers omit it, and the client falls back to the
+ * pre-threading bare construction.
  */
 export async function exchangeExecCredentials(
   appIdentity: string,
@@ -254,6 +259,11 @@ export type ExecStatusOptions = {
  * custom-host Basic-auth setup as {@link exchangeExecCredentials}. The
  * caller correlates each reservation's `dyno_name` with live dyno state
  * for display.
+ *
+ * @param ctx - Internal: supplied by the SDK's dyno extension to thread the
+ * resolved client identity and cancellation signal into the custom-host
+ * client. Standalone callers omit it, and the client falls back to the
+ * pre-threading bare construction.
  */
 export async function execStatus(
   appIdentity: string,
@@ -318,12 +328,12 @@ function newExecClient(
   clientOptions: Omit<HerokuApiClientOptions, 'baseUrl' | 'service' | 'token'> | undefined,
   ctx: Pick<ResourceCtx, 'makeClient'> = {},
 ): HerokuApiClient {
-  // exec-manager is a custom host with Basic auth embedded per request, so
-  // force `token: ''`; inherit the SDK's identity (User-Agent) and signal
-  // from the resolved platform options via makeCtxClient.
-  return makeCtxClient(ctx, 'platform', {
-    ...clientOptions, baseUrl, service: 'custom', token: '',
-  })
+  // exec-manager is a custom host with Basic auth embedded per request. The
+  // custom-host client forces `token: ''` and inherits only the SDK's identity
+  // (User-Agent) and signal — never `reauthorize`/headers, so a bad-Basic 401
+  // can't drive a spurious `heroku login`. The caller's `clientOptions` still
+  // apply on top.
+  return makeCustomHostClient(ctx, baseUrl, clientOptions)
 }
 
 function toBasicAuth(username: string, password: string): string {

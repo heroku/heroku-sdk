@@ -56,6 +56,11 @@ export type ListExtendedOptions = {
  *
  * Unlike the routes client, this does not auto-paginate — it issues a
  * single GET, matching the historical CLI behavior.
+ *
+ * @param ctx - Internal: supplied by the SDK's dyno extension to thread the
+ * resolved client identity and cancellation signal into the bare client.
+ * Standalone callers omit it, and the client falls back to the pre-threading
+ * bare construction.
  */
 export async function listExtended(
   appIdentity: string,
