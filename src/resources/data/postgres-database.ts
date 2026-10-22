@@ -21,7 +21,7 @@ export type CredentialInfo = {
   database: string
   host: string
   name: string
-  port: string
+  port: number
   state: string
   uuid: string
 }
@@ -48,9 +48,17 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
 }))
 
 export {
+  type AttachmentFactors, parseAttachmentFactors,
+} from './internal/parse-attachment-factors.js'
+
+export {
   findLegacyDatabase,
   getPostgresServiceName,
+  isAdvancedCredential,
   isAdvancedDatabase,
+  isEssentialDatabase,
+  isEssentialTier,
   isLegacyDatabase,
+  isLegacyEssentialDatabase,
   isPostgresAddon,
 } from './internal/postgres-utils.js'
