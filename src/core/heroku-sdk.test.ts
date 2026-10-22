@@ -559,6 +559,44 @@ describe('HerokuSDK', () => {
     }))
   })
 
+  it('exposes ctx.makeClient that threads resolved options into a custom-host client', async () => {
+    const {HerokuSDK} = await import('./heroku-sdk.js')
+    const {extendResource} = await import('./extend-resource.js')
+    const {SDK_VERSION} = await import('../version.js')
+
+    const {signal} = new AbortController()
+    const probe = extendResource('platform', 'app', ctx => ({
+      makeStreamClient: () => ctx.makeClient?.('platform', {
+        baseUrl: 'https://stream.example.com',
+        service: 'custom',
+        token: '',
+      }),
+    }))
+
+    const sdk = new HerokuSDK({
+      clientOptions: {signal, token: 'abc'},
+      extensions: [probe],
+    })
+
+    // Build the managed platform client first, then isolate the makeClient call.
+    const {platform} = sdk
+    expect(platform).toBeDefined()
+    clientConstructorSpy.mockClear()
+
+    const client = (platform.app as unknown as {makeStreamClient: () => unknown}).makeStreamClient()
+    expect(client).toBeDefined()
+
+    // The custom-host client inherits the SDK identity + signal but overrides
+    // service/baseUrl/token — the exact threading the hot streaming paths need.
+    expect(clientConstructorSpy).toHaveBeenLastCalledWith({
+      baseUrl: 'https://stream.example.com',
+      service: 'custom',
+      signal,
+      token: '',
+      userAgent: {name: '@heroku/sdk', version: SDK_VERSION},
+    })
+  })
+
   it('prevents keyed options from changing each service transport', async () => {
     const {HerokuSDK} = await import('./heroku-sdk.js')
     const sdk = new HerokuSDK({

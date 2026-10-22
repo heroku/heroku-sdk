@@ -1,13 +1,14 @@
 /* eslint-disable camelcase -- exec-manager wire fields follow the platform's snake_case format */
-import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
+import type {HerokuApiClient, HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {
   App, BuildpackInstallation, ConfigVar, Dyno,
 } from '@heroku/types/3.sdk'
 
-import {HerokuApiClient, NotFoundError} from '@heroku/heroku-fetch'
+import {NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {makeCtxClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 import {waitForInfo, type WaitForInfoOptions} from './wait-for-info.js'
@@ -212,11 +213,12 @@ export type ExchangeExecCredentialsOptions = {
 export async function exchangeExecCredentials(
   appIdentity: string,
   options: ExchangeExecCredentialsOptions,
+  ctx: Pick<ResourceCtx, 'makeClient'> = {},
 ): Promise<ExecCredentials> {
   options.signal?.throwIfAborted()
 
   const endpoint = resolveExecEndpoint(appIdentity, options.apiKey, options.configVars)
-  const client = newExecClient(endpoint.baseUrl, options.clientOptions)
+  const client = newExecClient(endpoint.baseUrl, options.clientOptions, ctx)
   const path = `${endpoint.apiPath}/${encodeURIComponent(options.dyno)}`
 
   const response = await client.put(path, {client_key: options.publicKey}, {
@@ -256,11 +258,12 @@ export type ExecStatusOptions = {
 export async function execStatus(
   appIdentity: string,
   options: ExecStatusOptions,
+  ctx: Pick<ResourceCtx, 'makeClient'> = {},
 ): Promise<ExecReservation[]> {
   options.signal?.throwIfAborted()
 
   const endpoint = resolveExecEndpoint(appIdentity, options.apiKey, options.configVars)
-  const client = newExecClient(endpoint.baseUrl, options.clientOptions)
+  const client = newExecClient(endpoint.baseUrl, options.clientOptions, ctx)
 
   const response = await client.get(endpoint.apiPath, {
     headers: {...options.headers, Authorization: endpoint.authorization},
@@ -313,8 +316,12 @@ function resolveExecEndpoint(
 function newExecClient(
   baseUrl: string,
   clientOptions: Omit<HerokuApiClientOptions, 'baseUrl' | 'service' | 'token'> | undefined,
+  ctx: Pick<ResourceCtx, 'makeClient'> = {},
 ): HerokuApiClient {
-  return new HerokuApiClient({
+  // exec-manager is a custom host with Basic auth embedded per request, so
+  // force `token: ''`; inherit the SDK's identity (User-Agent) and signal
+  // from the resolved platform options via makeCtxClient.
+  return makeCtxClient(ctx, 'platform', {
     ...clientOptions, baseUrl, service: 'custom', token: '',
   })
 }

@@ -210,6 +210,35 @@ describe('createClient', () => {
       })
     })
 
+    it('forwards reauthorize:false as RequestOptions on each call', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const scoped = client.withOptions({reauthorize: false})
+
+      await scoped.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {reauthorize: false})
+    })
+
+    it('replaces an earlier reauthorize and preserves an unset one across chained calls', async () => {
+      apiClientInstances.length = 0
+      const client = createClient<any>(fakeRoutes, {token: 'test-token'})
+      const controller = new AbortController()
+      const layered = client
+        .withOptions({reauthorize: false, signal: controller.signal})
+        .withOptions({headers: {Accept: 'b'}})
+
+      await layered.app.list()
+
+      const apiClient = apiClientInstances.at(-1)
+      expect(apiClient.get).toHaveBeenCalledWith('/apps', {
+        headers: {Accept: 'b'},
+        reauthorize: false,
+        signal: controller.signal,
+      })
+    })
+
     it('forwards a body as RequestOptions on a DELETE call', async () => {
       apiClientInstances.length = 0
       const client = createClient<any>(fakeRoutes, {token: 'test-token'})

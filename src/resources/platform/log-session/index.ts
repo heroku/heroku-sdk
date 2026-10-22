@@ -1,11 +1,10 @@
 import type {LogSession, LogSessionCreateOpts} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/heroku-fetch'
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {extendResource} from '../../../core/extend-resource.js'
+import {extendResource, makeCtxClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 import {getGeneration} from '../app/index.js'
 import {parseHerokuLogLine} from './parser.js'
@@ -128,7 +127,7 @@ export type StreamLogsOptions = {
  *   - errors thrown by `logSession.create` (auth, app-not-found, etc.)
  */
 export async function * streamLogs(
-  ctx: Pick<ResourceCtx, 'platform'>,
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>,
   appIdentity: string,
   options: StreamLogsOptions = {},
 ): AsyncGenerator<string, void, unknown> {
@@ -187,7 +186,7 @@ export async function * streamLogs(
       // a per-call baseUrl; this also picks up heroku-fetch's
       // env-var proxy support.
       const parsed = new URL(session.logplex_url)
-      const logplexClient = new HerokuApiClient({
+      const logplexClient = makeCtxClient(ctx, 'platform', {
         baseUrl: parsed.origin,
         service: 'custom',
         token: '',

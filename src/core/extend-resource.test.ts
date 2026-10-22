@@ -1,8 +1,9 @@
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 import {
-  describe, expect, expectTypeOf, it,
+  describe, expect, expectTypeOf, it, vi,
 } from 'vitest'
 
-import {extendResource} from './extend-resource.js'
+import {extendResource, makeCtxClient} from './extend-resource.js'
 
 const descriptorFactory = () => ({foo: () => 'bar'})
 
@@ -30,5 +31,28 @@ describe('extendResource', () => {
     expectTypeOf(ext.service).toEqualTypeOf<'platform'>()
     expectTypeOf(ext.resource).toEqualTypeOf<'app'>()
     expectTypeOf(ext.factory).returns.toEqualTypeOf<{foo: () => 1}>()
+  })
+})
+
+describe('makeCtxClient', () => {
+  it('delegates to ctx.makeClient with the service and overrides when present', () => {
+    const sentinel = {} as HerokuApiClient
+    const makeClient = vi.fn().mockReturnValue(sentinel)
+    const overrides = {baseUrl: 'https://stream.example.com', service: 'custom' as const, token: ''}
+
+    const client = makeCtxClient({makeClient}, 'platform', overrides)
+
+    expect(client).toBe(sentinel)
+    expect(makeClient).toHaveBeenCalledWith('platform', overrides)
+  })
+
+  it('falls back to a bare HerokuApiClient carrying only the overrides when makeClient is absent', () => {
+    const client = makeCtxClient({}, 'platform', {
+      baseUrl: 'https://stream.example.com',
+      service: 'custom',
+      token: '',
+    })
+
+    expect(client).toBeInstanceOf(HerokuApiClient)
   })
 })

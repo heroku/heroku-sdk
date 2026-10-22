@@ -1,5 +1,7 @@
 import type {HerokuApiClientOptions, UserAgentOptions} from '@heroku/heroku-fetch'
 
+import {HerokuApiClient} from '@heroku/heroku-fetch'
+
 import type {DashboardBackendClient} from '../services/dashboard-backend.js'
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
@@ -175,6 +177,11 @@ export class HerokuSDK<
       data: {
         enumerable: true,
         get: () => this.#getRawData(),
+      },
+      makeClient: {
+        enumerable: true,
+        value: (service: ServiceName, overrides: HerokuApiClientOptions = {}): HerokuApiClient =>
+          new HerokuApiClient({...this.#getClientOptions(service), ...overrides}),
       },
       metrics: {
         enumerable: true,

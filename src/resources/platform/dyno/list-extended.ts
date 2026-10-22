@@ -1,7 +1,9 @@
 import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {Dyno} from '@heroku/types/3.sdk'
 
-import {HerokuApiClient} from '@heroku/heroku-fetch'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
+
+import {makeCtxClient} from '../../../core/extend-resource.js'
 
 const ACCEPT_EXTENDED = 'application/vnd.heroku+json; version=3.sdk'
 
@@ -58,10 +60,11 @@ export type ListExtendedOptions = {
 export async function listExtended(
   appIdentity: string,
   options: ListExtendedOptions = {},
+  ctx: Pick<ResourceCtx, 'makeClient'> = {},
 ): Promise<DynoExtended[]> {
   options.signal?.throwIfAborted()
 
-  const apiClient = new HerokuApiClient({
+  const apiClient = makeCtxClient(ctx, 'platform', {
     ...options.clientOptions,
     service: 'platform',
   })

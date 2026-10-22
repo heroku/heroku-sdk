@@ -1,3 +1,7 @@
+import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
+
+import {HerokuApiClient} from '@heroku/heroku-fetch'
+
 import type {DashboardBackendClient} from '../services/dashboard-backend.js'
 import type {DataClient} from '../services/data.js'
 import type {MetricsClient} from '../services/metrics.js'
@@ -17,9 +21,41 @@ type BaseResourceCtx = {
   repositories: RepositoriesClient
 }
 
-export type ResourceCtx = BaseResourceCtx & {
+export type ResourceCtx = {
+  /**
+   * Build a raw {@link HerokuApiClient} that inherits the SDK's resolved
+   * client options for `service` (token, `userAgent`/headers, `signal`,
+   * `timeout`, `warn`, …), with `overrides` applied last.
+   *
+   * For resource code that must talk to a host the routes-generated service
+   * clients don't cover — a custom stream host (logplex, busl, exec-manager)
+   * or a query variant the registry lacks — while still carrying the SDK's
+   * identity and cancellation signal. The returned client is raw (not the
+   * routes proxy), so callers use `get`/`post`/`stream` directly.
+   *
+   * Optional for compatibility with existing extension contexts; prefer
+   * {@link makeCtxClient} at call sites so a context predating this stays
+   * on the pre-threading behavior.
+   */
+  makeClient?: (service: ServiceName, overrides?: HerokuApiClientOptions) => HerokuApiClient
   /** Available to SDK-provided extensions; optional for compatibility with existing extension contexts. */
   repositoriesApi?: RepositoriesApiClient
+} & BaseResourceCtx
+
+/**
+ * Build a raw {@link HerokuApiClient} from a resource context, inheriting the
+ * SDK's resolved client options for `service` (identity, `signal`, `warn`,
+ * token, …) with `overrides` applied last. Falls back to a bare client
+ * carrying only `overrides` when the context predates {@link ResourceCtx.makeClient}
+ * (e.g. a hand-built test ctx, or a standalone call with no SDK behind it),
+ * preserving the pre-threading behavior exactly.
+ */
+export function makeCtxClient(
+  ctx: Pick<ResourceCtx, 'makeClient'>,
+  service: ServiceName,
+  overrides: HerokuApiClientOptions = {},
+): HerokuApiClient {
+  return ctx.makeClient ? ctx.makeClient(service, overrides) : new HerokuApiClient(overrides)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
