@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.11.2...sdk-v0.12.0) (2026-10-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* default @heroku/sdk User-Agent + thread resolved options into bare client sites (requires Node >=22) ([#165](https://github.com/heroku/heroku-sdk/issues/165))
+
+### Features
+
+* default @heroku/sdk User-Agent + thread resolved options into bare client sites (requires Node &gt;=22) ([#165](https://github.com/heroku/heroku-sdk/issues/165)) ([aa2f97a](https://github.com/heroku/heroku-sdk/commit/aa2f97a7a432fbcda3926530abb861610c81ff1e))
+
 ## [0.11.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.11.1...sdk-v0.11.2) (2026-10-21)
 
 
