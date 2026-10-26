@@ -229,7 +229,7 @@ describe('database credential rotate', () => {
     expect(beforeRotate.mock.invocationCallOrder[0]).toBeLessThan(rotateCredential.mock.invocationCallOrder[0])
   })
 
-  it('aborts before rotating when beforeRotate throws', async () => {
+  it('throws before rotating when beforeRotate throws', async () => {
     const rotateCredential = vi.fn().mockResolvedValue({})
     const ctx = buildCtx({
       listCredentials: vi.fn().mockResolvedValue([{name: 'default'}]),
@@ -239,6 +239,21 @@ describe('database credential rotate', () => {
     const beforeRotate = vi.fn().mockRejectedValue(new Error('declined'))
 
     await expect(rotate(ctx, 'postgres-curved-12345', {credName: 'default'}, {beforeRotate})).rejects.toThrow('declined')
+    expect(rotateCredential).not.toHaveBeenCalled()
+  })
+
+  it('throws after beforeRotate if the signal is aborted', async () => {
+    const rotateCredential = vi.fn().mockResolvedValue({})
+    const controller = new AbortController()
+    const ctx = buildCtx({
+      listCredentials: vi.fn().mockResolvedValue([{name: 'default'}]),
+      resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:standard-0'})]),
+      rotateCredential,
+    })
+    const beforeRotate = vi.fn(() => controller.abort())
+
+    await expect(rotate(ctx, 'postgres-curved-12345', {credName: 'default'}, {beforeRotate, signal: controller.signal}))
+      .rejects.toThrow()
     expect(rotateCredential).not.toHaveBeenCalled()
   })
 })

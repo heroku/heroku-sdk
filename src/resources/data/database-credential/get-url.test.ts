@@ -94,7 +94,7 @@ describe('database credential getUrl', () => {
     expect(credentialConnectionInfo.credName).toEqual('reporting')
   })
 
-  it('throws when no credential on the Advanced tier is active', async () => {
+  it('throws when the resolved credential is not active', async () => {
     const ctx = buildCtx({
       postgresCredentialInfo: vi.fn().mockResolvedValue({
         database: 'db', host: 'host.example.com', port: 5432, roles: [],
@@ -105,6 +105,19 @@ describe('database credential getUrl', () => {
 
     await expect(getUrl(ctx, 'postgres-curved-12345'))
       .rejects.toThrow('The credential owner-cred isn\'t active on the database pg-addon.')
+  })
+
+  it('throws when no active credentials are found on the Advanced tier', async () => {
+    const postgresCredentialInfo = vi.fn()
+    const ctx = buildCtx({
+      postgresCredentialInfo,
+      postgresCredentialList: vi.fn().mockResolvedValue({items: [{name: 'reporting', type: 'additional'}]}),
+      resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:advanced-0'})]),
+    })
+
+    await expect(getUrl(ctx, 'postgres-curved-12345'))
+      .rejects.toThrow('There are no active credentials on the database pg-addon.')
+    expect(postgresCredentialInfo).not.toHaveBeenCalled()
   })
 
   it('defaults to the default credential on the classic tier', async () => {

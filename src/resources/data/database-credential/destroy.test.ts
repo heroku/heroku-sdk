@@ -171,6 +171,22 @@ describe('database credential destroy', () => {
     expect(deleteCredential).not.toHaveBeenCalled()
   })
 
+  it('pluralizes the error message when the credential is attached to multiple apps', async () => {
+    const deleteCredential = vi.fn()
+    const ctx = buildCtx({
+      deleteCredential,
+      listByAddOn: vi.fn().mockResolvedValue([
+        buildAttachment({namespace: 'credential:reporting'}),
+        {app: {id: 'app-3-uuid', name: 'third-app'}, namespace: 'credential:reporting'},
+      ]),
+      resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:standard-0'})]),
+    })
+
+    await expect(destroy(ctx, 'postgres-curved-12345', 'reporting'))
+      .rejects.toThrow('You must detach the credential reporting from the apps other-app, third-app before destroying it.')
+    expect(deleteCredential).not.toHaveBeenCalled()
+  })
+
   it('scopes resolution by appIdentity when given', async () => {
     const resolution = vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:standard-0'})])
     const ctx = buildCtx({
