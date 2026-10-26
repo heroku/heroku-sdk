@@ -120,6 +120,18 @@ describe('database credential getUrl', () => {
     expect(postgresCredentialInfo).not.toHaveBeenCalled()
   })
 
+  it('throws when the resolved credential is not active on the classic tier', async () => {
+    const ctx = buildCtx({
+      infoCredential: vi.fn().mockResolvedValue({
+        credentials: [], database: 'db', host: 'host.example.com', port: 5432,
+      }),
+      resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:standard-0'})]),
+    })
+
+    await expect(getUrl(ctx, 'postgres-curved-12345'))
+      .rejects.toThrow('The credential default isn\'t active on the database pg-addon.')
+  })
+
   it('defaults to the default credential on the classic tier', async () => {
     const addonMock = buildAddon({planName: 'heroku-postgresql:standard-0'})
     const infoCredential = vi.fn().mockResolvedValue({

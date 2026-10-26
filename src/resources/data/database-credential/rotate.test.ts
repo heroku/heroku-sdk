@@ -100,6 +100,34 @@ describe('database credential rotate', () => {
     expect(rotateCredentials).toHaveBeenCalledWith('addon-1', {forced: undefined})
   })
 
+  it('rotates the owner credential by default on the Advanced tier when no credName is given', async () => {
+    const postgresCredentialRotate = vi.fn()
+    const ctx = buildCtx({
+      postgresCredentialList: vi.fn().mockResolvedValue({
+        items: [{name: 'owner', type: 'owner'}, {name: 'reporting', type: 'additional'}],
+      }),
+      postgresCredentialRotate,
+      resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:advanced-0'})]),
+    })
+
+    await rotate(ctx, 'postgres-curved-12345')
+
+    expect(postgresCredentialRotate).toHaveBeenCalledWith('addon-1', 'owner', {forced: undefined})
+  })
+
+  it('rotates the default credential on an Essential-tier database when no credName is given', async () => {
+    const rotateCredential = vi.fn().mockResolvedValue({message: 'rotated'})
+    const ctx = buildCtx({
+      listCredentials: vi.fn().mockResolvedValue([{name: 'default'}]),
+      resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:essential-0'})]),
+      rotateCredential,
+    })
+
+    await rotate(ctx, 'postgres-curved-12345')
+
+    expect(rotateCredential).toHaveBeenCalledWith('addon-1', 'default', {forced: undefined})
+  })
+
   it('rotates a specific Advanced-tier credential via postgresCredential.rotate', async () => {
     const postgresCredentialRotate = vi.fn()
     const ctx = buildCtx({
@@ -142,6 +170,18 @@ describe('database credential rotate', () => {
 
     await expect(rotate(ctx, 'postgres-curved-12345')).rejects.toThrow('There are no credentials on the database pg-addon.')
     expect(rotateCredential).not.toHaveBeenCalled()
+  })
+
+  it('throws when there are no credentials on an Advanced-tier database', async () => {
+    const postgresCredentialRotate = vi.fn()
+    const ctx = buildCtx({
+      postgresCredentialList: vi.fn().mockResolvedValue({items: []}),
+      postgresCredentialRotate,
+      resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:advanced-0'})]),
+    })
+
+    await expect(rotate(ctx, 'postgres-curved-12345')).rejects.toThrow('There are no credentials on the database pg-addon.')
+    expect(postgresCredentialRotate).not.toHaveBeenCalled()
   })
 
   it('throws when rotating a named credential on a legacy Essential-tier database', async () => {
