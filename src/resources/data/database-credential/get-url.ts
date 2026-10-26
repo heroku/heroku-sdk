@@ -12,6 +12,7 @@ import {
 import {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database.js'
 
 export type CredentialConnectionInfo = {
+  credName: string
   database: string
   host: string
   password: string
@@ -81,6 +82,7 @@ export async function getUrl(
   }
 
   const credInfo = {
+    credName: name,
     database: info.database,
     host: info.host,
     password: activeCred.password,

@@ -65,6 +65,7 @@ describe('database credential getUrl', () => {
     expect(postgresCredentialList).toHaveBeenCalledWith('addon-1')
     expect(postgresCredentialInfo).toHaveBeenCalledWith('addon-1', 'owner-cred')
     expect(credentialConnectionInfo).toEqual({
+      credName: 'owner-cred',
       database: 'db',
       host: 'host.example.com',
       password: 'secret',
@@ -86,10 +87,11 @@ describe('database credential getUrl', () => {
       resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:advanced-0'})]),
     })
 
-    await getUrl(ctx, 'postgres-curved-12345', 'reporting')
+    const {credentialConnectionInfo} = await getUrl(ctx, 'postgres-curved-12345', 'reporting')
 
     expect(postgresCredentialList).not.toHaveBeenCalled()
     expect(postgresCredentialInfo).toHaveBeenCalledWith('addon-1', 'reporting')
+    expect(credentialConnectionInfo.credName).toEqual('reporting')
   })
 
   it('throws when no credential on the Advanced tier is active', async () => {
@@ -119,6 +121,7 @@ describe('database credential getUrl', () => {
 
     expect(infoCredential).toHaveBeenCalledWith('addon-1', 'default')
     expect(credentialConnectionInfo).toEqual({
+      credName: 'default',
       database: 'db',
       host: 'host.example.com',
       password: 'secret',
