@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.0...sdk-v0.12.1) (2026-10-27)
+
+
+### Features
+
+* add database credential extensions ([#167](https://github.com/heroku/heroku-sdk/issues/167)) ([38cf0eb](https://github.com/heroku/heroku-sdk/commit/38cf0eb74faa5b4d0a3d3bf7db5ba02d486e5f61))
+
+
+### Dependencies
+
+* bump undici from 8.11.2 to 8.12.3 ([#168](https://github.com/heroku/heroku-sdk/issues/168)) ([acae189](https://github.com/heroku/heroku-sdk/commit/acae1897c7c7c44009a16259bc72764742d3f6ea))
+
 ## [0.12.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.11.2...sdk-v0.12.0) (2026-10-23)
 
 
