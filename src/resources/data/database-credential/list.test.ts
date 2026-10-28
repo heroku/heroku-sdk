@@ -4,7 +4,8 @@ import {
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {list, NotAdvancedDatabaseError} from './list.js'
+import {NotAdvancedDatabaseError} from '../internal/postgres-utils.js'
+import {list} from './list.js'
 
 function buildCtx(opts: {
   postgresCredentialList?: ReturnType<typeof vi.fn>

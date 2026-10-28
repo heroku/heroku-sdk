@@ -17,7 +17,7 @@ import {
   isEssentialTier,
   isLegacyDatabase,
   isLegacyEssentialDatabase,
-  isPostgresAddonInternal,
+  isPostgresAddon,
 } from './postgres-utils.js'
 
 function buildCtx(listByApp: ReturnType<typeof vi.fn>): Pick<ResourceCtx, 'platform'> {
@@ -46,7 +46,7 @@ function classify(planName?: string) {
     essentialTier: isEssentialTier(candidate),
     legacy: isLegacyDatabase(candidate),
     legacyEssential: isLegacyEssentialDatabase(candidate),
-    postgres: isPostgresAddonInternal(candidate),
+    postgres: isPostgresAddon(candidate),
   }
 }
 

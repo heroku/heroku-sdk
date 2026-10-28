@@ -8,7 +8,7 @@ import type {AddOnAttachmentWithInclusions, ResolveAddonAttachmentOptions, Resol
 
 import {withSignal} from '../../../core/with-signal.js'
 import {AddonAttachmentAmbiguousError, AddonAttachmentNotFoundError, resolveAddonAttachment} from '../../platform/add-on-attachment/resolve.js'
-import {getPostgresServiceName, isPostgresAddonInternal} from './postgres-utils.js'
+import {getPostgresServiceName, isPostgresAddon} from './postgres-utils.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 
@@ -243,7 +243,7 @@ async function listPostgresAttachments(
     throw new PgDatabaseNotFoundError(`Could not resolve ${stripUrlSuffix(attachmentId)} on ${appIdentity}`, {cause: error})
   }
 
-  return attachments.filter(attachment => isPostgresAddonInternal(attachment.addon))
+  return attachments.filter(attachment => isPostgresAddon(attachment.addon))
 }
 
 /**
