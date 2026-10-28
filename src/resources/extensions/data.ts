@@ -2,6 +2,7 @@ export {databaseCredentialExtensions} from '../data/database-credential/index.js
 export {databaseExtensions} from '../data/database.js'
 export {maintenanceExtensions} from '../data/maintenance.js'
 export {postgresDatabaseExtensions} from '../data/postgres-database.js'
+export {postgresQuotaExtensions} from '../data/postgres-quota.js'
 export {redisExtensions} from '../data/redis/index.js'
 export {type TransferSchedule, transferScheduleExtensions} from '../data/transfer-schedule.js'
 export {
