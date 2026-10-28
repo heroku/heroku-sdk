@@ -4,7 +4,7 @@ import {PostgresCredentialInfoResult as AdvancedCredentialInfo} from '@heroku/ty
 import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {AddOnAttachmentWithInclusions} from '../../platform/add-on-attachment/resolve.js'
+import type {ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
 import {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database.js'
 
@@ -33,19 +33,14 @@ export function isAdvancedCredential(credential: AdvancedCredentialInfo | NonAdv
 export const getPostgresServiceName = () =>
   process.env.HEROKU_POSTGRESQL_ADDON_NAME || process.env.HEROKU_DATA_SERVICE || 'heroku-postgresql'
 
-/**
- * `AddOnAttachmentWithInclusions` is an internal type. The public `isPostgresAddon` takes `AddOn` only.
- */
-export const isPostgresAddonInternal = (addon: AddOn | AddOnAttachmentWithInclusions['addon']) =>
+export const isPostgresAddon = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
   addon.plan?.name?.split(':', 2)[0] === getPostgresServiceName()
 
-export const isPostgresAddon = (addon: AddOn) => isPostgresAddonInternal(addon)
-
-export const isAdvancedDatabase = (addon: AddOn) =>
-  isPostgresAddonInternal(addon) && /^(advanced|performance)/.test(addon.plan?.name?.split(':', 2)[1] ?? '')
+export const isAdvancedDatabase = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
+  isPostgresAddon(addon) && /^(advanced|performance)/.test(addon.plan?.name?.split(':', 2)[1] ?? '')
 
 export const isLegacyDatabase = (addon: AddOn) =>
-  isPostgresAddonInternal(addon) && !isAdvancedDatabase(addon)
+  isPostgresAddon(addon) && !isAdvancedDatabase(addon)
 
 export const isLegacyEssentialDatabase = (addon: AddOn) =>
   isLegacyDatabase(addon) && /^(dev|basic|mini)/.test(addon.plan?.name?.split(':', 2)[1] ?? '')
