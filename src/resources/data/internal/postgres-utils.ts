@@ -11,6 +11,23 @@ import {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database.
 const debug = createDebug('heroku:sdk:resources:postgres-database')
 
 /**
+ * Thrown when an add-on is not an Advanced-tier database. Carries the add-on
+ * so callers that need its identity don't need a second resolve call.
+ */
+export class NotAdvancedDatabaseError extends Error {
+  public readonly id = 'not_advanced_database'
+
+  constructor(public readonly addon: AddOn | ResolvedAddOnAttachment['addon'], message: string) {
+    super(message)
+    this.name = 'NotAdvancedDatabaseError'
+  }
+
+  public get body() {
+    return {id: this.id, message: this.message}
+  }
+}
+
+/**
  * Returns the first legacy database add-on on the app.
  */
 export async function findLegacyDatabase(

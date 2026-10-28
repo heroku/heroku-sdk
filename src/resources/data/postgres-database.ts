@@ -61,4 +61,5 @@ export {
   isLegacyDatabase,
   isLegacyEssentialDatabase,
   isPostgresAddon,
+  NotAdvancedDatabaseError,
 } from './internal/postgres-utils.js'
