@@ -1,17 +1,23 @@
+import {HerokuApiError} from '@heroku/heroku-fetch'
 import {
   describe, expect, it, vi,
 } from 'vitest'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
+import {AddonConfirmationRequiredError, AddonNotFoundError} from '../platform/add-on/errors.js'
 import {getPostgresServiceName, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
-import {deleteAttachment, listCredentials, postgresDatabaseExtensions} from './postgres-database.js'
+import {
+  createAttachment, deleteAttachment, listCredentials, postgresDatabaseExtensions,
+} from './postgres-database.js'
 
 function buildCtx(opts: {
   addonResolution?: ReturnType<typeof vi.fn>
+  createAttachment?: ReturnType<typeof vi.fn>
   deleteAttachment?: ReturnType<typeof vi.fn>
   infoByApp?: ReturnType<typeof vi.fn>
   list?: ReturnType<typeof vi.fn>
+  releaseList?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
 } = {}): Pick<ResourceCtx, 'data' | 'platform'> {
   const data: Record<string, unknown> = {
@@ -25,10 +31,12 @@ function buildCtx(opts: {
     platform: {
       addOn: {resolution: opts.addonResolution ?? vi.fn()},
       addOnAttachment: {
+        create: opts.createAttachment ?? vi.fn(),
         delete: opts.deleteAttachment ?? vi.fn(),
         infoByApp: opts.infoByApp ?? vi.fn(),
         resolution: opts.resolutionByAttachment ?? vi.fn(),
       },
+      release: {list: opts.releaseList ?? vi.fn().mockResolvedValue([{version: 1}])},
       withHeaders() {
         return this
       },
@@ -207,6 +215,108 @@ describe('postgres-database resource', () => {
 
       await expect(deleteAttachment(ctx, 'app-1', 'DATABASE', {beforeDelete, signal: controller.signal})).rejects.toThrow()
       expect(deleteAttachmentMock).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('createAttachment', () => {
+    it('resolves the source database scoped to the target app, creates the attachment, and reports the latest release', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addonResolution = vi.fn().mockResolvedValue([addonMock])
+      const createAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
+      const releaseList = vi.fn().mockResolvedValue([{version: 42}])
+      const ctx = buildCtx({addonResolution, createAttachment: createAttachmentMock, releaseList})
+
+      const {addon, attachment, releaseVersion} = await createAttachment(ctx, 'target-app', 'pg-addon', {
+        confirm: 'target-app',
+        name: 'DATABASE',
+        // eslint-disable-next-line camelcase
+        namespace_config: {pool: 'default'},
+      })
+
+      expect(addonResolution).toHaveBeenCalledWith({addon: 'pg-addon', app: 'target-app'})
+      expect(createAttachmentMock).toHaveBeenCalledWith({
+        addon: 'pg-addon',
+        app: 'target-app',
+        confirm: 'target-app',
+        name: 'DATABASE',
+        // eslint-disable-next-line camelcase
+        namespace_config: {pool: 'default'},
+      })
+      expect(addon).toEqual(addonMock)
+      expect(attachment).toEqual({id: 'attachment-1', name: 'DATABASE'})
+      expect(releaseVersion).toBe(42)
+    })
+
+    it('retries unscoped when the scoped-to-app resolve finds no match', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addonResolution = vi.fn()
+        .mockRejectedValueOnce(new AddonNotFoundError())
+        .mockResolvedValueOnce([addonMock])
+      const createAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
+      const releaseList = vi.fn().mockResolvedValue([{version: 1}])
+      const ctx = buildCtx({addonResolution, createAttachment: createAttachmentMock, releaseList})
+
+      const {addon} = await createAttachment(ctx, 'target-app', 'other-app-addon')
+
+      expect(addonResolution).toHaveBeenNthCalledWith(1, {addon: 'other-app-addon', app: 'target-app'})
+      expect(addonResolution).toHaveBeenNthCalledWith(2, {addon: 'other-app-addon'})
+      expect(addon).toEqual(addonMock)
+    })
+
+    it('throws NotAdvancedDatabaseError for classic-tier databases without creating the attachment', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:standard-0'})
+      const addonResolution = vi.fn().mockResolvedValue([addonMock])
+      const createAttachmentMock = vi.fn()
+      const ctx = buildCtx({addonResolution, createAttachment: createAttachmentMock})
+
+      const error = await createAttachment(ctx, 'target-app', 'pg-addon').catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(NotAdvancedDatabaseError)
+      expect((error as NotAdvancedDatabaseError).addon).toEqual(addonMock)
+      expect(createAttachmentMock).not.toHaveBeenCalled()
+    })
+
+    it('converts a 423 confirmation_required platform error into AddonConfirmationRequiredError', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addonResolution = vi.fn().mockResolvedValue([addonMock])
+      const createAttachmentMock = vi.fn().mockRejectedValue(new HerokuApiError('confirmation required', 423, new Response(null, {status: 423}), {
+        id: 'confirmation_required',
+        message: 'Please confirm by typing the application name.',
+      }))
+      const ctx = buildCtx({addonResolution, createAttachment: createAttachmentMock})
+
+      const error = await createAttachment(ctx, 'target-app', 'pg-addon').catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(AddonConfirmationRequiredError)
+      expect((error as AddonConfirmationRequiredError).platformMessage).toBe('Please confirm by typing the application name.')
+    })
+
+    it('throws if signal is aborted', async () => {
+      const ctx = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(createAttachment(ctx, 'target-app', 'pg-addon', {}, {signal: controller.signal})).rejects.toThrow()
+    })
+
+    it('runs onAttached with the created attachment before fetching the release', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addonResolution = vi.fn().mockResolvedValue([addonMock])
+      const createAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
+      const calls: string[] = []
+      const releaseList = vi.fn(async () => {
+        calls.push('releaseList')
+        return [{version: 7}]
+      })
+      const ctx = buildCtx({addonResolution, createAttachment: createAttachmentMock, releaseList})
+      const onAttached = vi.fn((attachment: {name: string}) => {
+        calls.push(`onAttached:${attachment.name}`)
+      })
+
+      await createAttachment(ctx, 'target-app', 'pg-addon', {}, {onAttached})
+
+      expect(onAttached).toHaveBeenCalledWith({id: 'attachment-1', name: 'DATABASE'})
+      expect(calls).toEqual(['onAttached:DATABASE', 'releaseList'])
     })
   })
 })
