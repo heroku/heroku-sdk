@@ -25,13 +25,23 @@ function buildCtx({favorites = []}: {favorites?: FavoriteListResult} = {}) {
     favorite: {create, delete: remove, list},
     withOptions: vi.fn(),
   }
-  dashboardBackend.withOptions.mockReturnValue(dashboardBackend)
+  const scopedList = vi.fn().mockResolvedValue(favorites)
+  const scopedCreate = vi.fn()
+  const scopedRemove = vi.fn().mockResolvedValue()
+  const scopedDashboardBackend = {
+    favorite: {create: scopedCreate, delete: scopedRemove, list: scopedList},
+    withOptions: vi.fn(),
+  }
+  dashboardBackend.withOptions.mockReturnValue(scopedDashboardBackend)
 
   return {
     create,
     ctx: {dashboardBackend} as unknown as ResourceCtx,
     delete: remove,
     list,
+    scopedCreate,
+    scopedDelete: scopedRemove,
+    scopedList,
     withOptions: dashboardBackend.withOptions,
   }
 }
@@ -90,10 +100,10 @@ describe('dashboard-backend favorite extensions', () => {
     })
 
     it('propagates a native AbortError from an in-flight create request', async () => {
-      const {create, ctx} = buildCtx()
+      const {ctx, scopedCreate} = buildCtx()
       const controller = new AbortController()
       const abortError = new DOMException('The operation was aborted', 'AbortError')
-      create.mockImplementation(async () => {
+      scopedCreate.mockImplementation(async () => {
         controller.abort(new Error('custom cancellation'))
         throw abortError
       })
@@ -106,10 +116,10 @@ describe('dashboard-backend favorite extensions', () => {
     })
 
     it('propagates a custom abort reason rejected by the create request', async () => {
-      const {create, ctx} = buildCtx()
+      const {ctx, scopedCreate} = buildCtx()
       const controller = new AbortController()
       const reason = new Error('custom cancellation')
-      create.mockImplementation(async () => {
+      scopedCreate.mockImplementation(async () => {
         controller.abort(reason)
         throw reason
       })
@@ -118,10 +128,10 @@ describe('dashboard-backend favorite extensions', () => {
     })
 
     it('wraps a create failure when a separate custom abort reason races it', async () => {
-      const {create, ctx} = buildCtx()
+      const {ctx, scopedCreate} = buildCtx()
       const controller = new AbortController()
       const cause = new Error('service unavailable')
-      create.mockImplementation(async () => {
+      scopedCreate.mockImplementation(async () => {
         controller.abort(new Error('separate cancellation'))
         throw cause
       })
@@ -207,14 +217,36 @@ describe('dashboard-backend favorite extensions', () => {
   })
 
   describe('cancellation', () => {
-    it('binds the signal to list and create requests', async () => {
-      const {create, ctx, withOptions} = buildCtx()
+    it('uses the signal-scoped client for list and create requests', async () => {
+      const {
+        create, ctx, list, scopedCreate, scopedList, withOptions,
+      } = buildCtx()
       const controller = new AbortController()
-      create.mockResolvedValue()
+      const created = {id: 'favorite-1', resource_id: 'example-app', type: 'app'}
+      scopedCreate.mockResolvedValue(created)
 
-      await addByAppName(ctx, 'example-app', {signal: controller.signal})
+      await expect(addByAppName(ctx, 'example-app', {signal: controller.signal})).resolves.toEqual(created)
 
       expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+      expect(scopedList).toHaveBeenCalledExactlyOnceWith({type: 'app'})
+      expect(scopedCreate).toHaveBeenCalledExactlyOnceWith({resource_id: 'example-app', type: 'app'})
+      expect(list).not.toHaveBeenCalled()
+      expect(create).not.toHaveBeenCalled()
+    })
+
+    it('uses the signal-scoped client for list and delete requests', async () => {
+      const {
+        ctx, delete: deleteFavorite, list, scopedDelete, scopedList, withOptions,
+      } = buildCtx({favorites: [favorite('favorite-1', 'example-app')]})
+      const controller = new AbortController()
+
+      await removeByAppName(ctx, 'example-app', {signal: controller.signal})
+
+      expect(withOptions).toHaveBeenCalledWith({signal: controller.signal})
+      expect(scopedList).toHaveBeenCalledExactlyOnceWith({type: 'app'})
+      expect(scopedDelete).toHaveBeenCalledExactlyOnceWith('favorite-1')
+      expect(list).not.toHaveBeenCalled()
+      expect(deleteFavorite).not.toHaveBeenCalled()
     })
 
     it('checks abort before starting a request', async () => {
@@ -228,27 +260,27 @@ describe('dashboard-backend favorite extensions', () => {
     })
 
     it('checks abort between list and create', async () => {
-      const {create, ctx, list} = buildCtx()
+      const {ctx, scopedCreate, scopedList} = buildCtx()
       const controller = new AbortController()
-      list.mockImplementation(async () => {
+      scopedList.mockImplementation(async () => {
         controller.abort()
         return []
       })
 
       await expect(addByAppName(ctx, 'example-app', {signal: controller.signal})).rejects.toMatchObject({name: 'AbortError'})
-      expect(create).not.toHaveBeenCalled()
+      expect(scopedCreate).not.toHaveBeenCalled()
     })
 
     it('checks abort between list and delete', async () => {
-      const {ctx, delete: deleteFavorite, list} = buildCtx({favorites: [favorite('favorite-1', 'example-app')]})
+      const {ctx, scopedDelete, scopedList} = buildCtx({favorites: [favorite('favorite-1', 'example-app')]})
       const controller = new AbortController()
-      list.mockImplementation(async () => {
+      scopedList.mockImplementation(async () => {
         controller.abort()
         return [favorite('favorite-1', 'example-app')]
       })
 
       await expect(removeByAppName(ctx, 'example-app', {signal: controller.signal})).rejects.toMatchObject({name: 'AbortError'})
-      expect(deleteFavorite).not.toHaveBeenCalled()
+      expect(scopedDelete).not.toHaveBeenCalled()
     })
   })
 

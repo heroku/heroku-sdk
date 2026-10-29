@@ -15,27 +15,31 @@ function buildCtx({
   deleteCollaborator = vi.fn().mockResolvedValue({id: 'deleted-collaborator'} as Collaborator),
   delinquencyInfo = vi.fn().mockResolvedValue(null),
 } = {}) {
-  const scopedPlatform = {
-    account: {info: accountInfo},
-    accountDelinquency: {info: delinquencyInfo},
-    collaborator: {delete: deleteCollaborator},
+  const createScopedPlatform = () => ({
+    account: {info: vi.fn(() => accountInfo())},
+    accountDelinquency: {info: vi.fn(() => delinquencyInfo())},
+    collaborator: {delete: vi.fn((...args: Parameters<typeof deleteCollaborator>) => deleteCollaborator(...args))},
     withOptions: vi.fn(),
-  }
+  })
+  const scopedPlatforms: ReturnType<typeof createScopedPlatform>[] = []
   const basePlatform = {
-    account: {info: vi.fn()},
-    accountDelinquency: {info: vi.fn()},
-    collaborator: {delete: vi.fn()},
-    withOptions: vi.fn().mockReturnValue(scopedPlatform),
+    account: {info: vi.fn(() => accountInfo())},
+    accountDelinquency: {info: vi.fn(() => delinquencyInfo())},
+    collaborator: {delete: vi.fn((...args: Parameters<typeof deleteCollaborator>) => deleteCollaborator(...args))},
+    withOptions: vi.fn(() => {
+      const scopedPlatform = createScopedPlatform()
+      scopedPlatforms.push(scopedPlatform)
+      return scopedPlatform
+    }),
   }
-  scopedPlatform.withOptions.mockReturnValue(scopedPlatform)
 
   return {
     accountInfo,
     basePlatform,
-    ctx: {platform: scopedPlatform as never} as ResourceCtx,
+    ctx: {platform: basePlatform as never} as ResourceCtx,
     deleteCollaborator,
     delinquencyInfo,
-    scopedPlatform,
+    scopedPlatforms,
   }
 }
 
@@ -134,10 +138,24 @@ describe('removeSelf', () => {
       await Promise.resolve()
       calls.push('beforeRemove:done')
     })
-    const {ctx} = buildCtx({accountInfo, deleteCollaborator, delinquencyInfo})
+    const controller = new AbortController()
+    const {
+      basePlatform, ctx, scopedPlatforms,
+    } = buildCtx({accountInfo, deleteCollaborator, delinquencyInfo})
 
-    await removeSelf(ctx, 'team-app', {beforeRemove})
+    await removeSelf(ctx, 'team-app', {beforeRemove, signal: controller.signal})
 
+    expect(basePlatform.withOptions).toHaveBeenCalledTimes(2)
+    expect(basePlatform.withOptions).toHaveBeenNthCalledWith(1, {signal: controller.signal})
+    expect(basePlatform.withOptions).toHaveBeenNthCalledWith(2, {signal: controller.signal})
+    expect(scopedPlatforms).toHaveLength(2)
+    expect(scopedPlatforms[0]).not.toBe(scopedPlatforms[1])
+    expect(scopedPlatforms[0].account.info).toHaveBeenCalledExactlyOnceWith()
+    expect(scopedPlatforms[0].accountDelinquency.info).toHaveBeenCalledExactlyOnceWith()
+    expect(scopedPlatforms[1].collaborator.delete).toHaveBeenCalledExactlyOnceWith('team-app', account.email)
+    expect(basePlatform.account.info).not.toHaveBeenCalled()
+    expect(basePlatform.accountDelinquency.info).not.toHaveBeenCalled()
+    expect(basePlatform.collaborator.delete).not.toHaveBeenCalled()
     expect(accountInfo).toHaveBeenCalledExactlyOnceWith()
     expect(delinquencyInfo).toHaveBeenCalledExactlyOnceWith()
     expect(beforeRemove).toHaveBeenCalledExactlyOnceWith({account, delinquency})
@@ -236,19 +254,22 @@ describe('removeSelf', () => {
     const account = {email: 'member@example.com'} as Account
     const accountInfo = vi.fn().mockResolvedValue(account)
     const deleteCollaborator = vi.fn().mockResolvedValue({id: 'deleted'} as Collaborator)
-    const {basePlatform, ctx: scopedCtx, deleteCollaborator: actualDelete, scopedPlatform} = buildCtx({accountInfo, deleteCollaborator})
-    const ctx = {platform: basePlatform as never} as ResourceCtx
+    const {basePlatform, ctx, deleteCollaborator: actualDelete, scopedPlatforms} = buildCtx({accountInfo, deleteCollaborator})
 
     await removeSelf(ctx, 'team-app', {signal: controller.signal})
 
-    expect(basePlatform.withOptions).toHaveBeenCalledWith({signal: controller.signal})
+    expect(basePlatform.withOptions).toHaveBeenCalledTimes(2)
+    expect(basePlatform.withOptions).toHaveBeenNthCalledWith(1, {signal: controller.signal})
+    expect(basePlatform.withOptions).toHaveBeenNthCalledWith(2, {signal: controller.signal})
+    expect(scopedPlatforms).toHaveLength(2)
+    expect(scopedPlatforms[0]).not.toBe(scopedPlatforms[1])
+    expect(scopedPlatforms[0].account.info).toHaveBeenCalledExactlyOnceWith()
+    expect(scopedPlatforms[1].collaborator.delete).toHaveBeenCalledExactlyOnceWith('team-app', account.email)
     expect(accountInfo).toHaveBeenCalledExactlyOnceWith()
     expect(actualDelete).toHaveBeenCalledExactlyOnceWith('team-app', account.email)
     expect(basePlatform.account.info).not.toHaveBeenCalled()
     expect(basePlatform.collaborator.delete).not.toHaveBeenCalled()
-    expect(scopedPlatform.account.info).toBe(accountInfo)
-    expect(scopedPlatform.collaborator.delete).toBe(actualDelete)
-    expect(scopedCtx.platform).toBe(scopedPlatform)
+    expect(ctx.platform).toBe(basePlatform)
   })
 })
 /* eslint-enable camelcase */

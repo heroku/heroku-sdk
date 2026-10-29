@@ -14,6 +14,16 @@ function hasCallerRangeHeader(requestOptions?: RequestOptions): boolean {
   return Object.keys(requestOptions.headers).some(k => k.toLowerCase() === 'range')
 }
 
+function redactEmailPathSegments(path: string): string {
+  return path.split('/').map(segment => {
+    try {
+      return decodeURIComponent(segment).includes('@') ? '[REDACTED]' : segment
+    } catch {
+      return segment
+    }
+  }).join('/')
+}
+
 export async function dispatch(
   client: HerokuApiClient,
   route: RouteDefinition,
@@ -26,6 +36,7 @@ export async function dispatch(
   const remaining = args.slice(placeholderCount)
 
   const path = interpolatePath(route.path, pathParams)
+  const debugPath = redactEmailPathSegments(path)
 
   let body: unknown
   if (route.hasRequestBody && remaining.length > 0) {
@@ -48,7 +59,7 @@ export async function dispatch(
     }
   }
 
-  debug('%s %s %s -> %s hasBody=%s', invocation ?? 'dispatch', route.method, route.path, path, body !== undefined)
+  debug('%s %s %s -> %s hasBody=%s', invocation ?? 'dispatch', route.method, route.path, debugPath, body !== undefined)
 
   const response = await callMethod(client, route.method, path, body, effectiveOptions)
 
@@ -134,7 +145,7 @@ function callMethod(
     }
 
     default: {
-      debug('unsupported HTTP method=%s path=%s', method, path)
+      debug('unsupported HTTP method=%s path=%s', method, redactEmailPathSegments(path))
       throw new Error(`Unsupported HTTP method: ${method}`)
     }
   }
