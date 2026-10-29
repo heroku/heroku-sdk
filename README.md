@@ -133,6 +133,7 @@ const favorites = await dashboardBackend.favorite.list({ type: 'app' })
 | `createRepositoriesClient`, `RepositoriesClient` | `@heroku/sdk/repositories` |
 | `createRepositoriesApiClient`, `RepositoriesApiClient` | `@heroku/sdk/repositories-api` |
 | `appExtensions`, `dynoExtensions`, …     | `@heroku/sdk/extensions/platform` |
+| `favoriteExtensions`, `addByAppName`, `removeByAppName`, favorite errors and types | `@heroku/sdk/extensions/dashboard-backend` |
 | `databaseExtensions`, …                  | `@heroku/sdk/extensions/data`     |
 
 ## Development

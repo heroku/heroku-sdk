@@ -2,6 +2,11 @@ export {accountExtensions, type AccountWithDelinquency, type GetAccountWithDelin
 export {addOnAttachmentExtensions} from '../platform/add-on-attachment/index.js'
 export {addOnExtensions} from '../platform/add-on/index.js'
 export {
+  appCollaboratorExtensions,
+  type BeforeRemove,
+  type RemoveSelfOptions,
+} from '../platform/app-collaborator/index.js'
+export {
   appExtensions, type AppInfo, type DiffAppsOptions, type DiffRow, type PipelineCouplingDetail,
 } from '../platform/app/index.js'
 export {
@@ -78,6 +83,7 @@ export {
   waitForAllocated,
   type WaitForAllocatedOptions,
 } from '../platform/space/index.js'
+export {type JoinSelfOptions, teamAppExtensions} from '../platform/team-app/index.js'
 export {type GetTeamWithDelinquencyOptions, teamExtensions, type TeamWithDelinquency} from '../platform/team.js'
 export {telemetryDrainExtensions, type TelemetryDrainOptions, type TelemetryDrainTarget} from '../platform/telemetry-drain/index.js'
 export {
