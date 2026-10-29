@@ -42,6 +42,10 @@
       "types": "./dist/resources/extensions/platform.d.ts",
       "default": "./dist/resources/extensions/platform.js"
     },
+    "./extensions/dashboard-backend": {
+      "types": "./dist/resources/extensions/dashboard-backend.d.ts",
+      "default": "./dist/resources/extensions/dashboard-backend.js"
+    },
     "./extensions/data": {
       "types": "./dist/resources/extensions/data.d.ts",
       "default": "./dist/resources/extensions/data.js"

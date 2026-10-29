@@ -1,9 +1,19 @@
 import {readdir} from 'node:fs/promises'
 import {dirname, join} from 'node:path'
 import {fileURLToPath} from 'node:url'
-import {describe, expect, it} from 'vitest'
+import {
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+} from 'vitest'
 
 import type {ResourceExtension} from '../../core/extend-resource.js'
+import type {
+  BeforeRemove,
+  JoinSelfOptions,
+  RemoveSelfOptions,
+} from './platform.js'
 
 import * as barrel from './platform.js'
 
@@ -69,5 +79,14 @@ describe('platform extensions barrel', () => {
       if (!name.endsWith('Extensions')) continue
       expect((value as ResourceExtension).service, `${name} should target platform`).toBe('platform')
     }
+  })
+
+  it('exports membership option types', () => {
+    expectTypeOf<JoinSelfOptions>().toEqualTypeOf<{signal?: AbortSignal}>()
+    expectTypeOf<BeforeRemove>().toBeFunction()
+    expectTypeOf<RemoveSelfOptions>().toEqualTypeOf<{
+      beforeRemove?: BeforeRemove
+      signal?: AbortSignal
+    }>()
   })
 })

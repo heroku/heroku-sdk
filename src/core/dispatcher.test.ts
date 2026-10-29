@@ -1,6 +1,8 @@
 /* eslint-disable camelcase */
 import type {RouteDefinition} from '@heroku/types/types'
 
+import createDebug from 'debug'
+import {format} from 'node:util'
 import {
   describe, expect, it, vi,
 } from 'vitest'
@@ -81,6 +83,29 @@ describe('dispatch', () => {
 
     await dispatch(client as any, route, ['my-app'])
     expect(client.delete).toHaveBeenCalledWith('/apps/my-app')
+  })
+
+  it('redacts email path segments from dispatcher debug output without changing the request path', async () => {
+    const client = mockClient()
+    const route: RouteDefinition = {method: 'DELETE', path: '/apps/{appIdentity}/collaborators/{collaboratorIdentity}'}
+    const output: string[] = []
+    const previousDebug = createDebug.disable()
+    const previousLog = createDebug.log
+
+    try {
+      createDebug.enable('heroku:sdk:dispatcher')
+      createDebug.log = (...args) => output.push(format(...args))
+
+      await dispatch(client as any, route, ['team-app', 'member+tag@example.com'], 'collaborator.delete')
+
+      expect(client.delete).toHaveBeenCalledWith('/apps/team-app/collaborators/member%2Btag%40example.com')
+      expect(output.join('\n')).toContain('[REDACTED]')
+      expect(output.join('\n')).not.toContain('member+tag@example.com')
+      expect(output.join('\n')).not.toContain('member%2Btag%40example.com')
+    } finally {
+      createDebug.log = previousLog
+      createDebug.enable(previousDebug)
+    }
   })
 
   it('interpolates multiple path params positionally', async () => {
