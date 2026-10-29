@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.1...sdk-v0.12.2) (2026-10-29)
+
+
+### Features
+
+* add team membership and app favorite extensions ([#172](https://github.com/heroku/heroku-sdk/issues/172)) ([bb4ee2f](https://github.com/heroku/heroku-sdk/commit/bb4ee2f7280f8e27286f140e2f01b17c7f715798))
+
 ## [0.12.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.0...sdk-v0.12.1) (2026-10-27)
 
 
