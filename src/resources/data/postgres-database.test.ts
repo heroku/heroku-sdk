@@ -8,7 +8,7 @@ import type {ResourceCtx} from '../../core/extend-resource.js'
 import {AddonConfirmationRequiredError} from '../platform/add-on/errors.js'
 import {getPostgresServiceName, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {
-  createAttachment, deleteAttachment, destroy, listCredentials, postgresDatabaseExtensions,
+  createAttachment, deleteAttachment, destroy, listAttachments, listCredentials, postgresDatabaseExtensions,
 } from './postgres-database.js'
 
 function buildCtx(opts: {
@@ -16,13 +16,16 @@ function buildCtx(opts: {
   addOnInfoByApp?: ReturnType<typeof vi.fn>
   addonResolution?: ReturnType<typeof vi.fn>
   createAttachment?: ReturnType<typeof vi.fn>
+  credentialList?: ReturnType<typeof vi.fn>
   deleteAttachment?: ReturnType<typeof vi.fn>
   infoByApp?: ReturnType<typeof vi.fn>
   list?: ReturnType<typeof vi.fn>
+  listByAddOn?: ReturnType<typeof vi.fn>
   releaseList?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
 } = {}): Pick<ResourceCtx, 'data' | 'platform'> {
   const data: Record<string, unknown> = {
+    postgresCredential: {list: opts.credentialList ?? vi.fn().mockResolvedValue({items: []})},
     postgresDatabase: {listCredentials: opts.list ?? vi.fn()},
   }
   // Self-referential so a `.withOptions({signal})` chain resolves back to data.
@@ -40,6 +43,7 @@ function buildCtx(opts: {
         create: opts.createAttachment ?? vi.fn(),
         delete: opts.deleteAttachment ?? vi.fn(),
         infoByApp: opts.infoByApp ?? vi.fn(),
+        listByAddOn: opts.listByAddOn ?? vi.fn().mockResolvedValue([]),
         resolution: opts.resolutionByAttachment ?? vi.fn(),
       },
       release: {list: opts.releaseList ?? vi.fn().mockResolvedValue([{version: 1}])},
@@ -135,13 +139,45 @@ describe('postgres-database resource', () => {
       const deleteAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
       const ctx = buildCtx({addonResolution, deleteAttachment: deleteAttachmentMock, infoByApp})
 
-      const {addon, attachment} = await deleteAttachment(ctx, 'app-1', 'DATABASE')
+      const {
+        addon, attachment, releaseVersion,
+      } = await deleteAttachment(ctx, 'app-1', 'DATABASE')
 
       expect(infoByApp).toHaveBeenCalledWith('app-1', 'DATABASE')
       expect(addonResolution).toHaveBeenCalledWith({addon: 'pg-addon'})
       expect(deleteAttachmentMock).toHaveBeenCalledWith('attachment-1')
       expect(addon).toEqual(addonMock)
       expect(attachment).toEqual({id: 'attachment-1', name: 'DATABASE'})
+      expect(releaseVersion).toBe(1)
+    })
+
+    it('runs onDetached with the deleted attachment before fetching the release', async () => {
+      const attachmentMock = buildAttachment({addonId: 'addon-1', addonName: 'pg-addon'})
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const calls: string[] = []
+      const deleteAttachmentMock = vi.fn(async () => {
+        calls.push('delete')
+        return {id: 'attachment-1', name: 'DATABASE'}
+      })
+      const releaseList = vi.fn(async () => {
+        calls.push('releaseList')
+        return [{version: 9}]
+      })
+      const ctx = buildCtx({
+        addonResolution: vi.fn().mockResolvedValue([addonMock]),
+        deleteAttachment: deleteAttachmentMock,
+        infoByApp: vi.fn().mockResolvedValue(attachmentMock),
+        releaseList,
+      })
+      const onDetached = vi.fn((attachment: {name: string}) => {
+        calls.push(`onDetached:${attachment.name}`)
+      })
+
+      const {releaseVersion} = await deleteAttachment(ctx, 'app-1', 'DATABASE', {onDetached})
+
+      expect(onDetached).toHaveBeenCalledWith({id: 'attachment-1', name: 'DATABASE'})
+      expect(calls).toEqual(['delete', 'onDetached:DATABASE', 'releaseList'])
+      expect(releaseVersion).toBe(9)
     })
 
     it('throws NotAdvancedDatabaseError with the resolved database for classic-tier databases', async () => {
@@ -221,6 +257,51 @@ describe('postgres-database resource', () => {
 
       await expect(deleteAttachment(ctx, 'app-1', 'DATABASE', {beforeDelete, signal: controller.signal})).rejects.toThrow()
       expect(deleteAttachmentMock).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('listAttachments', () => {
+    it('resolves the database scoped to the app and fans out credentials + attachments', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addonResolution = vi.fn().mockResolvedValue([addonMock])
+      const credentialList = vi.fn().mockResolvedValue({items: [{name: 'default', type: 'owner'}]})
+      const listByAddOn = vi.fn().mockResolvedValue([{id: 'attachment-1', name: 'DATABASE'}])
+      const ctx = buildCtx({addonResolution, credentialList, listByAddOn})
+
+      const {addon, attachments, credentials} = await listAttachments(ctx, 'pg-addon', {appIdentity: 'app-1'})
+
+      expect(addonResolution).toHaveBeenCalledWith({addon: 'pg-addon', app: 'app-1'})
+      expect(credentialList).toHaveBeenCalledWith('addon-1')
+      expect(listByAddOn).toHaveBeenCalledWith('addon-1')
+      expect(addon).toEqual(addonMock)
+      expect(attachments).toEqual([{id: 'attachment-1', name: 'DATABASE'}])
+      expect(credentials).toEqual([{name: 'default', type: 'owner'}])
+    })
+
+    it('throws NotAdvancedDatabaseError for classic-tier databases without fanning out', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:standard-0'})
+      const credentialList = vi.fn()
+      const listByAddOn = vi.fn()
+      const ctx = buildCtx({
+        addonResolution: vi.fn().mockResolvedValue([addonMock]),
+        credentialList,
+        listByAddOn,
+      })
+
+      const error = await listAttachments(ctx, 'pg-addon', {appIdentity: 'app-1'}).catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(NotAdvancedDatabaseError)
+      expect((error as NotAdvancedDatabaseError).addon).toEqual(addonMock)
+      expect(credentialList).not.toHaveBeenCalled()
+      expect(listByAddOn).not.toHaveBeenCalled()
+    })
+
+    it('throws if signal is aborted', async () => {
+      const ctx = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(listAttachments(ctx, 'pg-addon', {signal: controller.signal})).rejects.toThrow()
     })
   })
 

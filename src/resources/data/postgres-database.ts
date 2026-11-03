@@ -1,4 +1,5 @@
 import type {AddOn, AddOnAttachment, AddOnAttachmentCreateOpts} from '@heroku/types/3.sdk'
+import type {PostgresCredentialListResult} from '@heroku/types/data'
 
 import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 
@@ -19,12 +20,27 @@ export type ListCredentialsOptions = {
 
 export type DeleteAttachmentOptions = {
   beforeDelete?: (preview: {addon: ResolvedAddOn; attachment: AddOnAttachment}) => Promise<void> | void
+  onDetached?: (attachment: AddOnAttachment) => Promise<void> | void
   signal?: AbortSignal
 }
 
 export type DeleteAttachmentResult = {
   addon: ResolvedAddOn
   attachment: AddOnAttachment
+  releaseVersion?: number
+}
+
+export type PostgresCredential = PostgresCredentialListResult['items'][number]
+
+export type ListAttachmentsOptions = {
+  appIdentity?: string
+  signal?: AbortSignal
+}
+
+export type ListAttachmentsResult = {
+  addon: ResolvedAddOn
+  attachments: AddOnAttachment[]
+  credentials: PostgresCredential[]
 }
 
 export type CreateAttachmentBody = Omit<AddOnAttachmentCreateOpts, 'addon' | 'app'>
@@ -99,7 +115,10 @@ export async function listCredentials(
  * attachment's database isn't an Advanced-tier database.
  *
  * If provided, `beforeDelete` runs after resolution/tier-checking but before
- * the delete request fires. An abort during the hook prevents the delete.
+ * the delete request fires (an abort during the hook prevents the delete), and
+ * `onDetached` runs once the attachment is deleted but before the release
+ * version fetch. The returned `releaseVersion` is the latest release created by
+ * unsetting the attachment's config vars.
  */
 export async function deleteAttachment(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -107,10 +126,10 @@ export async function deleteAttachment(
   attachmentName: string,
   options: DeleteAttachmentOptions = {},
 ): Promise<DeleteAttachmentResult> {
-  const {beforeDelete, signal} = options
+  const {beforeDelete, onDetached, signal} = options
   signal?.throwIfAborted()
 
-  // Bind the signal so the lookup and delete requests abort in flight.
+  // Bind the signal so the lookup, delete, and release-list requests abort in flight.
   const platform = withSignal(ctx.platform, signal)
   const attachment = await platform.addOnAttachment.infoByApp(appIdentity, attachmentName)
   const addon = await resolveAddonInternal(platform, attachment.addon.name, {addonService: getPostgresServiceName()})
@@ -124,7 +143,47 @@ export async function deleteAttachment(
 
   const deletedAttachment = await platform.addOnAttachment.delete(attachment.id)
 
-  return {addon, attachment: deletedAttachment}
+  await onDetached?.(deletedAttachment)
+  signal?.throwIfAborted()
+
+  const releases = await platform
+    .withHeaders({Range: 'version ..; max=1, order=desc'})
+    .release.list(appIdentity)
+
+  return {addon, attachment: deletedAttachment, releaseVersion: releases[0]?.version}
+}
+
+/**
+ * Resolves a Postgres database by add-on identity and lists its attachments
+ * alongside its credentials, fanning the two requests out in parallel.
+ *
+ * Resolution is scoped by `appIdentity` when given. Throws
+ * `NotAdvancedDatabaseError` (carrying the resolved add-on) if the database
+ * isn't an Advanced-tier database.
+ */
+export async function listAttachments(
+  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
+  addonIdentity: string,
+  options: ListAttachmentsOptions = {},
+): Promise<ListAttachmentsResult> {
+  const {appIdentity, signal} = options
+  signal?.throwIfAborted()
+
+  // Bind the signal so the resolve and fan-out requests abort in flight.
+  const platform = withSignal(ctx.platform, signal)
+  const data = withSignal(ctx.data, signal)
+  const addon = await resolveAddonInternal(platform, addonIdentity, {addonService: getPostgresServiceName(), appIdentity})
+
+  if (!isAdvancedDatabase(addon)) {
+    throw new NotAdvancedDatabaseError(addon, `You can only list attachments on Advanced-tier databases with postgresDatabase.listAttachments(). ${addon.name} isn't an Advanced-tier database.`)
+  }
+
+  const [{items: credentials}, attachments] = await Promise.all([
+    data.postgresCredential.list(addon.id),
+    platform.addOnAttachment.listByAddOn(addon.id),
+  ])
+
+  return {addon, attachments, credentials}
 }
 
 /**
@@ -244,6 +303,10 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
     addonIdentity: string,
     options?: DestroyOptions,
   ) => destroy(ctx, addonIdentity, options),
+  listAttachments: (
+    addonIdentity: string,
+    options?: ListAttachmentsOptions,
+  ) => listAttachments(ctx, addonIdentity, options),
   listCredentials: (
     appIdentity: string,
     addonIdentity?: string,
