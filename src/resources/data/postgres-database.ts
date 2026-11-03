@@ -1,13 +1,13 @@
 import type {AddOnAttachment, AddOnAttachmentCreateOpts} from '@heroku/types/3.sdk'
 
-import {HerokuApiError} from '@heroku/heroku-fetch'
+import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 import type {ResolvedAddOn} from '../platform/add-on/types.js'
 
 import {extendResource} from '../../core/extend-resource.js'
 import {withSignal} from '../../core/with-signal.js'
-import {AddonConfirmationRequiredError, AddonNotFoundError} from '../platform/add-on/errors.js'
+import {AddonConfirmationRequiredError} from '../platform/add-on/errors.js'
 import {resolveAddonInternal} from '../platform/add-on/resolve.js'
 import {getPostgresServiceName, isAdvancedDatabase, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
@@ -136,7 +136,7 @@ export async function createAttachment(
   try {
     addon = await resolveAddonInternal(platform, addonIdentity, {addonService: getPostgresServiceName(), appIdentity})
   } catch (error) {
-    if (!(error instanceof AddonNotFoundError)) {
+    if (!(error instanceof NotFoundError)) {
       throw error
     }
 

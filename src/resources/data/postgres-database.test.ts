@@ -1,11 +1,11 @@
-import {HerokuApiError} from '@heroku/heroku-fetch'
+import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 import {
   describe, expect, it, vi,
 } from 'vitest'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import {AddonConfirmationRequiredError, AddonNotFoundError} from '../platform/add-on/errors.js'
+import {AddonConfirmationRequiredError} from '../platform/add-on/errors.js'
 import {getPostgresServiceName, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {
   createAttachment, deleteAttachment, listCredentials, postgresDatabaseExtensions,
@@ -250,7 +250,7 @@ describe('postgres-database resource', () => {
     it('retries unscoped when the scoped-to-app resolve finds no match', async () => {
       const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
       const addonResolution = vi.fn()
-        .mockRejectedValueOnce(new AddonNotFoundError())
+        .mockRejectedValueOnce(new NotFoundError(new Response(null, {status: 404}), {id: 'addon-not-found', message: 'addon not found'}))
         .mockResolvedValueOnce([addonMock])
       const createAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
       const releaseList = vi.fn().mockResolvedValue([{version: 1}])
