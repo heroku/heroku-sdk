@@ -5,27 +5,8 @@ import type {ResolvedAddOn} from '../../platform/add-on/types.js'
 
 import {withSignal} from '../../../core/with-signal.js'
 import {resolveAddonInternal} from '../../platform/add-on/resolve.js'
-import {getPostgresServiceName, isAdvancedDatabase} from '../internal/postgres-utils.js'
+import {getPostgresServiceName, isAdvancedDatabase, NotAdvancedDatabaseError} from '../internal/postgres-utils.js'
 import {DatabaseCredentialOptions} from './index.js'
-
-/**
- * Thrown by `list` when the resolved add-on is not an Advanced-tier
- * database. Carries the resolved addon so callers that need its identity
- * (e.g. to point the user at the classic-tier equivalent) don't need a
- * second resolve call.
- */
-export class NotAdvancedDatabaseError extends Error {
-  public readonly id = 'not_advanced_database'
-
-  constructor(public readonly addon: ResolvedAddOn) {
-    super(`You can only list credentials on Advanced-tier databases. ${addon.name} isn't an Advanced-tier database.`)
-    this.name = 'NotAdvancedDatabaseError'
-  }
-
-  public get body() {
-    return {id: this.id, message: this.message}
-  }
-}
 
 export type ListDatabaseCredentialsResult = {
   addon: ResolvedAddOn
@@ -54,7 +35,7 @@ export async function list(
   })
 
   if (!isAdvancedDatabase(addon)) {
-    throw new NotAdvancedDatabaseError(addon)
+    throw new NotAdvancedDatabaseError(addon, `You can only list credentials on Advanced-tier databases. ${addon.name} isn't an Advanced-tier database.`)
   }
 
   const data = withSignal(ctx.data, signal)

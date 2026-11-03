@@ -1,6 +1,6 @@
 import type {
+  PostgresCredentialInfoResult as AdvancedCredentialInfo,
   PostgresDatabaseInfoCredentialResult as NonAdvancedCredentialInfo,
-  PostgresCredentialListResult,
   PostgresDatabaseRotateCredentialResult,
   PostgresDatabaseRotateCredentialsResult,
   PostgresRotateCredentialsResult,
@@ -17,8 +17,6 @@ import {resolveAddonInternal} from '../../platform/add-on/resolve.js'
 import {
   getPostgresServiceName, isAdvancedDatabase, isEssentialDatabase, isLegacyEssentialDatabase,
 } from '../internal/postgres-utils.js'
-
-type AdvancedCredentialInfo = PostgresCredentialListResult['items'][number]
 
 export type RotateDatabaseCredentialOptions = DatabaseCredentialOptions & {
   /**

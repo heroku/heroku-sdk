@@ -24,7 +24,6 @@ export {destroy, type DestroyDatabaseCredentialResult} from './destroy.js'
 export {
   type GetDatabaseCredentialUrlResult, getUrl,
 } from './get-url.js'
-export {NotAdvancedDatabaseError} from './list.js'
 export {list, type ListDatabaseCredentialsResult} from './list.js'
 export {
   rotate,
