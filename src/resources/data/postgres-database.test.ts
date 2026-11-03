@@ -512,6 +512,67 @@ describe('postgres-database resource', () => {
       expect(error).toBeInstanceOf(AddonNotFoundError)
     })
 
+    it('treats an app UUID matching the resolved app as the same app, not a mismatch', async () => {
+      // `appIdentity` may be an app UUID; the unscoped retry finds the database
+      // on the app whose UUID was passed, so it is NOT a mismatch — the original
+      // not-found propagates rather than a spurious AddonAppMismatchError echoing
+      // the raw UUID.
+      const elsewhere = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'}) // app.id === 'app-uuid'
+      const addonResolution = vi.fn()
+        .mockRejectedValueOnce(new AddonNotFoundError())
+        .mockResolvedValueOnce([elsewhere])
+      const ctx = buildCtx({addonResolution})
+
+      const error = await destroy(ctx, 'pg-addon', {appIdentity: 'app-uuid'}).catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(AddonNotFoundError)
+      expect(error).not.toBeInstanceOf(AddonAppMismatchError)
+    })
+
+    it('skips the mismatch probe for `::`-qualified identities', async () => {
+      // A `::`-qualified identity names its app inline, so resolveAddonInternal
+      // ignores appIdentity and the unscoped retry would repeat the same failing
+      // request — the not-found propagates without a second resolve.
+      const addonResolution = vi.fn().mockRejectedValueOnce(new AddonNotFoundError())
+      const ctx = buildCtx({addonResolution})
+
+      const error = await destroy(ctx, 'other-app::DATABASE', {appIdentity: 'app-2'}).catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(AddonNotFoundError)
+      expect(addonResolution).toHaveBeenCalledTimes(1)
+    })
+
+    it('rethrows an abort raised during the mismatch probe instead of masking it as not-found', async () => {
+      const controller = new AbortController()
+      const abortDuringRetry = vi.fn()
+        .mockRejectedValueOnce(new AddonNotFoundError())
+        .mockImplementationOnce(() => {
+          controller.abort()
+          return Promise.reject(new Error('aborted retry'))
+        })
+      const ctx = buildCtx({addonResolution: abortDuringRetry})
+
+      const error = await destroy(ctx, 'pg-addon', {appIdentity: 'app-2', signal: controller.signal})
+        .catch((error_: unknown) => error_)
+
+      expect((error as Error).message).toBe('aborted retry')
+      expect(error).not.toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('converts a platform confirmation_required during the delete into AddonConfirmationRequiredError', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addOnDelete = vi.fn().mockRejectedValue(new HerokuApiError('confirmation required', 423, new Response(null, {status: 423}), {
+        id: 'confirmation_required',
+        message: 'Please confirm by typing the application name.',
+      }))
+      const ctx = buildCtx({addOnDelete, addonResolution: vi.fn().mockResolvedValue([addonMock])})
+
+      const error = await destroy(ctx, 'pg-addon', {appIdentity: 'app-1'}).catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(AddonConfirmationRequiredError)
+      expect(error).not.toBeInstanceOf(AddonDestroyFailedError)
+    })
+
     it('wraps a delete-request failure in AddonDestroyFailedError carrying the resolved addon', async () => {
       const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
       const cause = {body: {message: 'boom'}}

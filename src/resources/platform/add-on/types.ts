@@ -34,9 +34,12 @@ export type DescribedAddOn = ResolvedAddOn & {
  * `@heroku/types` models only the terminal states. Methods that surface an
  * in-flight delete response (e.g. `destroyAndWait` returning before the poll)
  * return this so callers can branch on `deprovisioning` without casting `state`.
+ *
+ * Stopgap: once `@heroku/types`' `AddOn['state']` includes `deprovisioning`,
+ * this type collapses to `AddOn` and should be deleted.
  */
 export type DeprovisioningAddOn = Omit<AddOn, 'state'> & {
-  state?: 'deprovisioning' | AddOn['state']
+  state: 'deprovisioning' | AddOn['state']
 }
 
 export type UpgradeAddOnOptions = ResolveAddonOptions & {
@@ -58,7 +61,7 @@ export type DestroyAndWaitOptions = {
    * Only invoked when `wait: true` and the delete response state is
    * `deprovisioning`.
    */
-  onDeprovisioning?: (addon: AddOn) => Promise<void> | void
+  onDeprovisioning?: (addon: DeprovisioningAddOn) => Promise<void> | void
   /**
    * If true, poll until the add-on leaves `deprovisioning`. If the
    * terminal state is not `deprovisioned`, throws `AddonProvisioningFailedError`.

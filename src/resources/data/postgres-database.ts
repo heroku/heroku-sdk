@@ -1,4 +1,4 @@
-import type {AddOn, AddOnAttachment, AddOnAttachmentCreateOpts} from '@heroku/types/3.sdk'
+import type {AddOnAttachment, AddOnAttachmentCreateOpts} from '@heroku/types/3.sdk'
 import type {PostgresCredentialListResult} from '@heroku/types/data'
 
 import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
@@ -67,7 +67,7 @@ export type DestroyOptions = {
    */
   beforeDestroy?: (preview: {addon: ResolvedAddOn}) => Promise<void> | void
   force?: boolean
-  onDeprovisioning?: (addon: AddOn) => Promise<void> | void
+  onDeprovisioning?: (addon: DeprovisioningAddOn) => Promise<void> | void
   signal?: AbortSignal
   wait?: boolean
   waitIntervalMs?: number
@@ -298,18 +298,27 @@ export async function destroy(
   } catch (error) {
     // When scoped resolution misses, check whether the database exists under a
     // different app so we can surface a targeted mismatch error instead of a
-    // bare not-found.
-    if (appIdentity && error instanceof AddonNotFoundError) {
+    // bare not-found. Skip the probe for `::`-qualified identities: those name
+    // their app inline, so `resolveAddonInternal` ignores `appIdentity` and the
+    // unscoped retry would just repeat the same failing request.
+    if (appIdentity && !addonIdentity.includes('::') && error instanceof AddonNotFoundError) {
       let elsewhere: ResolvedAddOn | undefined
       try {
         elsewhere = await resolveAddonInternal(platform, addonIdentity, {
           addonService: getPostgresServiceName(),
         })
-      } catch {
-        // No match under any app either; fall through to the original error.
+      } catch (retryError) {
+        // Preserve aborts; an ambiguous/other failure here can't produce a
+        // clean mismatch message, so fall through to the original not-found.
+        if (signal?.aborted) {
+          throw retryError
+        }
       }
 
-      if (elsewhere && elsewhere.app.name !== appIdentity) {
+      // `appIdentity` may be an app name or UUID; compare against both so a
+      // UUID-scoped caller isn't always flagged as a mismatch (and doesn't get
+      // a raw UUID echoed back in the error message).
+      if (elsewhere && elsewhere.app.id !== appIdentity && elsewhere.app.name !== appIdentity) {
         throw new AddonAppMismatchError(elsewhere, appIdentity)
       }
     }
@@ -332,6 +341,14 @@ export async function destroy(
   } catch (error) {
     if (signal?.aborted) {
       throw error
+    }
+
+    // A platform `confirmation_required` (e.g. destroying a database attached
+    // to other apps without `force`) is a distinct, recoverable condition —
+    // surface it as the typed error so callers can prompt and retry, matching
+    // `createAttachment`, rather than collapsing it into a generic failure.
+    if (error instanceof HerokuApiError && error.id === 'confirmation_required') {
+      throw new AddonConfirmationRequiredError(error.message)
     }
 
     throw new AddonDestroyFailedError(addon, error)
@@ -366,7 +383,7 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
 }))
 
 export {
-  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
+  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError, AddonNotFoundError,
 } from '../platform/add-on/errors.js'
 
 export type {DeprovisioningAddOn, ResolvedAddOn} from '../platform/add-on/types.js'

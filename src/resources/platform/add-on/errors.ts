@@ -1,6 +1,6 @@
 import type {AddOn} from '@heroku/types/3.sdk'
 
-import type {ResolvedAddOn} from './types.js'
+import type {DeprovisioningAddOn, ResolvedAddOn} from './types.js'
 
 export class AddonNotFoundError extends Error {
   public readonly id = 'not_found'
@@ -112,7 +112,7 @@ function messageFromCause(cause: unknown): string {
 export class AddonProvisioningFailedError extends Error {
   public readonly id = 'provisioning_failed'
 
-  constructor(public readonly addon: AddOn) {
+  constructor(public readonly addon: AddOn | DeprovisioningAddOn) {
     super(`The add-on was unable to be created, with status ${addon.state}.`)
     this.name = 'AddonProvisioningFailedError'
   }

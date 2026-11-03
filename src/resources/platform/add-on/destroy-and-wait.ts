@@ -1,5 +1,3 @@
-import type {AddOn} from '@heroku/types/3.sdk'
-
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {DeprovisioningAddOn, DestroyAndWaitOptions} from './types.js'
 
@@ -46,13 +44,20 @@ export async function destroyAndWait(
     ? platform.withOptions({body: {force: true}})
     : platform
   const deleted = await deleteClient.addOn.delete(appIdentity, addonIdentity) as DeprovisioningAddOn | undefined
-  let addon: DeprovisioningAddOn = deleted ?? {} as DeprovisioningAddOn
+  if (!deleted) {
+    // The platform returns the (possibly still-deprovisioning) add-on on a
+    // successful delete; an empty body means we can't report a result, so fail
+    // loudly rather than fabricate a stateless phantom add-on.
+    throw new Error(`Deleting add-on ${addonIdentity} returned no response body.`)
+  }
+
+  let addon: DeprovisioningAddOn = deleted
 
   if (!options.wait || (addon.state !== 'deprovisioning' && addon.state !== 'provisioning')) {
     return addon
   }
 
-  await options.onDeprovisioning?.(addon as AddOn)
+  await options.onDeprovisioning?.(addon)
 
   const intervalMs = options.waitIntervalMs ?? DEFAULT_DESTROY_WAIT_INTERVAL_MS
 
@@ -73,7 +78,7 @@ export async function destroyAndWait(
   /* eslint-enable no-await-in-loop */
 
   if (addon.state !== 'deprovisioned') {
-    throw new AddonProvisioningFailedError(addon as AddOn)
+    throw new AddonProvisioningFailedError(addon)
   }
 
   return addon
