@@ -1,4 +1,4 @@
-import type {AddOnAttachment, AddOnAttachmentCreateOpts} from '@heroku/types/3.sdk'
+import type {AddOn, AddOnAttachment, AddOnAttachmentCreateOpts} from '@heroku/types/3.sdk'
 
 import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 
@@ -7,7 +7,8 @@ import type {ResolvedAddOn} from '../platform/add-on/types.js'
 
 import {extendResource} from '../../core/extend-resource.js'
 import {withSignal} from '../../core/with-signal.js'
-import {AddonConfirmationRequiredError} from '../platform/add-on/errors.js'
+import {destroyAndWait} from '../platform/add-on/destroy-and-wait.js'
+import {AddonConfirmationRequiredError, AddonNotFoundError} from '../platform/add-on/errors.js'
 import {resolveAddonInternal} from '../platform/add-on/resolve.js'
 import {getPostgresServiceName, isAdvancedDatabase, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
@@ -37,6 +38,26 @@ export type CreateAttachmentResult = {
   addon: ResolvedAddOn
   attachment: AddOnAttachment
   releaseVersion?: number
+}
+
+export type DestroyOptions = {
+  appIdentity?: string
+  /**
+   * Runs after the database is resolved but before the delete request fires.
+   * An abort (or throw) during the hook prevents the delete — use it to
+   * confirm destruction against the resolved add-on.
+   */
+  beforeDestroy?: (preview: {addon: ResolvedAddOn}) => Promise<void> | void
+  force?: boolean
+  onDeprovisioning?: (addon: AddOn) => Promise<void> | void
+  signal?: AbortSignal
+  wait?: boolean
+  waitIntervalMs?: number
+}
+
+export type DestroyResult = {
+  addon: ResolvedAddOn
+  result: AddOn
 }
 
 // The OpenAPI spec declares no fixed response schema for listCredentials
@@ -172,6 +193,41 @@ export async function createAttachment(
   return {addon, attachment, releaseVersion: releases[0]?.version}
 }
 
+/**
+ * Resolves a Postgres database by add-on identity and destroys it.
+ *
+ * Resolution is scoped by `appIdentity` when given. If provided,
+ * `beforeDestroy` runs after resolution but before the delete request fires,
+ * so callers can confirm against the resolved add-on; an abort or throw in
+ * the hook prevents the delete. Delegates the delete (and optional
+ * deprovisioning poll when `wait` is set) to `addOn.destroyAndWait`.
+ */
+export async function destroy(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  addonIdentity: string,
+  options: DestroyOptions = {},
+): Promise<DestroyResult> {
+  const {
+    appIdentity, beforeDestroy, force, onDeprovisioning, signal, wait, waitIntervalMs,
+  } = options
+  signal?.throwIfAborted()
+
+  // Bind the signal so the resolve request aborts in flight.
+  const platform = withSignal(ctx.platform, signal)
+  const addon = await resolveAddonInternal(platform, addonIdentity, {
+    addonService: getPostgresServiceName(), appIdentity,
+  })
+
+  await beforeDestroy?.({addon})
+  signal?.throwIfAborted()
+
+  const result = await destroyAndWait(ctx, addon.app.id, addon.id, {
+    force, onDeprovisioning, signal, wait, waitIntervalMs,
+  })
+
+  return {addon, result}
+}
+
 export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', ctx => ({
   createAttachment: (
     appIdentity: string,
@@ -184,6 +240,10 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
     attachmentName: string,
     options?: DeleteAttachmentOptions,
   ) => deleteAttachment(ctx, appIdentity, attachmentName, options),
+  destroy: (
+    addonIdentity: string,
+    options?: DestroyOptions,
+  ) => destroy(ctx, addonIdentity, options),
   listCredentials: (
     appIdentity: string,
     addonIdentity?: string,

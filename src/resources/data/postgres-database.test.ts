@@ -8,10 +8,12 @@ import type {ResourceCtx} from '../../core/extend-resource.js'
 import {AddonConfirmationRequiredError} from '../platform/add-on/errors.js'
 import {getPostgresServiceName, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {
-  createAttachment, deleteAttachment, listCredentials, postgresDatabaseExtensions,
+  createAttachment, deleteAttachment, destroy, listCredentials, postgresDatabaseExtensions,
 } from './postgres-database.js'
 
 function buildCtx(opts: {
+  addOnDelete?: ReturnType<typeof vi.fn>
+  addOnInfoByApp?: ReturnType<typeof vi.fn>
   addonResolution?: ReturnType<typeof vi.fn>
   createAttachment?: ReturnType<typeof vi.fn>
   deleteAttachment?: ReturnType<typeof vi.fn>
@@ -29,7 +31,11 @@ function buildCtx(opts: {
   return {
     data: data as never,
     platform: {
-      addOn: {resolution: opts.addonResolution ?? vi.fn()},
+      addOn: {
+        delete: opts.addOnDelete ?? vi.fn(),
+        infoByApp: opts.addOnInfoByApp ?? vi.fn(),
+        resolution: opts.addonResolution ?? vi.fn(),
+      },
       addOnAttachment: {
         create: opts.createAttachment ?? vi.fn(),
         delete: opts.deleteAttachment ?? vi.fn(),
@@ -317,6 +323,71 @@ describe('postgres-database resource', () => {
 
       expect(onAttached).toHaveBeenCalledWith({id: 'attachment-1', name: 'DATABASE'})
       expect(calls).toEqual(['onAttached:DATABASE', 'releaseList'])
+    })
+  })
+
+  describe('destroy', () => {
+    it('resolves the database scoped to the app and deletes it via addOn.delete', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addonResolution = vi.fn().mockResolvedValue([addonMock])
+      const deleted = {id: 'addon-1', name: 'pg-addon', state: 'deprovisioning'}
+      const addOnDelete = vi.fn().mockResolvedValue(deleted)
+      const ctx = buildCtx({addOnDelete, addonResolution})
+
+      const {addon, result} = await destroy(ctx, 'pg-addon', {appIdentity: 'app-1'})
+
+      expect(addonResolution).toHaveBeenCalledWith({addon: 'pg-addon', app: 'app-1'})
+      expect(addOnDelete).toHaveBeenCalledWith('app-uuid', 'addon-1')
+      expect(addon).toEqual(addonMock)
+      expect(result).toEqual(deleted)
+    })
+
+    it('destroys classic-tier databases too (no advanced-tier gate)', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:standard-0'})
+      const deleted = {id: 'addon-1', state: 'deprovisioning'}
+      const addOnDelete = vi.fn().mockResolvedValue(deleted)
+      const ctx = buildCtx({addOnDelete, addonResolution: vi.fn().mockResolvedValue([addonMock])})
+
+      const {result} = await destroy(ctx, 'pg-addon')
+
+      expect(addOnDelete).toHaveBeenCalledWith('app-uuid', 'addon-1')
+      expect(result).toEqual(deleted)
+    })
+
+    it('runs beforeDestroy with the resolved addon before deleting', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const calls: string[] = []
+      const addOnDelete = vi.fn(async () => {
+        calls.push('delete')
+        return {id: 'addon-1', state: 'deprovisioned'}
+      })
+      const ctx = buildCtx({addOnDelete, addonResolution: vi.fn().mockResolvedValue([addonMock])})
+      const beforeDestroy = vi.fn(() => {
+        calls.push('beforeDestroy')
+      })
+
+      await destroy(ctx, 'pg-addon', {beforeDestroy})
+
+      expect(beforeDestroy).toHaveBeenCalledWith({addon: addonMock})
+      expect(calls).toEqual(['beforeDestroy', 'delete'])
+    })
+
+    it('does not delete if beforeDestroy rejects', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addOnDelete = vi.fn()
+      const ctx = buildCtx({addOnDelete, addonResolution: vi.fn().mockResolvedValue([addonMock])})
+      const beforeDestroy = vi.fn().mockRejectedValue(new Error('user declined'))
+
+      await expect(destroy(ctx, 'pg-addon', {beforeDestroy})).rejects.toThrow('user declined')
+      expect(addOnDelete).not.toHaveBeenCalled()
+    })
+
+    it('throws if signal is aborted', async () => {
+      const ctx = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(destroy(ctx, 'pg-addon', {signal: controller.signal})).rejects.toThrow()
     })
   })
 })
