@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.3](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.2...sdk-v0.12.3) (2026-11-03)
+
+
+### Features
+
+* add postgres database extensions ([#171](https://github.com/heroku/heroku-sdk/issues/171)) ([092ebe8](https://github.com/heroku/heroku-sdk/commit/092ebe8b78751b2b4265eb029d8dadc61711a007))
+
 ## [0.12.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.1...sdk-v0.12.2) (2026-10-29)
 
 
