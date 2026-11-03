@@ -36,7 +36,7 @@ export type CreateAttachmentOptions = {
 export type CreateAttachmentResult = {
   addon: ResolvedAddOn
   attachment: AddOnAttachment
-  releaseVersion: number
+  releaseVersion?: number
 }
 
 // The OpenAPI spec declares no fixed response schema for listCredentials
@@ -169,7 +169,7 @@ export async function createAttachment(
     .withHeaders({Range: 'version ..; max=1, order=desc'})
     .release.list(appIdentity)
 
-  return {addon, attachment, releaseVersion: releases[0].version}
+  return {addon, attachment, releaseVersion: releases[0]?.version}
 }
 
 export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', ctx => ({
