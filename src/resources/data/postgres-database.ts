@@ -369,6 +369,8 @@ export {
   AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
 } from '../platform/add-on/errors.js'
 
+export type {DeprovisioningAddOn, ResolvedAddOn} from '../platform/add-on/types.js'
+
 export {
   type AttachmentFactors, parseAttachmentFactors,
 } from './internal/parse-attachment-factors.js'

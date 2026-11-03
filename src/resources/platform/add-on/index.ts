@@ -40,6 +40,7 @@ export {resolveAddon} from './resolve.js'
 export type {
   AddOnOptions,
   CreateAndWaitOptions,
+  DeprovisioningAddOn,
   DescribedAddOn,
   DestroyAndWaitOptions,
   ResolveAddonOptions,
