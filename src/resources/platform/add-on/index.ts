@@ -22,7 +22,9 @@ export {destroyAndWait} from './destroy-and-wait.js'
 
 export {
   AddonAmbiguousError,
+  AddonAppMismatchError,
   AddonConfirmationRequiredError,
+  AddonDestroyFailedError,
   AddonNotFoundError,
   AddonProvisioningFailedError,
 } from './errors.js'

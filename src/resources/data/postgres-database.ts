@@ -366,6 +366,10 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
 }))
 
 export {
+  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
+} from '../platform/add-on/errors.js'
+
+export {
   type AttachmentFactors, parseAttachmentFactors,
 } from './internal/parse-attachment-factors.js'
 
