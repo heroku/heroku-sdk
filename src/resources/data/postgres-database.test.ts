@@ -5,7 +5,9 @@ import {
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import {AddonConfirmationRequiredError} from '../platform/add-on/errors.js'
+import {
+  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError, AddonNotFoundError,
+} from '../platform/add-on/errors.js'
 import {getPostgresServiceName, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {
   createAttachment, deleteAttachment, destroy, listAttachments, listCredentials, postgresDatabaseExtensions,
@@ -178,6 +180,25 @@ describe('postgres-database resource', () => {
       expect(onDetached).toHaveBeenCalledWith({id: 'attachment-1', name: 'DATABASE'})
       expect(calls).toEqual(['delete', 'onDetached:DATABASE', 'releaseList'])
       expect(releaseVersion).toBe(9)
+    })
+
+    it('reports an undefined release version when the release lookup fails after detaching', async () => {
+      const attachmentMock = buildAttachment({addonId: 'addon-1', addonName: 'pg-addon'})
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const deleteAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
+      const releaseList = vi.fn().mockRejectedValue(new Error('releases unavailable'))
+      const ctx = buildCtx({
+        addonResolution: vi.fn().mockResolvedValue([addonMock]),
+        deleteAttachment: deleteAttachmentMock,
+        infoByApp: vi.fn().mockResolvedValue(attachmentMock),
+        releaseList,
+      })
+
+      const {attachment, releaseVersion} = await deleteAttachment(ctx, 'app-1', 'DATABASE')
+
+      expect(deleteAttachmentMock).toHaveBeenCalledWith('attachment-1')
+      expect(attachment).toEqual({id: 'attachment-1', name: 'DATABASE'})
+      expect(releaseVersion).toBeUndefined()
     })
 
     it('throws NotAdvancedDatabaseError with the resolved database for classic-tier databases', async () => {
@@ -461,6 +482,48 @@ describe('postgres-database resource', () => {
 
       await expect(destroy(ctx, 'pg-addon', {beforeDestroy})).rejects.toThrow('user declined')
       expect(addOnDelete).not.toHaveBeenCalled()
+    })
+
+    it('throws AddonAppMismatchError when the database exists under a different app', async () => {
+      const elsewhere = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addonResolution = vi.fn()
+        .mockRejectedValueOnce(new AddonNotFoundError()) // scoped to app-2 misses
+        .mockResolvedValueOnce([elsewhere]) // unscoped finds it on app-1
+      const addOnDelete = vi.fn()
+      const ctx = buildCtx({addOnDelete, addonResolution})
+
+      const error = await destroy(ctx, 'pg-addon', {appIdentity: 'app-2'}).catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(AddonAppMismatchError)
+      expect((error as Error).message).toBe('Database pg-addon is on app-1 not app-2. Try again with the correct app.')
+      expect(addonResolution).toHaveBeenNthCalledWith(1, {addon: 'pg-addon', app: 'app-2'})
+      expect(addonResolution).toHaveBeenNthCalledWith(2, {addon: 'pg-addon'})
+      expect(addOnDelete).not.toHaveBeenCalled()
+    })
+
+    it('rethrows not-found when the database exists under no app', async () => {
+      const addonResolution = vi.fn()
+        .mockRejectedValueOnce(new AddonNotFoundError())
+        .mockRejectedValueOnce(new AddonNotFoundError())
+      const ctx = buildCtx({addonResolution})
+
+      const error = await destroy(ctx, 'pg-addon', {appIdentity: 'app-2'}).catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(AddonNotFoundError)
+    })
+
+    it('wraps a delete-request failure in AddonDestroyFailedError carrying the resolved addon', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const cause = {body: {message: 'boom'}}
+      const addOnDelete = vi.fn().mockRejectedValue(cause)
+      const ctx = buildCtx({addOnDelete, addonResolution: vi.fn().mockResolvedValue([addonMock])})
+
+      const error = await destroy(ctx, 'pg-addon', {appIdentity: 'app-1'}).catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(AddonDestroyFailedError)
+      expect((error as AddonDestroyFailedError).addon).toEqual(addonMock)
+      expect((error as AddonDestroyFailedError).cause).toBe(cause)
+      expect((error as Error).message).toBe('boom')
     })
 
     it('throws if signal is aborted', async () => {

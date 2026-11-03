@@ -1,19 +1,13 @@
 import type {AddOn} from '@heroku/types/3.sdk'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {DestroyAndWaitOptions} from './types.js'
+import type {DeprovisioningAddOn, DestroyAndWaitOptions} from './types.js'
 
 import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
 import {AddonProvisioningFailedError} from './errors.js'
 
 const DEFAULT_DESTROY_WAIT_INTERVAL_MS = 5000
-
-// The platform returns 'deprovisioning' as a transient state but @heroku/types
-// only models the terminal states. Extend locally rather than ts-ignore.
-type AddOnWithDeprovisioning = Omit<AddOn, 'state'> & {
-  state?: 'deprovisioning' | AddOn['state']
-}
 
 /**
  * Delete an add-on and optionally wait for deprovisioning to complete.
@@ -38,7 +32,7 @@ export async function destroyAndWait(
   appIdentity: string,
   addonIdentity: string,
   options: DestroyAndWaitOptions = {},
-): Promise<AddOn> {
+): Promise<DeprovisioningAddOn> {
   options.signal?.throwIfAborted()
 
   const platform = withSignal(
@@ -51,11 +45,11 @@ export async function destroyAndWait(
   const deleteClient = options.force
     ? platform.withOptions({body: {force: true}})
     : platform
-  const deleted = await deleteClient.addOn.delete(appIdentity, addonIdentity) as AddOnWithDeprovisioning | undefined
-  let addon: AddOnWithDeprovisioning = deleted ?? {} as AddOnWithDeprovisioning
+  const deleted = await deleteClient.addOn.delete(appIdentity, addonIdentity) as DeprovisioningAddOn | undefined
+  let addon: DeprovisioningAddOn = deleted ?? {} as DeprovisioningAddOn
 
   if (!options.wait || (addon.state !== 'deprovisioning' && addon.state !== 'provisioning')) {
-    return addon as AddOn
+    return addon
   }
 
   await options.onDeprovisioning?.(addon as AddOn)
@@ -67,10 +61,10 @@ export async function destroyAndWait(
     options.signal?.throwIfAborted()
     await wait(intervalMs, options.signal)
 
-    addon = await (platform.addOn.infoByApp(appIdentity, addonIdentity) as Promise<AddOnWithDeprovisioning>).catch((error: unknown) => {
+    addon = await (platform.addOn.infoByApp(appIdentity, addonIdentity) as Promise<DeprovisioningAddOn>).catch((error: unknown) => {
       // Platform deletes the record on successful deprovisioning — a 404 is success.
       if (isNotFound(error)) {
-        return {...addon, state: 'deprovisioned'} as AddOnWithDeprovisioning
+        return {...addon, state: 'deprovisioned'} as DeprovisioningAddOn
       }
 
       throw error
@@ -82,7 +76,7 @@ export async function destroyAndWait(
     throw new AddonProvisioningFailedError(addon as AddOn)
   }
 
-  return addon as AddOn
+  return addon
 }
 
 function isNotFound(error: unknown): error is {statusCode: number} {

@@ -4,12 +4,14 @@ import type {PostgresCredentialListResult} from '@heroku/types/data'
 import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
-import type {ResolvedAddOn} from '../platform/add-on/types.js'
+import type {DeprovisioningAddOn, ResolvedAddOn} from '../platform/add-on/types.js'
 
 import {extendResource} from '../../core/extend-resource.js'
 import {withSignal} from '../../core/with-signal.js'
 import {destroyAndWait} from '../platform/add-on/destroy-and-wait.js'
-import {AddonConfirmationRequiredError, AddonNotFoundError} from '../platform/add-on/errors.js'
+import {
+  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError, AddonNotFoundError,
+} from '../platform/add-on/errors.js'
 import {resolveAddonInternal} from '../platform/add-on/resolve.js'
 import {getPostgresServiceName, isAdvancedDatabase, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
@@ -73,7 +75,10 @@ export type DestroyOptions = {
 
 export type DestroyResult = {
   addon: ResolvedAddOn
-  result: AddOn
+  // The delete response may carry the transient `deprovisioning` state when the
+  // database deprovisions asynchronously (and `wait` is not set), so callers can
+  // branch on it without casting.
+  result: DeprovisioningAddOn
 }
 
 // The OpenAPI spec declares no fixed response schema for listCredentials
@@ -146,11 +151,22 @@ export async function deleteAttachment(
   await onDetached?.(deletedAttachment)
   signal?.throwIfAborted()
 
-  const releases = await platform
-    .withHeaders({Range: 'version ..; max=1, order=desc'})
-    .release.list(appIdentity)
+  // The detach already succeeded; a failed release lookup shouldn't fail the
+  // whole operation. Preserve aborts, otherwise report an unknown version.
+  let releaseVersion: number | undefined
+  try {
+    const releases = await platform
+      .withHeaders({Range: 'version ..; max=1, order=desc'})
+      .release.list(appIdentity)
+    releaseVersion = releases[0]?.version
+  } catch (error) {
+    // Preserve aborts; otherwise leave releaseVersion undefined (best-effort).
+    if (signal?.aborted) {
+      throw error
+    }
+  }
 
-  return {addon, attachment: deletedAttachment, releaseVersion: releases[0]?.version}
+  return {addon, attachment: deletedAttachment, releaseVersion}
 }
 
 /**
@@ -273,18 +289,53 @@ export async function destroy(
 
   // Bind the signal so the resolve request aborts in flight.
   const platform = withSignal(ctx.platform, signal)
-  const addon = await resolveAddonInternal(platform, addonIdentity, {
-    addonService: getPostgresServiceName(), appIdentity,
-  })
+
+  let addon: ResolvedAddOn
+  try {
+    addon = await resolveAddonInternal(platform, addonIdentity, {
+      addonService: getPostgresServiceName(), appIdentity,
+    })
+  } catch (error) {
+    // When scoped resolution misses, check whether the database exists under a
+    // different app so we can surface a targeted mismatch error instead of a
+    // bare not-found.
+    if (appIdentity && error instanceof AddonNotFoundError) {
+      let elsewhere: ResolvedAddOn | undefined
+      try {
+        elsewhere = await resolveAddonInternal(platform, addonIdentity, {
+          addonService: getPostgresServiceName(),
+        })
+      } catch {
+        // No match under any app either; fall through to the original error.
+      }
+
+      if (elsewhere && elsewhere.app.name !== appIdentity) {
+        throw new AddonAppMismatchError(elsewhere, appIdentity)
+      }
+    }
+
+    throw error
+  }
 
   await beforeDestroy?.({addon})
   signal?.throwIfAborted()
 
-  const result = await destroyAndWait(ctx, addon.app.id, addon.id, {
-    force, onDeprovisioning, signal, wait, waitIntervalMs,
-  })
+  // Resolution and beforeDestroy aborts already happened above; a failure here
+  // is the delete request (or wait poll) itself. Preserve aborts, but wrap other
+  // failures so callers get the resolved add-on (and thus tier) without
+  // re-resolving.
+  try {
+    const result = await destroyAndWait(ctx, addon.app.id, addon.id, {
+      force, onDeprovisioning, signal, wait, waitIntervalMs,
+    })
+    return {addon, result}
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error
+    }
 
-  return {addon, result}
+    throw new AddonDestroyFailedError(addon, error)
+  }
 }
 
 export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', ctx => ({

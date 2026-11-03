@@ -28,6 +28,17 @@ export type DescribedAddOn = ResolvedAddOn & {
   attachments: AddOnAttachment[]
 }
 
+/**
+ * An add-on that may still be deprovisioning. The platform returns
+ * `deprovisioning` as a transient `state` while a delete is in flight, but
+ * `@heroku/types` models only the terminal states. Methods that surface an
+ * in-flight delete response (e.g. `destroyAndWait` returning before the poll)
+ * return this so callers can branch on `deprovisioning` without casting `state`.
+ */
+export type DeprovisioningAddOn = Omit<AddOn, 'state'> & {
+  state?: 'deprovisioning' | AddOn['state']
+}
+
 export type UpgradeAddOnOptions = ResolveAddonOptions & {
   onResolved?: (addon: ResolvedAddOn) => Promise<void> | void
 }
