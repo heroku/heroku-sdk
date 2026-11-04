@@ -22,7 +22,9 @@ export {destroyAndWait} from './destroy-and-wait.js'
 
 export {
   AddonAmbiguousError,
+  AddonAppMismatchError,
   AddonConfirmationRequiredError,
+  AddonDestroyFailedError,
   AddonNotFoundError,
   AddonProvisioningFailedError,
 } from './errors.js'
@@ -38,6 +40,7 @@ export {resolveAddon} from './resolve.js'
 export type {
   AddOnOptions,
   CreateAndWaitOptions,
+  DeprovisioningAddOn,
   DescribedAddOn,
   DestroyAndWaitOptions,
   ResolveAddonOptions,

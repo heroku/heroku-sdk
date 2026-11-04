@@ -1226,13 +1226,11 @@ describe('add-on resource', () => {
       expect(withHeaders).toHaveBeenCalledWith({'Accept-Expansion': 'plan'})
     })
 
-    it('returns an empty object without polling when the delete response is empty (204)', async () => {
+    it('throws when the delete response has no body rather than fabricating an empty add-on', async () => {
       const {addOnDelete, ctx, infoByApp} = buildDestroyCtx()
       addOnDelete.mockResolvedValue()
 
-      const result = await destroyAndWait(ctx, 'my-app', 'my-postgres')
-
-      expect(result).toEqual({})
+      await expect(destroyAndWait(ctx, 'my-app', 'my-postgres')).rejects.toThrow('returned no response body')
       expect(infoByApp).not.toHaveBeenCalled()
     })
 
