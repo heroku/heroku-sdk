@@ -21,6 +21,16 @@ import {LEADER_POOL_NAME} from './postgres-pool.js'
 const DEFAULT_WAIT_INTERVAL_MS = 5000
 
 /**
+ * Default upper bound on a single wait before it throws. A backstop against a
+ * `wait_status` that never flips to ready — e.g. a platform-side provisioning
+ * failure the data endpoint doesn't reflect, or an endpoint that keeps
+ * reporting `waiting: true` — so polling can't run unbounded. Generous enough
+ * (1 hour) to cover large provisions and forks; callers who legitimately need
+ * longer can pass a larger `timeoutMs`, and `Infinity` disables the bound.
+ */
+const DEFAULT_WAIT_TIMEOUT_MS = 60 * 60 * 1000
+
+/**
  * Matches the CLI's historical 404 tolerance in `data:pg:wait`: the platform
  * briefly 404s a freshly-provisioned database's `wait_status` before its row
  * exists. We treat up to this many 404s as "still provisioning" (the budget is
@@ -106,7 +116,9 @@ export type WaitForReadyOptions = {
    */
   signal?: AbortSignal
   /**
-   * Maximum total time to wait before throwing. If omitted, polls until the
+   * Maximum total time to wait before throwing. Defaults to 1 hour as a
+   * backstop against a `wait_status` that never reports ready; pass a larger
+   * value for a legitimately longer wait, or `Infinity` to poll until the
    * database reports ready or `signal` aborts.
    */
   timeoutMs?: number
@@ -247,14 +259,16 @@ async function pollPostgresReady(
     notFoundRetries = DEFAULT_WAIT_NOT_FOUND_RETRIES,
     onPoll,
     signal,
-    timeoutMs,
+    timeoutMs = DEFAULT_WAIT_TIMEOUT_MS,
     waitIntervalMs = DEFAULT_WAIT_INTERVAL_MS,
   } = options
 
   signal?.throwIfAborted()
 
   const data = withSignal(ctx.data, signal)
-  const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
+  // `Infinity` (deadline === Infinity) disables the bound — the check below is
+  // never true — letting callers opt out of the default timeout explicitly.
+  const deadline = Date.now() + timeoutMs
   let remainingNotFound = notFoundRetries
 
   /* eslint-disable no-await-in-loop */
@@ -276,7 +290,7 @@ async function pollPostgresReady(
 
     if (!status.waiting) return status
 
-    if (deadline !== undefined && Date.now() >= deadline) {
+    if (Date.now() >= deadline) {
       throw new Error(`Postgres database '${addonId}' did not become ready within ${timeoutMs}ms`)
     }
 
@@ -383,10 +397,11 @@ async function waitAfterCreate(
  * never loses track of what it provisioned. A failed `wait` sets `waitError`
  * (and the follower pool is not attempted); a failed follower-pool create sets
  * `poolError`. `addon` is always present on a returned result. A failure of the
- * leader create itself still throws (nothing was provisioned). Because the wait
- * polls the data `wait_status` endpoint rather than the platform add-on state,
- * callers that need to bound it (e.g. against a platform-side provisioning
- * failure that never surfaces on `wait_status`) should pass `timeoutMs`.
+ * leader create itself still throws (nothing was provisioned). The wait polls
+ * the data `wait_status` endpoint rather than the platform add-on state, so it
+ * is bounded by a default `timeoutMs` (see {@link WaitForReadyOptions}) as a
+ * backstop against a platform-side provisioning failure that never surfaces on
+ * `wait_status`; pass a larger `timeoutMs` for a longer wait.
  */
 export async function provisionAdvanced(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,

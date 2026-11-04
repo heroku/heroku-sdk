@@ -221,6 +221,20 @@ describe('waitForReady', () => {
     await expectation
   })
 
+  it('bounds an endlessly-waiting status with the default 1h timeout', async () => {
+    // No timeoutMs passed: a wait_status that never flips to ready (e.g. a
+    // platform-side provisioning failure the data endpoint never reflects) must
+    // still terminate rather than poll forever.
+    const resolutionByAttachment = vi.fn().mockResolvedValue(buildAttachmentMatch({planName: 'heroku-postgresql:advanced-0'}))
+    const waitStatus = vi.fn().mockResolvedValue({message: 'still waiting', waiting: true})
+    const ctx = buildCtx({resolutionByAttachment, waitStatus})
+
+    const promise = waitForReady(ctx, 'app-1', 'DATABASE_URL', {waitIntervalMs: 60_000})
+    const expectation = expect(promise).rejects.toThrow(/did not become ready within 3600000ms/)
+    await vi.advanceTimersByTimeAsync((60 * 60 * 1000) + 60_000)
+    await expectation
+  })
+
   it('throws immediately if the signal is already aborted', async () => {
     const resolutionByAttachment = vi.fn()
     const ctx = buildCtx({resolutionByAttachment})
