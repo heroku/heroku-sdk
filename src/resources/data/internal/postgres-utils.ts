@@ -56,14 +56,14 @@ export const isPostgresAddon = (addon: AddOn | ResolvedAddOnAttachment['addon'])
 export const isAdvancedDatabase = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
   isPostgresAddon(addon) && /^(advanced|performance)/.test(addon.plan?.name?.split(':', 2)[1] ?? '')
 
-export const isLegacyDatabase = (addon: AddOn) =>
+export const isLegacyDatabase = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
   isPostgresAddon(addon) && !isAdvancedDatabase(addon)
 
-export const isLegacyEssentialDatabase = (addon: AddOn) =>
+export const isLegacyEssentialDatabase = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
   isLegacyDatabase(addon) && /^(dev|basic|mini)/.test(addon.plan?.name?.split(':', 2)[1] ?? '')
 
-export const isEssentialDatabase = (addon: AddOn) =>
+export const isEssentialDatabase = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
   isLegacyDatabase(addon) && (addon.plan?.name?.split(':', 2)[1] ?? '').startsWith('essential')
 
-export const isEssentialTier = (addon: AddOn) =>
+export const isEssentialTier = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
   isEssentialDatabase(addon) || isLegacyEssentialDatabase(addon)
