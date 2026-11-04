@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 import type {AddOn} from '@heroku/types/3.sdk'
 import type {
   PostgresPoolCreateResult, PostgresRunUpgradeOpts, PostgresRunUpgradeResult, PostgresWaitStatusResult,
@@ -17,6 +16,7 @@ import {createAndWait} from '../platform/add-on/create-and-wait.js'
 import {resolveAddonInternal} from '../platform/add-on/resolve.js'
 import {getPostgresServiceName, isAdvancedDatabase, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
+import {LEADER_POOL_NAME} from './postgres-pool.js'
 
 const DEFAULT_WAIT_INTERVAL_MS = 5000
 
@@ -83,9 +83,9 @@ export async function runUpgrade(
 
 export type WaitForReadyOptions = {
   /**
-   * How many consecutive 404s from `wait_status` to tolerate as "still
-   * provisioning" before rethrowing. Defaults to 20; the budget is not reset
-   * between polls.
+   * How many 404s from `wait_status` to tolerate as "still provisioning"
+   * before rethrowing. Defaults to 20; this is a total budget across the whole
+   * wait, not reset between polls.
    */
   notFoundRetries?: number
   /**
@@ -185,20 +185,46 @@ export type ProvisionAdvancedOptions = Pick<
 }
 
 export type ProvisionAdvancedResult = {
-  /** The newly-created leader add-on. */
+  /**
+   * The newly-created leader add-on. Always present: the leader is billed the
+   * moment creation succeeds, so it is reported even when a later step
+   * (`wait`/follower pool) fails, letting callers surface what was provisioned
+   * instead of retrying and provisioning a second leader.
+   */
   addon: AddOn
-  /** The follower pool, when `followers` was provided. */
+  /** The follower pool, when `followers` was provided and its creation succeeded. */
   pool?: PostgresPoolCreateResult
-  /** The terminal wait status, when `wait` was set. */
+  /**
+   * The error thrown while creating the follower pool, when `followers` was
+   * provided and creation failed. The leader (`addon`) still provisioned.
+   */
+  poolError?: unknown
+  /**
+   * The error thrown while waiting for the leader to become ready, when `wait`
+   * was set and the wait failed (timeout, abort, 404-budget exhaustion, or a
+   * transient API error). The leader (`addon`) still provisioned; the follower
+   * pool is not attempted in this case.
+   */
+  waitError?: unknown
+  /** The terminal wait status, when `wait` was set and the wait succeeded. */
   waitStatus?: PostgresWaitStatusResult
 }
 
 export type ForkResult = {
-  /** The newly-created fork/rollback add-on. */
+  /**
+   * The newly-created fork/rollback add-on. Always present once creation
+   * succeeds, even if the subsequent `wait` fails (see
+   * {@link ProvisionAdvancedResult.addon}).
+   */
   addon: AddOn
   /** The resolved source database the fork was created from. */
   source: ResolvedAddOn
-  /** The terminal wait status, when `wait` was set. */
+  /**
+   * The error thrown while waiting for the fork to become ready, when `wait`
+   * was set and the wait failed. The fork (`addon`) still provisioned.
+   */
+  waitError?: unknown
+  /** The terminal wait status, when `wait` was set and the wait succeeded. */
   waitStatus?: PostgresWaitStatusResult
 }
 
@@ -231,6 +257,7 @@ async function pollPostgresReady(
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
   let remainingNotFound = notFoundRetries
 
+  /* eslint-disable no-await-in-loop */
   while (true) {
     signal?.throwIfAborted()
 
@@ -255,6 +282,7 @@ async function pollPostgresReady(
 
     await wait(waitIntervalMs, signal)
   }
+  /* eslint-enable no-await-in-loop */
 }
 
 /**
@@ -309,6 +337,36 @@ function buildProvisionConfig(
 }
 
 /**
+ * The shared "wait for the freshly-created leader/fork to become ready" step
+ * used by {@link provisionAdvanced} and {@link fork}. Returns `{}` when `wait`
+ * isn't set.
+ *
+ * The add-on has already been created (and billed) by the time this runs, so a
+ * wait failure — timeout, abort, 404-budget exhaustion, or a transient API
+ * error — is captured as `waitError` and returned rather than thrown. That lets
+ * the caller still report the created add-on instead of losing track of it.
+ */
+async function waitAfterCreate(
+  ctx: Pick<ResourceCtx, 'data'>,
+  addon: AddOn,
+  options: ProvisionAdvancedOptions,
+): Promise<{waitError?: unknown; waitStatus?: PostgresWaitStatusResult}> {
+  const {notFoundRetries, onPoll, onProvisioning, signal, timeoutMs, wait: shouldWait, waitIntervalMs} = options
+  if (!shouldWait) return {}
+
+  try {
+    await onProvisioning?.(addon)
+    signal?.throwIfAborted()
+    const waitStatus = await pollPostgresReady(ctx, addon.id!, {
+      notFoundRetries, onPoll, signal, timeoutMs, waitIntervalMs,
+    })
+    return {waitStatus}
+  } catch (error) {
+    return {waitError: error}
+  }
+}
+
+/**
  * Provisions a new Advanced-tier Postgres leader (and, when `followers` is
  * given, a follower pool), replacing the CLI's `createAddon` + `createPool`
  * sequence.
@@ -319,6 +377,16 @@ function buildProvisionConfig(
  * `wait_status` endpoint (not the platform add-on state) until the leader is
  * ready; the follower pool is then created against the ready leader, matching
  * the CLI's ordering.
+ *
+ * **Partial failure.** Once the leader is created it is billed, so failures
+ * after creation are not thrown — they are reported on the result so the caller
+ * never loses track of what it provisioned. A failed `wait` sets `waitError`
+ * (and the follower pool is not attempted); a failed follower-pool create sets
+ * `poolError`. `addon` is always present on a returned result. A failure of the
+ * leader create itself still throws (nothing was provisioned). Because the wait
+ * polls the data `wait_status` endpoint rather than the platform add-on state,
+ * callers that need to bound it (e.g. against a platform-side provisioning
+ * failure that never surfaces on `wait_status`) should pass `timeoutMs`.
  */
 export async function provisionAdvanced(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,
@@ -326,7 +394,7 @@ export async function provisionAdvanced(
   body: ProvisionAdvancedBody,
   options: ProvisionAdvancedOptions = {},
 ): Promise<ProvisionAdvancedResult> {
-  const {notFoundRetries, onPoll, onProvisioning, signal, timeoutMs, wait: shouldWait, waitIntervalMs} = options
+  const {signal} = options
   signal?.throwIfAborted()
 
   const {as, config: extra, confirm, followers, highAvailability, level, name, network, version} = body
@@ -343,29 +411,33 @@ export async function provisionAdvanced(
     {signal},
   )
 
-  let waitStatus: PostgresWaitStatusResult | undefined
-  if (shouldWait) {
-    await onProvisioning?.(addon)
-    signal?.throwIfAborted()
-    waitStatus = await pollPostgresReady(ctx, addon.id!, {
-      notFoundRetries, onPoll, signal, timeoutMs, waitIntervalMs,
-    })
+  const result: ProvisionAdvancedResult = {addon}
+
+  const {waitError, waitStatus} = await waitAfterCreate(ctx, addon, options)
+  if (waitError !== undefined) {
+    result.waitError = waitError
+    return result
   }
 
-  let pool: PostgresPoolCreateResult | undefined
+  if (waitStatus !== undefined) result.waitStatus = waitStatus
+
   if (followers && followers > 0) {
-    pool = await withSignal(ctx.data, signal).postgresPool.create(addon.id!, {count: followers, level})
+    try {
+      result.pool = await withSignal(ctx.data, signal).postgresPool.create(addon.id!, {count: followers, level})
+    } catch (error) {
+      result.poolError = error
+    }
   }
 
-  return {addon, pool, waitStatus}
+  return result
 }
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
 
 /**
  * Formats a rollback recovery time to the platform's UTC `YYYY-MM-DDTHH:MM:SS`
  * (no `Z`, no milliseconds). A string is passed through unchanged.
  */
-const pad2 = (n: number) => String(n).padStart(2, '0')
-
 function formatRecoveryTime(value: Date | string): string {
   if (typeof value === 'string') return value
 
@@ -392,7 +464,7 @@ export async function fork(
   body: ForkBody = {},
   options: ProvisionAdvancedOptions = {},
 ): Promise<ForkResult> {
-  const {notFoundRetries, onPoll, onProvisioning, signal, timeoutMs, wait: shouldWait, waitIntervalMs} = options
+  const {signal} = options
   signal?.throwIfAborted()
 
   const {as, config: extra, confirm, name, recoveryTime} = body
@@ -407,7 +479,12 @@ export async function fork(
   let {level} = body
   if (level === undefined) {
     const info = await withSignal(ctx.data, signal).postgres.info(source.id)
-    level = info.pools.find(pool => pool.name === 'leader')?.expected_level
+    const leaderPool = info.pools.find(pool => pool.name === LEADER_POOL_NAME)
+    if (leaderPool === undefined) {
+      throw new Error(`Cannot default the fork level: source database '${source.name}' has no '${LEADER_POOL_NAME}' pool. Pass an explicit 'level'.`)
+    }
+
+    level = leaderPool.expected_level
   }
 
   const config = recoveryTime === undefined
@@ -423,16 +500,13 @@ export async function fork(
     {signal},
   )
 
-  let waitStatus: PostgresWaitStatusResult | undefined
-  if (shouldWait) {
-    await onProvisioning?.(addon)
-    signal?.throwIfAborted()
-    waitStatus = await pollPostgresReady(ctx, addon.id!, {
-      notFoundRetries, onPoll, signal, timeoutMs, waitIntervalMs,
-    })
-  }
+  const result: ForkResult = {addon, source}
 
-  return {addon, source, waitStatus}
+  const {waitError, waitStatus} = await waitAfterCreate(ctx, addon, options)
+  if (waitError !== undefined) result.waitError = waitError
+  else if (waitStatus !== undefined) result.waitStatus = waitStatus
+
+  return result
 }
 
 export const postgresExtensions = extendResource('data', 'postgres', ctx => ({

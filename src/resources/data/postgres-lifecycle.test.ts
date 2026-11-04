@@ -66,7 +66,6 @@ function buildCtx(opts: {
   addonResolution?: Fn
   create?: Fn
   info?: Fn
-  infoByApp?: Fn
   poolCreate?: Fn
   resolutionByAttachment?: Fn
   waitStatus?: Fn
@@ -85,7 +84,6 @@ function buildCtx(opts: {
     platform: {
       addOn: {
         create: opts.create ?? vi.fn().mockResolvedValue({id: 'new-addon', name: 'postgres-new', state: 'available'}),
-        infoByApp: opts.infoByApp ?? vi.fn(),
         resolution: opts.addonResolution ?? vi.fn(),
       },
       addOnAttachment: {
@@ -152,27 +150,17 @@ describe('waitForReady', () => {
     expect(calls).toEqual(['onResolved', 'waitStatus'])
   })
 
-  it('does not fire onResolved (or poll) for a classic database', async () => {
+  it('throws NotAdvancedDatabaseError (carrying the addon) for a classic database, without firing onResolved or polling', async () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue(buildAttachmentMatch({addonId: 'addon-1', planName: 'heroku-postgresql:standard-0'}))
     const waitStatus = vi.fn()
     const onResolved = vi.fn()
     const ctx = buildCtx({resolutionByAttachment, waitStatus})
 
-    await waitForReady(ctx, 'app-1', 'DATABASE_URL', {onResolved}).catch(() => {})
-
-    expect(onResolved).not.toHaveBeenCalled()
-    expect(waitStatus).not.toHaveBeenCalled()
-  })
-
-  it('throws NotAdvancedDatabaseError (carrying the addon) for a classic database without polling', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue(buildAttachmentMatch({addonId: 'addon-1', planName: 'heroku-postgresql:standard-0'}))
-    const waitStatus = vi.fn()
-    const ctx = buildCtx({resolutionByAttachment, waitStatus})
-
-    const error = await waitForReady(ctx, 'app-1', 'DATABASE_URL').catch((error_: unknown) => error_)
+    const error = await waitForReady(ctx, 'app-1', 'DATABASE_URL', {onResolved}).catch((error_: unknown) => error_)
 
     expect(error).toBeInstanceOf(NotAdvancedDatabaseError)
     expect((error as NotAdvancedDatabaseError).addon.id).toBe('addon-1')
+    expect(onResolved).not.toHaveBeenCalled()
     expect(waitStatus).not.toHaveBeenCalled()
   })
 
@@ -332,6 +320,42 @@ describe('provisionAdvanced', () => {
     expect(status).toEqual({message: 'ready', waiting: false})
   })
 
+  it('captures a wait failure as waitError, keeps the created leader, and skips the follower pool', async () => {
+    const create = vi.fn().mockResolvedValue({id: 'new-addon', state: 'provisioning'})
+    const waitError = new Error('wait blew up')
+    const waitStatus = vi.fn().mockRejectedValue(waitError)
+    const poolCreate = vi.fn()
+    const ctx = buildCtx({create, poolCreate, waitStatus})
+
+    const promise = provisionAdvanced(ctx, 'app-1', {followers: 2, level: 'advanced-0'}, {wait: true, waitIntervalMs: 10})
+    const result = await promise
+
+    expect(result.addon.id).toBe('new-addon')
+    expect(result.waitError).toBe(waitError)
+    expect(result.waitStatus).toBeUndefined()
+    // A failed wait must not provision a follower pool against an un-ready leader.
+    expect(result.pool).toBeUndefined()
+    expect(poolCreate).not.toHaveBeenCalled()
+  })
+
+  it('captures a follower-pool failure as poolError, keeping the ready leader and wait status', async () => {
+    const create = vi.fn().mockResolvedValue({id: 'new-addon', state: 'provisioning'})
+    const waitStatus = vi.fn().mockResolvedValue({message: 'ready', waiting: false})
+    const poolError = new Error('pool blew up')
+    const poolCreate = vi.fn().mockRejectedValue(poolError)
+    const ctx = buildCtx({create, poolCreate, waitStatus})
+
+    const promise = provisionAdvanced(ctx, 'app-1', {followers: 2, level: 'advanced-0'}, {wait: true, waitIntervalMs: 10})
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await promise
+
+    expect(result.addon.id).toBe('new-addon')
+    expect(result.poolError).toBe(poolError)
+    expect(result.pool).toBeUndefined()
+    expect(result.waitStatus).toEqual({message: 'ready', waiting: false})
+    expect(poolCreate).toHaveBeenCalledExactlyOnceWith('new-addon', {count: 2, level: 'advanced-0'})
+  })
+
   it('converts a 423 confirmation_required into AddonConfirmationRequiredError', async () => {
     const create = vi.fn().mockRejectedValue(buildConfirmationRequired())
     const ctx = buildCtx({create})
@@ -429,5 +453,30 @@ describe('fork', () => {
     expect(error).toBeInstanceOf(NotAdvancedDatabaseError)
     expect((error as NotAdvancedDatabaseError).addon.id).toBe('source-addon')
     expect(create).not.toHaveBeenCalled()
+  })
+
+  it('throws when the level is omitted and the source has no leader pool, before creating', async () => {
+    const addonResolution = vi.fn().mockResolvedValue(buildAddonMatch({id: 'source-addon', name: 'postgres-source', planName: 'heroku-postgresql:advanced-0'}))
+    const info = vi.fn().mockResolvedValue({pools: [{expected_level: 'advanced-0', name: 'follower'}]})
+    const create = vi.fn()
+    const ctx = buildCtx({addonResolution, create, info})
+
+    await expect(fork(ctx, 'app-1', 'postgres-source')).rejects.toThrow(/no 'leader' pool/)
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('captures a wait failure as waitError, keeping the created fork', async () => {
+    const addonResolution = vi.fn().mockResolvedValue(buildAddonMatch({id: 'source-addon', planName: 'heroku-postgresql:advanced-0'}))
+    const create = vi.fn().mockResolvedValue({id: 'fork-addon', state: 'provisioning'})
+    const waitError = new Error('wait blew up')
+    const waitStatus = vi.fn().mockRejectedValue(waitError)
+    const ctx = buildCtx({addonResolution, create, waitStatus})
+
+    const result = await fork(ctx, 'app-1', 'postgres-source', {level: 'advanced-0'}, {wait: true, waitIntervalMs: 10})
+
+    expect(result.addon.id).toBe('fork-addon')
+    expect(result.source.id).toBe('source-addon')
+    expect(result.waitError).toBe(waitError)
+    expect(result.waitStatus).toBeUndefined()
   })
 })

@@ -260,15 +260,41 @@ export async function create(
 }
 
 /**
+ * Best-effort re-fetch of a migration after a successful `run`/`cancel` POST so
+ * the returned status reflects the transition the action kicked off.
+ *
+ * The POST already succeeded by the time this runs, so the re-fetch must never
+ * turn a completed action into a thrown error: the caller's `signal` is
+ * deliberately *not* threaded in (a post-POST abort shouldn't surface as a
+ * failure of an action that already happened), and any re-fetch error is
+ * swallowed. When the migration can't be re-read — it 404s (already gone) or
+ * the re-fetch fails for any other reason — we fall back to the gated record
+ * with its status forced to `'unknown'` rather than returning the stale
+ * `'ready'` the gate observed, which would wrongly imply the action never ran.
+ */
+async function refetchAfterAction(
+  ctx: Pick<ResourceCtx, 'data'>,
+  targetAddonId: string,
+  gated: Migration,
+): Promise<Migration> {
+  try {
+    const refreshed = await info(ctx, targetAddonId)
+    return refreshed ?? {...gated, status: 'unknown'}
+  } catch {
+    return {...gated, status: 'unknown'}
+  }
+}
+
+/**
  * Starts the migration targeting `targetAddonId`.
  *
  * Fetches the migration first and gates on its status — a defensive backstop
  * against state drift between listing and action: throws
  * `MigrationNotRunnableError` (carrying the migration) if it's no longer
  * `ready`, and lets a `NotFoundError` propagate if the migration is already
- * gone. Returns the migration's post-action state (re-fetched after the run so
- * the status reflects the transition), falling back to the gated record if the
- * re-fetch finds it already gone.
+ * gone. Once the run POST succeeds, returns the migration's post-action state
+ * via a best-effort re-fetch (see {@link refetchAfterAction}); never throws
+ * after the action has fired.
  */
 export async function run(
   ctx: Pick<ResourceCtx, 'data'>,
@@ -288,7 +314,7 @@ export async function run(
   signal?.throwIfAborted()
   await data.postgresMigration.run(targetAddonId)
 
-  return (await info(ctx, targetAddonId, {signal})) ?? migration
+  return refetchAfterAction(ctx, targetAddonId, migration)
 }
 
 /**
@@ -296,9 +322,9 @@ export async function run(
  *
  * Gates on status like {@link run}: throws `MigrationNotCancellableError`
  * (carrying the migration) if it's not `ready`, and lets a `NotFoundError`
- * propagate if the migration is already gone. Returns the migration's
- * post-action state (re-fetched after the cancel), falling back to the gated
- * record if the re-fetch finds it already gone.
+ * propagate if the migration is already gone. Once the cancel POST succeeds,
+ * returns the migration's post-action state via a best-effort re-fetch (see
+ * {@link refetchAfterAction}); never throws after the action has fired.
  */
 export async function cancel(
   ctx: Pick<ResourceCtx, 'data'>,
@@ -318,7 +344,7 @@ export async function cancel(
   signal?.throwIfAborted()
   await data.postgresMigration.cancel(targetAddonId)
 
-  return (await info(ctx, targetAddonId, {signal})) ?? migration
+  return refetchAfterAction(ctx, targetAddonId, migration)
 }
 
 /**
@@ -398,17 +424,24 @@ export async function listMigrationContext(
   return {migrations, sources, targets}
 }
 
+// These extension keys are intentionally named distinctly from the generated
+// `postgresMigration` routes (`info`/`create`/`run`/`cancel`) they wrap.
+// Registering an extension under a generated route's own name silently replaces
+// that route (the replacement is only debug-logged), which both hides the
+// orchestration behind a familiar-looking name and leaves no way to reach the
+// raw route. Distinct names keep both surfaces available and make the
+// gate-and-refetch helpers discoverable as such.
 export const postgresMigrationExtensions = extendResource('data', 'postgresMigration', ctx => ({
-  cancel: (
+  cancelMigration: (
     targetAddonId: string,
     options?: MigrationOptions,
   ) => cancel(ctx, targetAddonId, options),
-  create: (
+  createMigration: (
     targetAddonId: string,
     body: MigrationCreateBody,
     options?: MigrationOptions,
   ) => create(ctx, targetAddonId, body, options),
-  info: (
+  findMigration: (
     targetAddonId: string,
     options?: MigrationOptions,
   ) => info(ctx, targetAddonId, options),
@@ -416,7 +449,7 @@ export const postgresMigrationExtensions = extendResource('data', 'postgresMigra
     appIdentity: string,
     options?: MigrationOptions,
   ) => listMigrationContext(ctx, appIdentity, options),
-  run: (
+  runMigration: (
     targetAddonId: string,
     options?: MigrationOptions,
   ) => run(ctx, targetAddonId, options),

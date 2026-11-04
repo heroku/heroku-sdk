@@ -82,6 +82,7 @@ function buildCtx(opts: {
   migrationCancel?: Fn
   migrationCreate?: Fn
   migrationInfo?: Fn
+  migrationRun?: Fn
   postgresInfo?: Fn
 } = {}): Pick<ResourceCtx, 'data' | 'platform'> {
   const data: Record<string, unknown> = {
@@ -90,7 +91,7 @@ function buildCtx(opts: {
       cancel: opts.migrationCancel ?? vi.fn().mockResolvedValue(),
       create: opts.migrationCreate ?? vi.fn(),
       info: opts.migrationInfo ?? vi.fn(),
-      run: vi.fn().mockResolvedValue(),
+      run: opts.migrationRun ?? vi.fn().mockResolvedValue(),
     },
   }
   data.withOptions = vi.fn(() => data)
@@ -105,13 +106,13 @@ function buildCtx(opts: {
 }
 
 describe('postgresMigrationExtensions factory', () => {
-  it('exposes cancel, create, info, listMigrationContext and run', () => {
+  it('exposes cancelMigration, createMigration, findMigration, listMigrationContext and runMigration', () => {
     const methods = postgresMigrationExtensions.factory({data: {} as never, platform: {} as never})
-    expect(typeof methods.cancel).toBe('function')
-    expect(typeof methods.create).toBe('function')
-    expect(typeof methods.info).toBe('function')
+    expect(typeof methods.cancelMigration).toBe('function')
+    expect(typeof methods.createMigration).toBe('function')
+    expect(typeof methods.findMigration).toBe('function')
     expect(typeof methods.listMigrationContext).toBe('function')
-    expect(typeof methods.run).toBe('function')
+    expect(typeof methods.runMigration).toBe('function')
   })
 })
 
@@ -159,10 +160,14 @@ describe('info', () => {
   })
 
   it('rethrows non-404 errors', async () => {
-    const migrationInfo = vi.fn().mockRejectedValue(buildServerError())
+    // Assert the exact error instance: `NotFoundError extends HerokuApiError`,
+    // so `toBeInstanceOf(HerokuApiError)` would also pass if a 404 were wrongly
+    // rethrown here instead of mapped to undefined.
+    const serverError = buildServerError()
+    const migrationInfo = vi.fn().mockRejectedValue(serverError)
     const ctx = buildCtx({migrationInfo})
 
-    await expect(info(ctx, 'advanced-addon')).rejects.toBeInstanceOf(HerokuApiError)
+    await expect(info(ctx, 'advanced-addon')).rejects.toBe(serverError)
   })
 
   it('throws immediately if the signal is already aborted', async () => {
@@ -226,19 +231,19 @@ describe('run', () => {
     const migrationInfo = vi.fn()
       .mockResolvedValueOnce(gated)
       .mockResolvedValueOnce(postAction)
-    const ctx = buildCtx({migrationInfo})
-    const {run: routeRun} = (ctx.data as unknown as {postgresMigration: {run: Fn}}).postgresMigration
+    const migrationRun = vi.fn().mockResolvedValue()
+    const ctx = buildCtx({migrationInfo, migrationRun})
 
     const acted = await run(ctx, 'advanced-addon')
 
     expect(migrationInfo).toHaveBeenCalledTimes(2)
     expect(migrationInfo).toHaveBeenNthCalledWith(1, 'advanced-addon')
     expect(migrationInfo).toHaveBeenNthCalledWith(2, 'advanced-addon')
-    expect(routeRun).toHaveBeenCalledExactlyOnceWith('advanced-addon')
+    expect(migrationRun).toHaveBeenCalledExactlyOnceWith('advanced-addon')
     expect(acted).toBe(postAction)
   })
 
-  it('falls back to the gated migration when the post-run re-fetch finds it gone', async () => {
+  it('falls back to the gated migration with an unknown status when the post-run re-fetch finds it gone', async () => {
     const gated = buildMigration({status: 'ready'})
     const migrationInfo = vi.fn()
       .mockResolvedValueOnce(gated)
@@ -247,21 +252,22 @@ describe('run', () => {
 
     const acted = await run(ctx, 'advanced-addon')
 
-    expect(acted).toBe(gated)
+    // Never the stale `ready` the gate saw — that would imply the run never fired.
+    expect(acted).toEqual({...gated, status: 'unknown'})
   })
 
   it('throws MigrationNotRunnableError (carrying the migration) without running when not ready', async () => {
     const migration = buildMigration({status: 'migrating'})
     const migrationInfo = vi.fn().mockResolvedValue(migration)
-    const ctx = buildCtx({migrationInfo})
-    const {run: routeRun} = (ctx.data as unknown as {postgresMigration: {run: Fn}}).postgresMigration
+    const migrationRun = vi.fn().mockResolvedValue()
+    const ctx = buildCtx({migrationInfo, migrationRun})
 
     const error = await run(ctx, 'advanced-addon').catch((error_: unknown) => error_)
 
     expect(error).toBeInstanceOf(MigrationNotRunnableError)
     expect((error as MigrationNotRunnableError).migration).toBe(migration)
     expect((error as MigrationNotRunnableError).migrationStatus).toBe('migrating')
-    expect(routeRun).not.toHaveBeenCalled()
+    expect(migrationRun).not.toHaveBeenCalled()
   })
 
   it('propagates a 404 (migration already gone)', async () => {
@@ -404,11 +410,15 @@ describe('listMigrationContext', () => {
         addonId: 'adv-1', addonName: 'pg-adv-1', attachmentName: 'ADV1', planName: `${service}:advanced-0`,
       }),
     ])
-    const migrationInfo = vi.fn().mockRejectedValue(buildServerError())
+    // Exact instance: the 404 from postgresInfo must be tolerated and the 500
+    // from migrationInfo rethrown; `toBeInstanceOf(HerokuApiError)` can't tell
+    // them apart since `NotFoundError extends HerokuApiError`.
+    const serverError = buildServerError()
+    const migrationInfo = vi.fn().mockRejectedValue(serverError)
     const postgresInfo = vi.fn().mockRejectedValue(buildNotFound())
     const ctx = buildCtx({listByApp, migrationInfo, postgresInfo})
 
-    await expect(listMigrationContext(ctx, 'app-1')).rejects.toBeInstanceOf(HerokuApiError)
+    await expect(listMigrationContext(ctx, 'app-1')).rejects.toBe(serverError)
   })
 
   it('throws immediately if the signal is already aborted', async () => {

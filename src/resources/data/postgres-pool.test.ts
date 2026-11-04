@@ -51,6 +51,9 @@ describe('listAvailableLevels', () => {
     expect(current).toMatchObject({available: false, reason: 'current_level'})
 
     const others = levels.filter(l => l.level.name !== 'advanced-2')
+    // Pin the count so `.every` (which is vacuously true on an empty array)
+    // can't false-pass if the filter ever stops matching.
+    expect(others).toHaveLength(2)
     expect(others.every(l => l.available)).toBe(true)
   })
 })

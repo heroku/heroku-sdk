@@ -11,13 +11,21 @@ import {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database.
 const debug = createDebug('heroku:sdk:resources:postgres-database')
 
 /**
+ * The add-on shapes the Postgres tier predicates accept: either a full
+ * platform `AddOn` or the lighter add-on carried on a resolved attachment.
+ * Both expose the `plan.name` these checks read, so they're interchangeable
+ * here.
+ */
+export type PostgresAddonLike = AddOn | ResolvedAddOnAttachment['addon']
+
+/**
  * Thrown when an add-on is not an Advanced-tier database. Carries the add-on
  * so callers that need its identity don't need a second resolve call.
  */
 export class NotAdvancedDatabaseError extends Error {
   public readonly id = 'not_advanced_database'
 
-  constructor(public readonly addon: AddOn | ResolvedAddOnAttachment['addon'], message: string) {
+  constructor(public readonly addon: PostgresAddonLike, message: string) {
     super(message)
     this.name = 'NotAdvancedDatabaseError'
   }
@@ -50,20 +58,20 @@ export function isAdvancedCredential(credential: AdvancedCredentialInfo | NonAdv
 export const getPostgresServiceName = () =>
   process.env.HEROKU_POSTGRESQL_ADDON_NAME || process.env.HEROKU_DATA_SERVICE || 'heroku-postgresql'
 
-export const isPostgresAddon = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
+export const isPostgresAddon = (addon: PostgresAddonLike) =>
   addon.plan?.name?.split(':', 2)[0] === getPostgresServiceName()
 
-export const isAdvancedDatabase = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
+export const isAdvancedDatabase = (addon: PostgresAddonLike) =>
   isPostgresAddon(addon) && /^(advanced|performance)/.test(addon.plan?.name?.split(':', 2)[1] ?? '')
 
-export const isLegacyDatabase = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
+export const isLegacyDatabase = (addon: PostgresAddonLike) =>
   isPostgresAddon(addon) && !isAdvancedDatabase(addon)
 
-export const isLegacyEssentialDatabase = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
+export const isLegacyEssentialDatabase = (addon: PostgresAddonLike) =>
   isLegacyDatabase(addon) && /^(dev|basic|mini)/.test(addon.plan?.name?.split(':', 2)[1] ?? '')
 
-export const isEssentialDatabase = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
+export const isEssentialDatabase = (addon: PostgresAddonLike) =>
   isLegacyDatabase(addon) && (addon.plan?.name?.split(':', 2)[1] ?? '').startsWith('essential')
 
-export const isEssentialTier = (addon: AddOn | ResolvedAddOnAttachment['addon']) =>
+export const isEssentialTier = (addon: PostgresAddonLike) =>
   isEssentialDatabase(addon) || isLegacyEssentialDatabase(addon)
