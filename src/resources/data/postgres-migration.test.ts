@@ -106,13 +106,13 @@ function buildCtx(opts: {
 }
 
 describe('postgresMigrationExtensions factory', () => {
-  it('exposes cancelMigration, createMigration, findMigration, listMigrationContext and runMigration', () => {
+  it('exposes find, prepare, startWhenReady, abortBeforeRun and listMigrationContext', () => {
     const methods = postgresMigrationExtensions.factory({data: {} as never, platform: {} as never})
-    expect(typeof methods.cancelMigration).toBe('function')
-    expect(typeof methods.createMigration).toBe('function')
-    expect(typeof methods.findMigration).toBe('function')
+    expect(typeof methods.find).toBe('function')
+    expect(typeof methods.prepare).toBe('function')
+    expect(typeof methods.startWhenReady).toBe('function')
+    expect(typeof methods.abortBeforeRun).toBe('function')
     expect(typeof methods.listMigrationContext).toBe('function')
-    expect(typeof methods.runMigration).toBe('function')
   })
 })
 

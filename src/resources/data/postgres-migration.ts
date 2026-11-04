@@ -429,19 +429,17 @@ export async function listMigrationContext(
 // Registering an extension under a generated route's own name silently replaces
 // that route (the replacement is only debug-logged), which both hides the
 // orchestration behind a familiar-looking name and leaves no way to reach the
-// raw route. Distinct names keep both surfaces available and make the
-// gate-and-refetch helpers discoverable as such.
+// raw route. The verbs here also describe the guarded behavior the raw routes
+// lack: `find` returns undefined instead of throwing on 404; `prepare`
+// configures (and validates) a migration without starting it; `startWhenReady`
+// and `abortBeforeRun` gate on the migration still being in its pre-run `ready`
+// state before acting, then re-fetch the post-action status.
 export const postgresMigrationExtensions = extendResource('data', 'postgresMigration', ctx => ({
-  cancelMigration: (
+  abortBeforeRun: (
     targetAddonId: string,
     options?: MigrationOptions,
   ) => cancel(ctx, targetAddonId, options),
-  createMigration: (
-    targetAddonId: string,
-    body: MigrationCreateBody,
-    options?: MigrationOptions,
-  ) => create(ctx, targetAddonId, body, options),
-  findMigration: (
+  find: (
     targetAddonId: string,
     options?: MigrationOptions,
   ) => info(ctx, targetAddonId, options),
@@ -449,7 +447,12 @@ export const postgresMigrationExtensions = extendResource('data', 'postgresMigra
     appIdentity: string,
     options?: MigrationOptions,
   ) => listMigrationContext(ctx, appIdentity, options),
-  runMigration: (
+  prepare: (
+    targetAddonId: string,
+    body: MigrationCreateBody,
+    options?: MigrationOptions,
+  ) => create(ctx, targetAddonId, body, options),
+  startWhenReady: (
     targetAddonId: string,
     options?: MigrationOptions,
   ) => run(ctx, targetAddonId, options),
