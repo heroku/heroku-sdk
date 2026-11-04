@@ -153,7 +153,7 @@ describe('waitForReady', () => {
     const onPoll = vi.fn()
     const ctx = buildCtx({resolutionByAttachment, waitStatus})
 
-    const promise = waitForReady(ctx, 'app-1', 'DATABASE_URL', {intervalMs: 100, onPoll})
+    const promise = waitForReady(ctx, 'app-1', 'DATABASE_URL', {onPoll, waitIntervalMs: 100})
 
     await vi.advanceTimersByTimeAsync(0)
     expect(waitStatus).toHaveBeenCalledTimes(1)
@@ -172,7 +172,7 @@ describe('waitForReady', () => {
     const onPoll = vi.fn()
     const ctx = buildCtx({resolutionByAttachment, waitStatus})
 
-    const promise = waitForReady(ctx, 'app-1', 'DATABASE_URL', {intervalMs: 10, notFoundRetries: 2, onPoll})
+    const promise = waitForReady(ctx, 'app-1', 'DATABASE_URL', {notFoundRetries: 2, onPoll, waitIntervalMs: 10})
     const expectation = expect(promise).rejects.toBeInstanceOf(NotFoundError)
     await vi.advanceTimersByTimeAsync(100)
     await expectation
@@ -188,7 +188,7 @@ describe('waitForReady', () => {
     const waitStatus = vi.fn().mockRejectedValue(new Error('boom'))
     const ctx = buildCtx({resolutionByAttachment, waitStatus})
 
-    await expect(waitForReady(ctx, 'app-1', 'DATABASE_URL', {intervalMs: 10})).rejects.toThrow('boom')
+    await expect(waitForReady(ctx, 'app-1', 'DATABASE_URL', {waitIntervalMs: 10})).rejects.toThrow('boom')
   })
 
   it('throws when timeoutMs elapses before ready', async () => {
@@ -196,7 +196,7 @@ describe('waitForReady', () => {
     const waitStatus = vi.fn().mockResolvedValue({message: 'still waiting', waiting: true})
     const ctx = buildCtx({resolutionByAttachment, waitStatus})
 
-    const promise = waitForReady(ctx, 'app-1', 'DATABASE_URL', {intervalMs: 100, timeoutMs: 250})
+    const promise = waitForReady(ctx, 'app-1', 'DATABASE_URL', {timeoutMs: 250, waitIntervalMs: 100})
     const expectation = expect(promise).rejects.toThrow(/did not become ready within 250ms/)
     await vi.advanceTimersByTimeAsync(1000)
     await expectation

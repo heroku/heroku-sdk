@@ -219,17 +219,35 @@ describe('run', () => {
     vi.clearAllMocks()
   })
 
-  it('gates on the ready status, runs, and returns the migration it acted on', async () => {
-    const migration = buildMigration({status: 'ready'})
-    const migrationInfo = vi.fn().mockResolvedValue(migration)
+  it('gates on the ready status, runs, and returns the re-fetched post-action migration', async () => {
+    const gated = buildMigration({status: 'ready'})
+    const postAction = buildMigration({status: 'migrating'})
+    // First call gates on `ready`; second re-fetches the post-run state.
+    const migrationInfo = vi.fn()
+      .mockResolvedValueOnce(gated)
+      .mockResolvedValueOnce(postAction)
     const ctx = buildCtx({migrationInfo})
     const {run: routeRun} = (ctx.data as unknown as {postgresMigration: {run: Fn}}).postgresMigration
 
     const acted = await run(ctx, 'advanced-addon')
 
-    expect(migrationInfo).toHaveBeenCalledExactlyOnceWith('advanced-addon')
+    expect(migrationInfo).toHaveBeenCalledTimes(2)
+    expect(migrationInfo).toHaveBeenNthCalledWith(1, 'advanced-addon')
+    expect(migrationInfo).toHaveBeenNthCalledWith(2, 'advanced-addon')
     expect(routeRun).toHaveBeenCalledExactlyOnceWith('advanced-addon')
-    expect(acted).toBe(migration)
+    expect(acted).toBe(postAction)
+  })
+
+  it('falls back to the gated migration when the post-run re-fetch finds it gone', async () => {
+    const gated = buildMigration({status: 'ready'})
+    const migrationInfo = vi.fn()
+      .mockResolvedValueOnce(gated)
+      .mockRejectedValueOnce(buildNotFound())
+    const ctx = buildCtx({migrationInfo})
+
+    const acted = await run(ctx, 'advanced-addon')
+
+    expect(acted).toBe(gated)
   })
 
   it('throws MigrationNotRunnableError (carrying the migration) without running when not ready', async () => {
@@ -242,7 +260,7 @@ describe('run', () => {
 
     expect(error).toBeInstanceOf(MigrationNotRunnableError)
     expect((error as MigrationNotRunnableError).migration).toBe(migration)
-    expect((error as MigrationNotRunnableError).status).toBe('migrating')
+    expect((error as MigrationNotRunnableError).migrationStatus).toBe('migrating')
     expect(routeRun).not.toHaveBeenCalled()
   })
 
@@ -259,16 +277,20 @@ describe('cancel', () => {
     vi.clearAllMocks()
   })
 
-  it('gates on the ready status, cancels, and returns the migration it acted on', async () => {
-    const migration = buildMigration({status: 'ready'})
-    const migrationInfo = vi.fn().mockResolvedValue(migration)
+  it('gates on the ready status, cancels, and returns the re-fetched post-action migration', async () => {
+    const gated = buildMigration({status: 'ready'})
+    const postAction = buildMigration({status: 'cancelled'})
+    const migrationInfo = vi.fn()
+      .mockResolvedValueOnce(gated)
+      .mockResolvedValueOnce(postAction)
     const migrationCancel = vi.fn().mockResolvedValue()
     const ctx = buildCtx({migrationCancel, migrationInfo})
 
     const acted = await cancel(ctx, 'advanced-addon')
 
     expect(migrationCancel).toHaveBeenCalledExactlyOnceWith('advanced-addon')
-    expect(acted).toBe(migration)
+    expect(migrationInfo).toHaveBeenCalledTimes(2)
+    expect(acted).toBe(postAction)
   })
 
   it('throws MigrationNotCancellableError (carrying the migration) without canceling when not ready', async () => {
@@ -281,7 +303,7 @@ describe('cancel', () => {
 
     expect(error).toBeInstanceOf(MigrationNotCancellableError)
     expect((error as MigrationNotCancellableError).migration).toBe(migration)
-    expect((error as MigrationNotCancellableError).status).toBe('completed')
+    expect((error as MigrationNotCancellableError).migrationStatus).toBe('completed')
     expect(migrationCancel).not.toHaveBeenCalled()
   })
 })

@@ -103,10 +103,15 @@ export class MigrationNotRunnableError extends Error {
   }
 
   public get body() {
-    return {id: this.id, message: this.message, status: this.status}
+    return {id: this.id, message: this.message, status: this.migrationStatus}
   }
 
-  public get status(): MigrationStatus {
+  /**
+   * The migration's status. Named `migrationStatus` (not `status`) to avoid
+   * shadowing the HTTP-status convention other `Error` subclasses in the SDK
+   * carry.
+   */
+  public get migrationStatus(): MigrationStatus {
     return this.migration.status
   }
 }
@@ -124,16 +129,29 @@ export class MigrationNotCancellableError extends Error {
   }
 
   public get body() {
-    return {id: this.id, message: this.message, status: this.status}
+    return {id: this.id, message: this.message, status: this.migrationStatus}
   }
 
-  public get status(): MigrationStatus {
+  /**
+   * The migration's status. Named `migrationStatus` (not `status`) to avoid
+   * shadowing the HTTP-status convention other `Error` subclasses in the SDK
+   * carry.
+   */
+  public get migrationStatus(): MigrationStatus {
     return this.migration.status
   }
 }
 
-function assertNever(value: never): never {
-  throw new Error(`Unhandled migration status: ${String(value)}`)
+/**
+ * Compile-time exhaustiveness guard with a safe runtime fallback. A newly
+ * generated `MigrationStatus` that isn't handled above is a type error here
+ * (the `never` parameter), but if one reaches this at runtime — e.g. the API
+ * returns a status the type doesn't yet know about — we return `fallback`
+ * rather than throwing, so `run`/`cancel` fail closed (treat it as not
+ * runnable/cancellable) instead of crashing.
+ */
+function exhaustiveFallback<T>(_status: never, fallback: T): T {
+  return fallback
 }
 
 /**
@@ -160,7 +178,7 @@ export function isRunnable(status: MigrationStatus): boolean {
     }
 
     default: {
-      return assertNever(status)
+      return exhaustiveFallback(status, false)
     }
   }
 }
@@ -188,7 +206,7 @@ export function isCancellable(status: MigrationStatus): boolean {
     }
 
     default: {
-      return assertNever(status)
+      return exhaustiveFallback(status, false)
     }
   }
 }
@@ -248,7 +266,9 @@ export async function create(
  * against state drift between listing and action: throws
  * `MigrationNotRunnableError` (carrying the migration) if it's no longer
  * `ready`, and lets a `NotFoundError` propagate if the migration is already
- * gone. Returns the migration record it acted on.
+ * gone. Returns the migration's post-action state (re-fetched after the run so
+ * the status reflects the transition), falling back to the gated record if the
+ * re-fetch finds it already gone.
  */
 export async function run(
   ctx: Pick<ResourceCtx, 'data'>,
@@ -268,7 +288,7 @@ export async function run(
   signal?.throwIfAborted()
   await data.postgresMigration.run(targetAddonId)
 
-  return migration
+  return (await info(ctx, targetAddonId, {signal})) ?? migration
 }
 
 /**
@@ -276,8 +296,9 @@ export async function run(
  *
  * Gates on status like {@link run}: throws `MigrationNotCancellableError`
  * (carrying the migration) if it's not `ready`, and lets a `NotFoundError`
- * propagate if the migration is already gone. Returns the migration record it
- * acted on.
+ * propagate if the migration is already gone. Returns the migration's
+ * post-action state (re-fetched after the cancel), falling back to the gated
+ * record if the re-fetch finds it already gone.
  */
 export async function cancel(
   ctx: Pick<ResourceCtx, 'data'>,
@@ -297,7 +318,7 @@ export async function cancel(
   signal?.throwIfAborted()
   await data.postgresMigration.cancel(targetAddonId)
 
-  return migration
+  return (await info(ctx, targetAddonId, {signal})) ?? migration
 }
 
 /**

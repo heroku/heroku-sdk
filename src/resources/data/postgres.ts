@@ -83,11 +83,6 @@ export async function runUpgrade(
 
 export type WaitForReadyOptions = {
   /**
-   * Polling interval in milliseconds. Defaults to 5000 (5s), matching the
-   * CLI's historical `--wait-interval` default.
-   */
-  intervalMs?: number
-  /**
    * How many consecutive 404s from `wait_status` to tolerate as "still
    * provisioning" before rethrowing. Defaults to 20; the budget is not reset
    * between polls.
@@ -108,6 +103,13 @@ export type WaitForReadyOptions = {
    * database reports ready or `signal` aborts.
    */
   timeoutMs?: number
+  /**
+   * Polling interval in milliseconds. Defaults to 5000 (5s), matching the
+   * CLI's historical `--wait-interval` default. Named `waitIntervalMs` to match
+   * the SDK-wide wait-tuning convention (`platform.addOn`, `platform.domain`,
+   * `data.postgresDatabase`).
+   */
+  waitIntervalMs?: number
 }
 
 export type WaitForReadyResult = {
@@ -161,20 +163,18 @@ export type ForkBody = {
   recoveryTime?: Date | string
 }
 
-export type ProvisionAdvancedOptions = {
-  /** Fires per `wait_status` poll while `wait` is set. */
-  onPoll?: (status: PostgresWaitStatusResult) => void
+export type ProvisionAdvancedOptions = Pick<
+  WaitForReadyOptions,
+  'notFoundRetries' | 'onPoll' | 'signal' | 'timeoutMs' | 'waitIntervalMs'
+> & {
   /**
    * Fires once the leader add-on create request returns, before the wait
    * poll begins (only when `wait` is set), letting callers switch to a
    * "waiting for provisioning" display.
    */
   onProvisioning?: (addon: AddOn) => Promise<void> | void
-  signal?: AbortSignal
   /** Poll `wait_status` until the leader is ready before returning. */
   wait?: boolean
-  /** Poll interval for the readiness wait, in milliseconds (default 5000). */
-  waitIntervalMs?: number
 }
 
 export type ProvisionAdvancedResult = {
@@ -208,14 +208,14 @@ export type ForkResult = {
 async function pollPostgresReady(
   ctx: Pick<ResourceCtx, 'data'>,
   addonId: string,
-  options: Pick<WaitForReadyOptions, 'intervalMs' | 'notFoundRetries' | 'onPoll' | 'signal' | 'timeoutMs'> = {},
+  options: Pick<WaitForReadyOptions, 'notFoundRetries' | 'onPoll' | 'signal' | 'timeoutMs' | 'waitIntervalMs'> = {},
 ): Promise<PostgresWaitStatusResult> {
   const {
-    intervalMs = DEFAULT_WAIT_INTERVAL_MS,
     notFoundRetries = DEFAULT_WAIT_NOT_FOUND_RETRIES,
     onPoll,
     signal,
     timeoutMs,
+    waitIntervalMs = DEFAULT_WAIT_INTERVAL_MS,
   } = options
 
   signal?.throwIfAborted()
@@ -246,7 +246,7 @@ async function pollPostgresReady(
       throw new Error(`Postgres database '${addonId}' did not become ready within ${timeoutMs}ms`)
     }
 
-    await wait(intervalMs, signal)
+    await wait(waitIntervalMs, signal)
   }
 }
 
@@ -316,7 +316,7 @@ export async function provisionAdvanced(
   body: ProvisionAdvancedBody,
   options: ProvisionAdvancedOptions = {},
 ): Promise<ProvisionAdvancedResult> {
-  const {onPoll, onProvisioning, signal, wait: shouldWait, waitIntervalMs} = options
+  const {notFoundRetries, onPoll, onProvisioning, signal, timeoutMs, wait: shouldWait, waitIntervalMs} = options
   signal?.throwIfAborted()
 
   const {as, config: extra, confirm, followers, highAvailability, level, name, network, version} = body
@@ -337,7 +337,9 @@ export async function provisionAdvanced(
   if (shouldWait) {
     await onProvisioning?.(addon)
     signal?.throwIfAborted()
-    waitStatus = await pollPostgresReady(ctx, addon.id!, {intervalMs: waitIntervalMs, onPoll, signal})
+    waitStatus = await pollPostgresReady(ctx, addon.id!, {
+      notFoundRetries, onPoll, signal, timeoutMs, waitIntervalMs,
+    })
   }
 
   let pool: PostgresPoolCreateResult | undefined
@@ -380,7 +382,7 @@ export async function fork(
   body: ForkBody = {},
   options: ProvisionAdvancedOptions = {},
 ): Promise<ForkResult> {
-  const {onPoll, onProvisioning, signal, wait: shouldWait, waitIntervalMs} = options
+  const {notFoundRetries, onPoll, onProvisioning, signal, timeoutMs, wait: shouldWait, waitIntervalMs} = options
   signal?.throwIfAborted()
 
   const {as, config: extra, confirm, name, recoveryTime} = body
@@ -415,7 +417,9 @@ export async function fork(
   if (shouldWait) {
     await onProvisioning?.(addon)
     signal?.throwIfAborted()
-    waitStatus = await pollPostgresReady(ctx, addon.id!, {intervalMs: waitIntervalMs, onPoll, signal})
+    waitStatus = await pollPostgresReady(ctx, addon.id!, {
+      notFoundRetries, onPoll, signal, timeoutMs, waitIntervalMs,
+    })
   }
 
   return {addon, source, waitStatus}
