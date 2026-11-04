@@ -133,6 +133,37 @@ describe('waitForReady', () => {
     expect(result).toEqual({message: 'ready', waiting: false})
   })
 
+  it('fires onResolved with the resolved addon before the first poll', async () => {
+    const calls: string[] = []
+    const resolutionByAttachment = vi.fn().mockResolvedValue(buildAttachmentMatch({addonId: 'addon-1', planName: 'heroku-postgresql:advanced-0'}))
+    const waitStatus = vi.fn(() => {
+      calls.push('waitStatus')
+      return Promise.resolve({message: 'ready', waiting: false})
+    })
+    const onResolved = vi.fn(addon => {
+      calls.push('onResolved')
+      expect(addon.id).toBe('addon-1')
+    })
+    const ctx = buildCtx({resolutionByAttachment, waitStatus})
+
+    await waitForReady(ctx, 'app-1', 'DATABASE_URL', {onResolved})
+
+    expect(onResolved).toHaveBeenCalledOnce()
+    expect(calls).toEqual(['onResolved', 'waitStatus'])
+  })
+
+  it('does not fire onResolved (or poll) for a classic database', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue(buildAttachmentMatch({addonId: 'addon-1', planName: 'heroku-postgresql:standard-0'}))
+    const waitStatus = vi.fn()
+    const onResolved = vi.fn()
+    const ctx = buildCtx({resolutionByAttachment, waitStatus})
+
+    await waitForReady(ctx, 'app-1', 'DATABASE_URL', {onResolved}).catch(() => {})
+
+    expect(onResolved).not.toHaveBeenCalled()
+    expect(waitStatus).not.toHaveBeenCalled()
+  })
+
   it('throws NotAdvancedDatabaseError (carrying the addon) for a classic database without polling', async () => {
     const resolutionByAttachment = vi.fn().mockResolvedValue(buildAttachmentMatch({addonId: 'addon-1', planName: 'heroku-postgresql:standard-0'}))
     const waitStatus = vi.fn()

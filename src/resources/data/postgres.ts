@@ -95,6 +95,13 @@ export type WaitForReadyOptions = {
    */
   onPoll?: (status: PostgresWaitStatusResult) => void
   /**
+   * Fires once the database is resolved and tier-checked, before the wait
+   * poll begins, letting callers label a spinner with the resolved add-on
+   * (mirrors `provisionAdvanced`/`fork`'s `onProvisioning`). An abort during
+   * the hook prevents the poll.
+   */
+  onResolved?: (addon: ResolvedPgDatabase) => Promise<void> | void
+  /**
    * Aborts the in-flight request and any pending poll delay.
    */
   signal?: AbortSignal
@@ -264,7 +271,7 @@ export async function waitForReady(
   addonIdentity?: string,
   options: WaitForReadyOptions = {},
 ): Promise<WaitForReadyResult> {
-  const {signal} = options
+  const {onResolved, signal} = options
   signal?.throwIfAborted()
 
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, signal})
@@ -272,6 +279,9 @@ export async function waitForReady(
   if (!isAdvancedDatabase(addon)) {
     throw new NotAdvancedDatabaseError(addon, `You can only use postgres.waitForReady() on Advanced-tier databases. ${addon.name} isn't an Advanced-tier database.`)
   }
+
+  await onResolved?.(addon)
+  signal?.throwIfAborted()
 
   const result = await pollPostgresReady(ctx, addon.id, options)
 
