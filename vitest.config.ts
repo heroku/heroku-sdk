@@ -1,4 +1,4 @@
-import {defineConfig} from 'vitest/config'
+import {configDefaults, defineConfig} from 'vitest/config'
 
 export default defineConfig({
   test: {
@@ -8,5 +8,7 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       provider: 'v8',
     },
+    // Exclude the release workflow's ./workflows-repo checkout from discovery.
+    exclude: [...configDefaults.exclude, 'workflows-repo/**'],
   },
 })
