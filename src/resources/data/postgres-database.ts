@@ -10,7 +10,7 @@ import {extendResource} from '../../core/extend-resource.js'
 import {withSignal} from '../../core/with-signal.js'
 import {destroyAndWait} from '../platform/add-on/destroy-and-wait.js'
 import {
-  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError, AddonNotFoundError,
+  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
 } from '../platform/add-on/errors.js'
 import {resolveAddonInternal} from '../platform/add-on/resolve.js'
 import {getPostgresServiceName, isAdvancedDatabase, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
@@ -301,7 +301,7 @@ export async function destroy(
     // bare not-found. Skip the probe for `::`-qualified identities: those name
     // their app inline, so `resolveAddonInternal` ignores `appIdentity` and the
     // unscoped retry would just repeat the same failing request.
-    if (appIdentity && !addonIdentity.includes('::') && error instanceof AddonNotFoundError) {
+    if (appIdentity && !addonIdentity.includes('::') && error instanceof NotFoundError) {
       let elsewhere: ResolvedAddOn | undefined
       try {
         elsewhere = await resolveAddonInternal(platform, addonIdentity, {

@@ -6,7 +6,7 @@ import {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {
-  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError, AddonNotFoundError,
+  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
 } from '../platform/add-on/errors.js'
 import {getPostgresServiceName, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {
@@ -81,6 +81,10 @@ function buildAddon(opts: {id?: string; planName: string}) {
     name: 'pg-addon',
     plan: {name: opts.planName},
   }
+}
+
+function notFoundError(): NotFoundError {
+  return new NotFoundError(new Response(null, {status: 404}), {id: 'not_found', message: 'addon not found'})
 }
 
 describe('postgres-database resource', () => {
@@ -358,7 +362,7 @@ describe('postgres-database resource', () => {
     it('retries unscoped when the scoped-to-app resolve finds no match', async () => {
       const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
       const addonResolution = vi.fn()
-        .mockRejectedValueOnce(new NotFoundError(new Response(null, {status: 404}), {id: 'addon-not-found', message: 'addon not found'}))
+        .mockRejectedValueOnce(notFoundError())
         .mockResolvedValueOnce([addonMock])
       const createAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
       const releaseList = vi.fn().mockResolvedValue([{version: 1}])
@@ -487,7 +491,7 @@ describe('postgres-database resource', () => {
     it('throws AddonAppMismatchError when the database exists under a different app', async () => {
       const elsewhere = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
       const addonResolution = vi.fn()
-        .mockRejectedValueOnce(new AddonNotFoundError()) // scoped to app-2 misses
+        .mockRejectedValueOnce(notFoundError()) // scoped to app-2 misses
         .mockResolvedValueOnce([elsewhere]) // unscoped finds it on app-1
       const addOnDelete = vi.fn()
       const ctx = buildCtx({addOnDelete, addonResolution})
@@ -503,13 +507,13 @@ describe('postgres-database resource', () => {
 
     it('rethrows not-found when the database exists under no app', async () => {
       const addonResolution = vi.fn()
-        .mockRejectedValueOnce(new AddonNotFoundError())
-        .mockRejectedValueOnce(new AddonNotFoundError())
+        .mockRejectedValueOnce(notFoundError())
+        .mockRejectedValueOnce(notFoundError())
       const ctx = buildCtx({addonResolution})
 
       const error = await destroy(ctx, 'pg-addon', {appIdentity: 'app-2'}).catch((error_: unknown) => error_)
 
-      expect(error).toBeInstanceOf(AddonNotFoundError)
+      expect(error).toBeInstanceOf(NotFoundError)
     })
 
     it('treats an app UUID matching the resolved app as the same app, not a mismatch', async () => {
@@ -519,13 +523,13 @@ describe('postgres-database resource', () => {
       // the raw UUID.
       const elsewhere = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'}) // app.id === 'app-uuid'
       const addonResolution = vi.fn()
-        .mockRejectedValueOnce(new AddonNotFoundError())
+        .mockRejectedValueOnce(notFoundError())
         .mockResolvedValueOnce([elsewhere])
       const ctx = buildCtx({addonResolution})
 
       const error = await destroy(ctx, 'pg-addon', {appIdentity: 'app-uuid'}).catch((error_: unknown) => error_)
 
-      expect(error).toBeInstanceOf(AddonNotFoundError)
+      expect(error).toBeInstanceOf(NotFoundError)
       expect(error).not.toBeInstanceOf(AddonAppMismatchError)
     })
 
@@ -533,19 +537,19 @@ describe('postgres-database resource', () => {
       // A `::`-qualified identity names its app inline, so resolveAddonInternal
       // ignores appIdentity and the unscoped retry would repeat the same failing
       // request — the not-found propagates without a second resolve.
-      const addonResolution = vi.fn().mockRejectedValueOnce(new AddonNotFoundError())
+      const addonResolution = vi.fn().mockRejectedValueOnce(notFoundError())
       const ctx = buildCtx({addonResolution})
 
       const error = await destroy(ctx, 'other-app::DATABASE', {appIdentity: 'app-2'}).catch((error_: unknown) => error_)
 
-      expect(error).toBeInstanceOf(AddonNotFoundError)
+      expect(error).toBeInstanceOf(NotFoundError)
       expect(addonResolution).toHaveBeenCalledTimes(1)
     })
 
     it('rethrows an abort raised during the mismatch probe instead of masking it as not-found', async () => {
       const controller = new AbortController()
       const abortDuringRetry = vi.fn()
-        .mockRejectedValueOnce(new AddonNotFoundError())
+        .mockRejectedValueOnce(notFoundError())
         .mockImplementationOnce(() => {
           controller.abort()
           return Promise.reject(new Error('aborted retry'))
@@ -556,7 +560,7 @@ describe('postgres-database resource', () => {
         .catch((error_: unknown) => error_)
 
       expect((error as Error).message).toBe('aborted retry')
-      expect(error).not.toBeInstanceOf(AddonNotFoundError)
+      expect(error).not.toBeInstanceOf(NotFoundError)
     })
 
     it('converts a platform confirmation_required during the delete into AddonConfirmationRequiredError', async () => {
