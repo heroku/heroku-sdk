@@ -412,6 +412,25 @@ describe('fork', () => {
     expect(source.id).toBe('source-addon')
   })
 
+  it('fires onResolved with the resolved source before creating', async () => {
+    const calls: string[] = []
+    const addonResolution = vi.fn().mockResolvedValue(buildAddonMatch({id: 'source-addon', name: 'postgres-source', planName: 'heroku-postgresql:advanced-0'}))
+    const create = vi.fn(() => {
+      calls.push('create')
+      return Promise.resolve({id: 'fork-addon', state: 'available'})
+    })
+    const onResolved = vi.fn(source => {
+      calls.push('onResolved')
+      expect(source.id).toBe('source-addon')
+    })
+    const ctx = buildCtx({addonResolution, create})
+
+    await fork(ctx, 'app-1', 'postgres-source', {level: 'advanced-0'}, {onResolved})
+
+    expect(onResolved).toHaveBeenCalledOnce()
+    expect(calls).toEqual(['onResolved', 'create'])
+  })
+
   it('defaults the level to the source leader pool when omitted', async () => {
     const addonResolution = vi.fn().mockResolvedValue(buildAddonMatch({id: 'source-addon', planName: 'heroku-postgresql:advanced-0'}))
     const info = vi.fn().mockResolvedValue({pools: [{expected_level: 'advanced-6', name: 'leader'}, {expected_level: 'advanced-0', name: 'follower'}]})
@@ -457,16 +476,18 @@ describe('fork', () => {
     }))
   })
 
-  it('throws NotAdvancedDatabaseError for a classic source without creating', async () => {
+  it('throws NotAdvancedDatabaseError for a classic source without creating or firing onResolved', async () => {
     const addonResolution = vi.fn().mockResolvedValue(buildAddonMatch({id: 'source-addon', planName: 'heroku-postgresql:standard-0'}))
     const create = vi.fn()
+    const onResolved = vi.fn()
     const ctx = buildCtx({addonResolution, create})
 
-    const error = await fork(ctx, 'app-1', 'postgres-source', {level: 'advanced-0'}).catch((error_: unknown) => error_)
+    const error = await fork(ctx, 'app-1', 'postgres-source', {level: 'advanced-0'}, {onResolved}).catch((error_: unknown) => error_)
 
     expect(error).toBeInstanceOf(NotAdvancedDatabaseError)
     expect((error as NotAdvancedDatabaseError).addon.id).toBe('source-addon')
     expect(create).not.toHaveBeenCalled()
+    expect(onResolved).not.toHaveBeenCalled()
   })
 
   it('throws when the level is omitted and the source has no leader pool, before creating', async () => {

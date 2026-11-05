@@ -196,6 +196,17 @@ export type ProvisionAdvancedOptions = Pick<
   wait?: boolean
 }
 
+export type ForkOptions = ProvisionAdvancedOptions & {
+  /**
+   * Fires once the source database is resolved and tier-checked, before the
+   * fork create request is sent, letting callers defer a spinner until the
+   * tier check passes and label it with the resolved source add-on rather than
+   * the raw identity (mirrors `waitForReady`'s `onResolved`). An abort during
+   * the hook prevents the create.
+   */
+  onResolved?: (source: ResolvedAddOn) => Promise<void> | void
+}
+
 export type ProvisionAdvancedResult = {
   /**
    * The newly-created leader add-on. Always present: the leader is billed the
@@ -469,17 +480,18 @@ function formatRecoveryTime(value: Date | string): string {
  * new add-on inherits the source's plan.
  *
  * Throws `NotAdvancedDatabaseError` (carrying the resolved source) if the
- * source isn't an Advanced-tier database. Confirmation and wait semantics
- * match `provisionAdvanced`.
+ * source isn't an Advanced-tier database. `onResolved` fires after a
+ * successful tier check and before the create request. Confirmation and wait
+ * semantics match `provisionAdvanced`.
  */
 export async function fork(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
   sourceIdentity: string,
   body: ForkBody = {},
-  options: ProvisionAdvancedOptions = {},
+  options: ForkOptions = {},
 ): Promise<ForkResult> {
-  const {signal} = options
+  const {onResolved, signal} = options
   signal?.throwIfAborted()
 
   const {as, config: extra, confirm, name, recoveryTime} = body
@@ -490,6 +502,8 @@ export async function fork(
   if (!isAdvancedDatabase(source)) {
     throw new NotAdvancedDatabaseError(source, `You can only fork Advanced-tier databases with postgres.fork(). ${source.name} isn't an Advanced-tier database.`)
   }
+
+  await onResolved?.(source)
 
   let {level} = body
   if (level === undefined) {
@@ -529,7 +543,7 @@ export const postgresExtensions = extendResource('data', 'postgres', ctx => ({
     appIdentity: string,
     sourceIdentity: string,
     body?: ForkBody,
-    options?: ProvisionAdvancedOptions,
+    options?: ForkOptions,
   ) => fork(ctx, appIdentity, sourceIdentity, body, options),
   provisionAdvanced: (
     appIdentity: string,
