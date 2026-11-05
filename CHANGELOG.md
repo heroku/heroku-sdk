@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.4](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.3...sdk-v0.12.4) (2026-11-05)
+
+
+### Features
+
+* **data:** add postgres lifecycle, migration, and pool extensions for v12 CLI ([#182](https://github.com/heroku/heroku-sdk/issues/182)) ([9d58c73](https://github.com/heroku/heroku-sdk/commit/9d58c73a69dae872f5b8819df9a4ad858a556bba))
+* **data:** add resolution-internal postgres settings, destroy, and attachment extensions ([#179](https://github.com/heroku/heroku-sdk/issues/179)) ([09f84d1](https://github.com/heroku/heroku-sdk/commit/09f84d1b058980d50f8f608e2ead3ced05eff04d))
+
+
+### Bug Fixes
+
+* catch NotFoundError in createAttachment ([#180](https://github.com/heroku/heroku-sdk/issues/180)) ([91fb549](https://github.com/heroku/heroku-sdk/commit/91fb549ebbc589aafeb2e82d9e1f6266ad8d782c))
+
 ## [0.12.3](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.2...sdk-v0.12.3) (2026-11-03)
 
 
