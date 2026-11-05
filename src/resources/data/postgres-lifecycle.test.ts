@@ -269,6 +269,9 @@ describe('provisionAdvanced', () => {
       name: undefined,
       plan: 'heroku-postgresql:advanced',
     })
+    // `toHaveBeenCalledExactlyOnceWith` treats a `version: undefined` key as
+    // equal to an absent one, so assert the undefined config keys are dropped.
+    expect(create.mock.calls[0][1].config).not.toHaveProperty('version')
     expect(addon.id).toBe('new-addon')
     expect(pool).toBeUndefined()
     expect(waitStatus).toBeUndefined()

@@ -17,10 +17,11 @@ import {
 } from './internal/postgres-utils.js'
 
 /**
- * A database migration record. Create and Info responses are structurally
- * identical (same fields, same closed `status` union), so one shared alias
- * carries both — don't pass a value typed as one where the other is expected
- * beyond this alias.
+ * A database migration record, as returned by `find`, `startWhenReady`, and
+ * `abortBeforeRun`. The create/prepare response
+ * (`PostgresMigrationCreateResult`) is structurally identical today — same
+ * fields, same closed `status` union — but keeps its own generated type rather
+ * than sharing this alias.
  */
 export type Migration = PostgresMigrationInfoResult
 

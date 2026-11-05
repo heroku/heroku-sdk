@@ -47,7 +47,6 @@ describe('listAvailableLevels', () => {
     const levels = listAvailableLevels(LEVELS, {expected_level: 'advanced-2'})
 
     const current = levels.find(l => l.level.name === 'advanced-2')!
-    expect(current.available).toBe(false)
     expect(current).toMatchObject({available: false, reason: 'current_level'})
 
     const others = levels.filter(l => l.level.name !== 'advanced-2')
@@ -60,7 +59,7 @@ describe('listAvailableLevels', () => {
 
 describe('listAvailableActions', () => {
   it('offers the leader change_level + remove_ha when it runs a standby', () => {
-    const actions = listAvailableActions({expected_count: 2, name: 'leader'})
+    const actions = listAvailableActions({expected_count: 2, name: 'leader'}, {followerInstanceCount: 0})
 
     expect(actions).toEqual([
       {type: 'change_level'},
@@ -69,7 +68,7 @@ describe('listAvailableActions', () => {
   })
 
   it('offers the leader change_level + add_ha when it runs a single instance', () => {
-    const actions = listAvailableActions({expected_count: 1, name: 'leader'})
+    const actions = listAvailableActions({expected_count: 1, name: 'leader'}, {followerInstanceCount: 0})
 
     expect(actions).toEqual([
       {type: 'change_level'},
@@ -105,12 +104,5 @@ describe('listAvailableActions', () => {
     const updateCount = actions.find(a => a.type === 'update_count')
 
     expect(updateCount).toEqual({max: 1, min: 1, type: 'update_count'})
-  })
-
-  it('defaults a follower update_count max to the full cluster budget', () => {
-    const actions = listAvailableActions({expected_count: 1, name: 'follower-1'})
-    const updateCount = actions.find(a => a.type === 'update_count')
-
-    expect(updateCount).toEqual({max: MAX_POOL_INSTANCES, min: 1, type: 'update_count'})
   })
 })

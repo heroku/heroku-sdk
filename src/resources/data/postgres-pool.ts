@@ -2,7 +2,7 @@ import type {PostgresLevelInfoResult, PostgresPoolInfoResult} from '@heroku/type
 
 import {extendResource} from '../../core/extend-resource.js'
 
-/** The maximum number of instances a single database cluster can hold. */
+/** The maximum number of follower-pool instances a database cluster can hold. */
 export const MAX_POOL_INSTANCES = 13
 
 /** The name the leader pool always carries; any other name is a follower pool. */
@@ -44,10 +44,10 @@ export type ListAvailableActionsOptions = {
    * the pool being queried. Used to bound a follower's `update_count` range:
    * the edited pool's own instances are excluded so it can grow back into the
    * budget they occupy (`max = MAX_POOL_INSTANCES - (count - pool.expected_count)`,
-   * floored at 1). Defaults to 0 (the full cluster budget). Ignored for the
-   * leader pool.
+   * floored at 1). Required so an omitted count can't silently widen the range
+   * to the full budget. Ignored for the leader pool.
    */
-  followerInstanceCount?: number
+  followerInstanceCount: number
 }
 
 /**
@@ -79,7 +79,7 @@ export function listAvailableLevels(
  */
 export function listAvailableActions(
   pool: Pick<PostgresPoolInfoResult, 'expected_count' | 'name'>,
-  options: ListAvailableActionsOptions = {},
+  options: ListAvailableActionsOptions,
 ): PoolAction[] {
   if (pool.name === LEADER_POOL_NAME) {
     return [
@@ -88,7 +88,7 @@ export function listAvailableActions(
     ]
   }
 
-  const {followerInstanceCount = 0} = options
+  const {followerInstanceCount} = options
   // `followerInstanceCount` includes this pool's own instances; exclude them so
   // the pool can grow back into the budget it already occupies. Floor at 1 so
   // the range never collapses below `min` even if the counts are inconsistent.
@@ -102,12 +102,6 @@ export function listAvailableActions(
 }
 
 export const postgresPoolExtensions = extendResource('data', 'postgresPool', () => ({
-  listAvailableActions: (
-    pool: Pick<PostgresPoolInfoResult, 'expected_count' | 'name'>,
-    options?: ListAvailableActionsOptions,
-  ) => listAvailableActions(pool, options),
-  listAvailableLevels: (
-    levels: PostgresLevelInfoResult,
-    pool?: Pick<PostgresPoolInfoResult, 'expected_level'>,
-  ) => listAvailableLevels(levels, pool),
+  listAvailableActions,
+  listAvailableLevels,
 }))
