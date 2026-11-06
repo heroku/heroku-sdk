@@ -1,4 +1,4 @@
-import type {ConnectionPoolingCreateResult} from '@heroku/types/data'
+import type {ConnectionPoolingCreateOpts, ConnectionPoolingCreateResult} from '@heroku/types/data'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 import type {ResolvedPgDatabase} from './internal/resolve-pg-database.js'
@@ -10,19 +10,20 @@ import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 export type ConnectionPoolingAttachment = ConnectionPoolingCreateResult
 
-export type AttachConnectionPoolingBody = {
-  /** Name for the connection pooling attachment. The API generates one when omitted. */
-  as?: string
-}
+/** `name` and `credential` as the API takes them; `credential` defaults to `default`. */
+export type AttachConnectionPoolingBody = Omit<ConnectionPoolingCreateOpts, 'app'>
 
 export type AttachConnectionPoolingOptions = {
-  /** Fires once the attachment is created, before the release version fetch. */
+  /**
+   * Runs once the pool is attached, before the release version fetch. The
+   * attachment already exists at this point, so a throw here doesn't undo it.
+   */
   onAttached?: (attachment: ConnectionPoolingAttachment) => Promise<void> | void
   /**
-   * Fires once the database is resolved and validated, before the attachment
+   * Runs once the database is resolved and validated, before the attachment
    * is created. A throw (or abort) here prevents the create.
    */
-  onResolved?: (resolved: {addon: ResolvedPgDatabase}) => Promise<void> | void
+  onResolved?: (addon: ResolvedPgDatabase) => Promise<void> | void
   signal?: AbortSignal
 }
 
@@ -34,11 +35,15 @@ export type AttachConnectionPoolingResult = {
 
 /**
  * Resolves a Postgres database, attaches a connection pooler for it to the
- * app using the default credential, and fetches the latest release version.
+ * app, and fetches the latest release version.
  *
  * `databaseIdentity` resolves through the app's attachments (defaulting to
  * `DATABASE_URL` when empty). Throws `EssentialDatabaseNotSupportedError` when
  * the database is Essential-tier.
+ *
+ * The release lookup is best-effort: the pool is already attached by then, so
+ * a failed lookup reports `releaseVersion: undefined` rather than rejecting
+ * (an abort still rejects).
  */
 export async function attach(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,
@@ -58,24 +63,30 @@ export async function attach(
     throw new EssentialDatabaseNotSupportedError(addon, `Connection pooling isn't supported on Essential-tier databases. ${addon.name} is an Essential-tier database.`)
   }
 
-  await onResolved?.({addon})
+  await onResolved?.(addon)
   signal?.throwIfAborted()
 
   const attachment = await data.connectionPooling.create(addon.name, {
+    ...body,
     app: appIdentity,
-    credential: 'default',
-    name: body.as,
+    credential: body.credential ?? 'default',
   })
 
   await onAttached?.(attachment)
   signal?.throwIfAborted()
 
-  // A caller-supplied Range header disables auto-pagination, so this returns only the newest release.
-  const releases = await platform
-    .withHeaders({Range: 'version ..; max=1, order=desc'})
-    .release.list(appIdentity)
+  let releaseVersion: number | undefined
+  try {
+    // A caller-supplied Range header disables auto-pagination, so this returns only the newest release.
+    const releases = await platform
+      .withHeaders({Range: 'version ..; max=1, order=desc'})
+      .release.list(appIdentity)
+    releaseVersion = releases[0]?.version
+  } catch (error) {
+    if (signal?.aborted) throw error
+  }
 
-  return {addon, attachment, releaseVersion: releases[0]?.version}
+  return {addon, attachment, releaseVersion}
 }
 
 export const connectionPoolingExtensions = extendResource('data', 'connectionPooling', ctx => ({
@@ -86,5 +97,3 @@ export const connectionPoolingExtensions = extendResource('data', 'connectionPoo
     options?: AttachConnectionPoolingOptions,
   ) => attach(ctx, appIdentity, databaseIdentity, body, options),
 }))
-
-export {EssentialDatabaseNotSupportedError} from './internal/postgres-utils.js'

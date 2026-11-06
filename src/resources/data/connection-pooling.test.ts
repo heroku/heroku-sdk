@@ -1,3 +1,4 @@
+import * as routes from '@heroku/types/data/routes'
 import {
   describe, expect, it, vi,
 } from 'vitest'
@@ -24,42 +25,62 @@ function pgAttachment(plan = 'heroku-postgresql:standard-0') {
   }
 }
 
-function buildCtx(opts: {attachmentResolution?: Mock; poolingCreate?: Mock; releaseList?: Mock} = {}) {
-  const data: Record<string, unknown> = {
-    connectionPooling: {create: opts.poolingCreate ?? vi.fn().mockResolvedValue({name: 'DATABASE_CONNECTION_POOL'})},
+/**
+ * Builds a platform client whose `withOptions` / `withHeaders` return *derived*
+ * clients that remember the signal and headers bound so far, so a test can tell
+ * which client a request went through.
+ */
+function buildPlatform(opts: {attachmentResolution: Mock; releaseList: Mock}) {
+  const releaseCalls: Array<{headers: Record<string, string>; signal?: AbortSignal}> = []
+
+  function derive(state: {headers: Record<string, string>; signal?: AbortSignal}): Record<string, unknown> {
+    return {
+      addOnAttachment: {
+        listByApp: vi.fn().mockResolvedValue([]),
+        resolution: opts.attachmentResolution,
+      },
+      release: {
+        list: vi.fn(async (app: string) => {
+          releaseCalls.push(state)
+          return opts.releaseList(app)
+        }),
+      },
+      withHeaders: (headers: Record<string, string>) => derive({...state, headers: {...state.headers, ...headers}}),
+      withOptions: ({signal}: {signal?: AbortSignal}) => derive({...state, signal}),
+    }
   }
+
+  return {platform: derive({headers: {}}), releaseCalls}
+}
+
+function buildCtx(opts: {attachmentResolution?: Mock; poolingCreate?: Mock; releaseList?: Mock} = {}) {
+  const releaseList = opts.releaseList ?? vi.fn().mockResolvedValue([{version: 42}])
+  const {platform, releaseCalls} = buildPlatform({
+    attachmentResolution: opts.attachmentResolution ?? vi.fn().mockResolvedValue([pgAttachment()]),
+    releaseList,
+  })
+
+  const create = opts.poolingCreate ?? vi.fn().mockResolvedValue({name: 'DATABASE_CONNECTION_POOL'})
+  const data: Record<string, unknown> = {connectionPooling: {create}}
   data.withOptions = vi.fn(() => data)
 
-  const headers: Array<Record<string, string>> = []
-  const platform: Record<string, unknown> = {
-    addOnAttachment: {
-      listByApp: vi.fn().mockResolvedValue([]),
-      resolution: opts.attachmentResolution ?? vi.fn().mockResolvedValue([pgAttachment()]),
-    },
-    release: {list: opts.releaseList ?? vi.fn().mockResolvedValue([{version: 42}])},
-    withHeaders: vi.fn((h: Record<string, string>) => {
-      headers.push(h)
-      return platform
-    }),
-    withOptions: vi.fn(() => platform),
-  }
-
   return {
+    create,
     ctx: {data, platform} as unknown as Pick<ResourceCtx, 'data' | 'platform'>,
-    data: data as {connectionPooling: {create: Mock}; withOptions: Mock},
-    headers,
-    platform: platform as {release: {list: Mock}; withOptions: Mock},
+    data: data as {withOptions: Mock},
+    releaseCalls,
+    releaseList,
   }
 }
 
 describe('connectionPooling resource', () => {
   describe('attach', () => {
-    it('resolves DATABASE_URL by default and attaches a pool by add-on name', async () => {
-      const {ctx, data} = buildCtx()
+    it('resolves DATABASE_URL by default and attaches a pool by add-on name with the default credential', async () => {
+      const {create, ctx} = buildCtx()
 
       const result = await attach(ctx, 'app-1')
 
-      expect(data.connectionPooling.create).toHaveBeenCalledWith('postgresql-db-1', {app: 'app-1', credential: 'default', name: undefined})
+      expect(create).toHaveBeenCalledWith('postgresql-db-1', {app: 'app-1', credential: 'default'})
       expect(result).toEqual({
         addon: pgAttachment().addon,
         attachment: {name: 'DATABASE_CONNECTION_POOL'},
@@ -67,51 +88,66 @@ describe('connectionPooling resource', () => {
       })
     })
 
-    it('passes the database identity and the attachment name through', async () => {
+    it('passes the database identity, name, and credential through', async () => {
       const attachmentResolution = vi.fn().mockResolvedValue([pgAttachment()])
-      const {ctx, data} = buildCtx({attachmentResolution})
+      const {create, ctx} = buildCtx({attachmentResolution})
 
-      await attach(ctx, 'app-1', 'other-app::HEROKU_POSTGRESQL_RED', {as: 'MY_POOL'})
+      await attach(ctx, 'app-1', 'other-app::HEROKU_POSTGRESQL_RED', {credential: 'reader', name: 'MY_POOL'})
 
       expect(attachmentResolution).toHaveBeenCalledWith({addon_attachment: 'HEROKU_POSTGRESQL_RED', app: 'other-app'}) // eslint-disable-line camelcase
-      expect(data.connectionPooling.create).toHaveBeenCalledWith('postgresql-db-1', {app: 'app-1', credential: 'default', name: 'MY_POOL'})
+      expect(create).toHaveBeenCalledWith('postgresql-db-1', {app: 'app-1', credential: 'reader', name: 'MY_POOL'})
     })
 
-    it('fetches only the newest release via a Range header', async () => {
-      const {ctx, headers, platform} = buildCtx()
+    it('fetches only the newest release through the client carrying the Range header', async () => {
+      const {ctx, releaseCalls, releaseList} = buildCtx()
 
       await attach(ctx, 'app-1')
 
-      expect(headers).toContainEqual({Range: 'version ..; max=1, order=desc'})
-      expect(platform.release.list).toHaveBeenCalledOnce()
-      expect(platform.release.list).toHaveBeenCalledWith('app-1')
+      expect(releaseList).toHaveBeenCalledOnce()
+      expect(releaseList).toHaveBeenCalledWith('app-1')
+      expect(releaseCalls[0].headers).toEqual({Range: 'version ..; max=1, order=desc'})
+    })
+
+    it('reports an undefined release version when there are no releases', async () => {
+      const {ctx} = buildCtx({releaseList: vi.fn().mockResolvedValue([])})
+
+      expect((await attach(ctx, 'app-1')).releaseVersion).toBeUndefined()
+    })
+
+    it('reports an undefined release version when the release lookup fails after attaching', async () => {
+      const {ctx} = buildCtx({releaseList: vi.fn().mockRejectedValue(new Error('boom'))})
+
+      const result = await attach(ctx, 'app-1')
+
+      expect(result.attachment).toEqual({name: 'DATABASE_CONNECTION_POOL'})
+      expect(result.releaseVersion).toBeUndefined()
     })
 
     it('throws PgDatabaseNotFoundError when the database does not resolve', async () => {
-      const {ctx, data} = buildCtx({attachmentResolution: vi.fn().mockResolvedValue([])})
+      const {create, ctx} = buildCtx({attachmentResolution: vi.fn().mockResolvedValue([])})
 
       await expect(attach(ctx, 'app-1', 'NOPE')).rejects.toBeInstanceOf(PgDatabaseNotFoundError)
-      expect(data.connectionPooling.create).not.toHaveBeenCalled()
+      expect(create).not.toHaveBeenCalled()
     })
 
     it('rejects an Essential-tier database', async () => {
-      const {ctx, data} = buildCtx({attachmentResolution: vi.fn().mockResolvedValue([pgAttachment('heroku-postgresql:essential-0')])})
+      const {create, ctx} = buildCtx({attachmentResolution: vi.fn().mockResolvedValue([pgAttachment('heroku-postgresql:essential-0')])})
 
       const error = await attach(ctx, 'app-1').catch(error_ => error_)
 
       expect(error).toBeInstanceOf(EssentialDatabaseNotSupportedError)
       expect(error.addon.name).toBe('postgresql-db-1')
-      expect(data.connectionPooling.create).not.toHaveBeenCalled()
+      expect(create).not.toHaveBeenCalled()
     })
 
-    it('fires onResolved, then onAttached, then fetches the release', async () => {
+    it('runs onResolved with the add-on, then onAttached, then fetches the release', async () => {
       const order: string[] = []
-      const {ctx, data, platform} = buildCtx()
-      data.connectionPooling.create.mockImplementation(async () => {
+      const {create, ctx, releaseList} = buildCtx()
+      create.mockImplementation(async () => {
         order.push('create')
         return {name: 'POOL'}
       })
-      platform.release.list.mockImplementation(async () => {
+      releaseList.mockImplementation(async () => {
         order.push('release')
         return [{version: 7}]
       })
@@ -120,7 +156,7 @@ describe('connectionPooling resource', () => {
         onAttached(attachment) {
           order.push(`onAttached:${attachment.name}`)
         },
-        onResolved({addon}) {
+        onResolved(addon) {
           order.push(`onResolved:${addon.name}`)
         },
       })
@@ -129,24 +165,48 @@ describe('connectionPooling resource', () => {
     })
 
     it('does not attach when onResolved throws', async () => {
-      const {ctx, data} = buildCtx()
+      const {create, ctx} = buildCtx()
 
       await expect(attach(ctx, 'app-1', undefined, {}, {
         onResolved() {
           throw new Error('stop')
         },
       })).rejects.toThrow('stop')
-      expect(data.connectionPooling.create).not.toHaveBeenCalled()
+      expect(create).not.toHaveBeenCalled()
     })
 
-    it('binds the signal to both clients', async () => {
-      const {ctx, data, platform} = buildCtx()
+    it('does not attach when the signal aborts inside onResolved', async () => {
+      const {create, ctx} = buildCtx()
+      const controller = new AbortController()
+
+      await expect(attach(ctx, 'app-1', undefined, {}, {
+        onResolved() {
+          controller.abort()
+        },
+        signal: controller.signal,
+      })).rejects.toThrow()
+      expect(create).not.toHaveBeenCalled()
+    })
+
+    it('skips the release lookup when onAttached throws', async () => {
+      const {ctx, releaseList} = buildCtx()
+
+      await expect(attach(ctx, 'app-1', undefined, {}, {
+        onAttached() {
+          throw new Error('ui failed')
+        },
+      })).rejects.toThrow('ui failed')
+      expect(releaseList).not.toHaveBeenCalled()
+    })
+
+    it('binds the signal to the data client and to the release lookup', async () => {
+      const {ctx, data, releaseCalls} = buildCtx()
       const controller = new AbortController()
 
       await attach(ctx, 'app-1', undefined, {}, {signal: controller.signal})
 
       expect(data.withOptions).toHaveBeenCalledWith({signal: controller.signal})
-      expect(platform.withOptions).toHaveBeenCalledWith({signal: controller.signal})
+      expect(releaseCalls[0].signal).toBe(controller.signal)
     })
   })
 
@@ -156,11 +216,18 @@ describe('connectionPooling resource', () => {
       expect(connectionPoolingExtensions.resource).toBe('connectionPooling')
     })
 
-    it('keeps the generated connectionPooling routes alongside the extension', () => {
+    it('does not shadow any generated connectionPooling route', () => {
+      const extensionKeys = Object.keys(connectionPoolingExtensions.factory({} as never))
+      const routeKeys = Object.keys(routes.connectionPooling)
+
+      expect(routeKeys.length).toBeGreaterThan(0)
+      expect(extensionKeys.filter(key => routeKeys.includes(key))).toEqual([])
+    })
+
+    it('exposes the extension alongside the generated routes', () => {
       const sdk = new HerokuSDK({extensions: [connectionPoolingExtensions]})
 
       expect(sdk.data.connectionPooling.create).toBeTypeOf('function')
-      expect(sdk.data.connectionPooling.info).toBeTypeOf('function')
       expect(sdk.data.connectionPooling.attach).toBeTypeOf('function')
     })
   })

@@ -1,4 +1,5 @@
 import {NotFoundError} from '@heroku/heroku-fetch'
+import * as routes from '@heroku/types/data/routes'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -6,6 +7,7 @@ import {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {HerokuSDK} from '../../index.js'
+import {AddonAmbiguousError, AddonNotFoundError} from '../platform/add-on/errors.js'
 import {EssentialDatabaseNotSupportedError} from './internal/postgres-utils.js'
 import {PgDatabaseNotFoundError} from './internal/resolve-pg-database.js'
 import {
@@ -41,6 +43,10 @@ function remoteAddon(opts: {app?: string; id?: string; name?: string; plan?: str
     name: opts.name ?? 'redis-remote-1',
     plan: {name: opts.plan ?? 'heroku-redis:premium-0'},
   }
+}
+
+function notFound(resource: string) {
+  return new NotFoundError(new Response(null, {status: 404}), {id: 'not_found', message: 'not found', resource})
 }
 
 function buildCtx(opts: {
@@ -92,18 +98,18 @@ const LINK = {
 
 describe('link resource', () => {
   afterEach(() => {
-    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
   })
 
   describe('listByApp', () => {
-    it('resolves the given database and returns its links', async () => {
+    it('resolves the given database and returns its links with the resolved attachment name', async () => {
       const ctx = buildCtx({linkList: vi.fn().mockResolvedValue([LINK])})
 
       const result = await listByApp(ctx, 'app-1', 'DATABASE')
 
       expect(ctx.platform.addOnAttachment.resolution).toHaveBeenCalledWith({addon_attachment: 'DATABASE', app: 'app-1'}) // eslint-disable-line camelcase
       expect(ctx.data.link.list).toHaveBeenCalledWith('addon-1')
-      expect(result).toEqual([{addon: pgAttachment().addon, links: [LINK]}])
+      expect(result).toEqual([{addon: {...pgAttachment().addon, attachmentNames: ['DATABASE']}, links: [LINK]}])
     })
 
     it('resolves app::database against the named app', async () => {
@@ -114,11 +120,13 @@ describe('link resource', () => {
       expect(ctx.platform.addOnAttachment.resolution).toHaveBeenCalledWith({addon_attachment: 'DATABASE', app: 'other-app'}) // eslint-disable-line camelcase
     })
 
-    it('lists links on every legacy database when no database is given', async () => {
+    it('lists links on every legacy database, including Essential, when no database is given', async () => {
       const attachmentListByApp = vi.fn().mockResolvedValue([
         pgAttachment({addonId: 'a', addonName: 'pg-a', name: 'DATABASE'}),
         pgAttachment({addonId: 'a', addonName: 'pg-a', name: 'HEROKU_POSTGRESQL_RED'}),
-        pgAttachment({addonId: 'b', addonName: 'pg-b', name: 'HEROKU_POSTGRESQL_BLUE'}),
+        pgAttachment({
+          addonId: 'b', addonName: 'pg-b', name: 'HEROKU_POSTGRESQL_BLUE', plan: 'heroku-postgresql:essential-0',
+        }),
       ])
       const linkList = vi.fn(async (id: string) => (id === 'a' ? [LINK] : []))
       const ctx = buildCtx({attachmentListByApp, linkList})
@@ -126,7 +134,10 @@ describe('link resource', () => {
       const result = await listByApp(ctx, 'app-1')
 
       expect(ctx.platform.addOnAttachment.resolution).not.toHaveBeenCalled()
-      expect(result.map(r => [r.addon.name, r.links.length])).toEqual([['pg-a', 1], ['pg-b', 0]])
+      expect(result.map(r => [r.addon.name, r.addon.attachmentNames, r.links.length])).toEqual([
+        ['pg-a', ['DATABASE', 'HEROKU_POSTGRESQL_RED'], 1],
+        ['pg-b', ['HEROKU_POSTGRESQL_BLUE'], 0],
+      ])
     })
 
     it('returns an empty array when the app has no databases', async () => {
@@ -141,6 +152,15 @@ describe('link resource', () => {
 
       await expect(listByApp(ctx, 'app-1', 'NOPE')).rejects.toBeInstanceOf(PgDatabaseNotFoundError)
     })
+
+    it('throws before any request when the signal is already aborted', async () => {
+      const ctx = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(listByApp(ctx, 'app-1', undefined, {signal: controller.signal})).rejects.toThrow()
+      expect(ctx.platform.addOnAttachment.listByApp).not.toHaveBeenCalled()
+    })
   })
 
   describe('createForDatabase', () => {
@@ -154,16 +174,16 @@ describe('link resource', () => {
       expect(result).toEqual({addon: pgAttachment().addon, link: LINK, target: remoteAddon()})
     })
 
-    it('defaults the database to DATABASE_URL', async () => {
+    it('treats an empty database identity as DATABASE_URL', async () => {
       const ctx = buildCtx({linkCreate: vi.fn().mockResolvedValue(LINK)})
 
-      await createForDatabase(ctx, 'app-1', undefined, 'redis-remote-1')
+      await createForDatabase(ctx, 'app-1', '', 'redis-remote-1')
 
       expect(ctx.platform.addOnAttachment.resolution).toHaveBeenCalledWith({addon_attachment: 'DATABASE_URL', app: 'app-1'}) // eslint-disable-line camelcase
     })
 
     it.each([
-      ['NotFoundError', () => Promise.reject(new NotFoundError(new Response(null, {status: 404}), {id: 'not_found', resource: 'add_on'}))],
+      ['an add-on 404', () => Promise.reject(notFound('add_on'))],
       ['an empty app-scoped match', () => Promise.resolve([])],
     ])('retries the remote globally after %s', async (_label, appScoped) => {
       const other = remoteAddon({app: 'app-2', name: 'pg-on-app-2', plan: 'heroku-postgresql:standard-0'})
@@ -179,20 +199,56 @@ describe('link resource', () => {
       expect(result.target).toEqual(other)
     })
 
-    it('resolves an app::remote identity globally without a retry', async () => {
-      const ctx = buildCtx({linkCreate: vi.fn().mockResolvedValue(LINK)})
+    it.each([
+      ['an app 404', () => notFound('app')],
+      ['an ambiguous match', () => new AddonAmbiguousError([])],
+      ['a server error', () => new Error('boom')],
+    ])('does not retry the remote globally after %s', async (_label, makeError) => {
+      const error = makeError()
+      const addonResolution = vi.fn().mockRejectedValue(error)
+      const ctx = buildCtx({addonResolution})
 
-      await createForDatabase(ctx, 'app-1', 'DATABASE', 'app-2::REDIS')
+      await expect(createForDatabase(ctx, 'typo-app', 'other-app::DATABASE', 'redis-remote-1')).rejects.toBe(error)
+      expect(addonResolution).toHaveBeenCalledOnce()
+      expect(ctx.data.link.create).not.toHaveBeenCalled()
+    })
 
-      expect(ctx.platform.addOn.resolution).toHaveBeenCalledOnce()
-      expect(ctx.platform.addOn.resolution).toHaveBeenCalledWith({addon: 'app-2::REDIS'})
+    it('resolves an app::remote identity globally, once, even when it misses', async () => {
+      const addonResolution = vi.fn().mockResolvedValue([])
+      const ctx = buildCtx({addonResolution})
+
+      await expect(createForDatabase(ctx, 'app-1', 'DATABASE', 'app-2::REDIS')).rejects.toBeInstanceOf(AddonNotFoundError)
+      expect(addonResolution).toHaveBeenCalledOnce()
+      expect(addonResolution).toHaveBeenCalledWith({addon: 'app-2::REDIS'})
     })
 
     it('rejects a remote that is not Postgres or Key-Value Store', async () => {
-      const ctx = buildCtx({addonResolution: vi.fn().mockResolvedValue([remoteAddon({plan: 'papertrail:choklad'})])})
+      const remote = remoteAddon({plan: 'papertrail:choklad'})
+      const ctx = buildCtx({addonResolution: vi.fn().mockResolvedValue([remote])})
 
-      await expect(createForDatabase(ctx, 'app-1', 'DATABASE', 'papertrail-1')).rejects.toBeInstanceOf(InvalidLinkRemoteError)
+      const error = await createForDatabase(ctx, 'app-1', 'DATABASE', 'papertrail-1').catch(error_ => error_)
+
+      expect(error).toBeInstanceOf(InvalidLinkRemoteError)
+      expect(error.addon).toEqual(remote)
+      expect(error.body).toEqual({id: 'invalid_link_remote', message: error.message})
       expect(ctx.data.link.create).not.toHaveBeenCalled()
+    })
+
+    it('rejects a remote whose service only shares a prefix with a linkable service', async () => {
+      const ctx = buildCtx({addonResolution: vi.fn().mockResolvedValue([remoteAddon({plan: 'heroku-redisfoo:mini'})])})
+
+      await expect(createForDatabase(ctx, 'app-1', 'DATABASE', 'x')).rejects.toBeInstanceOf(InvalidLinkRemoteError)
+    })
+
+    it('accepts a Postgres remote under an overridden Postgres service name', async () => {
+      vi.stubEnv('HEROKU_POSTGRESQL_ADDON_NAME', 'heroku-postgresql-staging')
+      const attachmentResolution = vi.fn().mockResolvedValue([pgAttachment({plan: 'heroku-postgresql-staging:standard-0'})])
+      const addonResolution = vi.fn().mockResolvedValue([remoteAddon({name: 'pg-staging', plan: 'heroku-postgresql-staging:standard-0'})])
+      const ctx = buildCtx({addonResolution, attachmentResolution, linkCreate: vi.fn().mockResolvedValue(LINK)})
+
+      await createForDatabase(ctx, 'app-1', 'DATABASE', 'pg-staging')
+
+      expect(ctx.data.link.create).toHaveBeenCalledWith('addon-1', {as: undefined, target: 'pg-staging'})
     })
 
     it('rejects an Essential-tier database', async () => {
@@ -202,6 +258,7 @@ describe('link resource', () => {
 
       expect(error).toBeInstanceOf(EssentialDatabaseNotSupportedError)
       expect(error.addon.name).toBe('postgresql-db-1')
+      expect(error.body).toEqual({id: 'essential_database_not_supported', message: error.message})
       expect(ctx.data.link.create).not.toHaveBeenCalled()
     })
 
@@ -215,22 +272,50 @@ describe('link resource', () => {
       expect(ctx.data.link.create).not.toHaveBeenCalled()
     })
 
-    it('calls onResolved before the create, and a throw prevents it', async () => {
+    it('runs beforeCreate with both sides before the create', async () => {
       const ctx = buildCtx({linkCreate: vi.fn().mockResolvedValue(LINK)})
-      const onResolved = vi.fn(() => {
+      const beforeCreate = vi.fn(() => {
         expect(ctx.data.link.create).not.toHaveBeenCalled()
       })
 
-      await createForDatabase(ctx, 'app-1', 'DATABASE', 'redis-remote-1', {}, {onResolved})
-      expect(onResolved).toHaveBeenCalledWith({addon: pgAttachment().addon, target: remoteAddon()})
+      await createForDatabase(ctx, 'app-1', 'DATABASE', 'redis-remote-1', {}, {beforeCreate})
 
-      ctx.data.link.create.mockClear()
+      expect(beforeCreate).toHaveBeenCalledWith({addon: pgAttachment().addon, target: remoteAddon()})
+      expect(ctx.data.link.create).toHaveBeenCalledOnce()
+    })
+
+    it('does not create when beforeCreate throws', async () => {
+      const ctx = buildCtx()
+
       await expect(createForDatabase(ctx, 'app-1', 'DATABASE', 'redis-remote-1', {}, {
-        onResolved() {
+        beforeCreate() {
           throw new Error('nope')
         },
       })).rejects.toThrow('nope')
       expect(ctx.data.link.create).not.toHaveBeenCalled()
+    })
+
+    it('does not create when the signal aborts inside beforeCreate', async () => {
+      const ctx = buildCtx()
+      const controller = new AbortController()
+
+      await expect(createForDatabase(ctx, 'app-1', 'DATABASE', 'redis-remote-1', {}, {
+        beforeCreate() {
+          controller.abort()
+        },
+        signal: controller.signal,
+      })).rejects.toThrow()
+      expect(ctx.data.link.create).not.toHaveBeenCalled()
+    })
+
+    it('binds the signal to both clients', async () => {
+      const ctx = buildCtx({linkCreate: vi.fn().mockResolvedValue(LINK)})
+      const controller = new AbortController()
+
+      await createForDatabase(ctx, 'app-1', 'DATABASE', 'redis-remote-1', {}, {signal: controller.signal})
+
+      expect(ctx.data.withOptions).toHaveBeenCalledWith({signal: controller.signal})
+      expect(ctx.platform.withOptions).toHaveBeenCalledWith({signal: controller.signal})
     })
   })
 
@@ -244,24 +329,49 @@ describe('link resource', () => {
       expect(result).toEqual({addon: pgAttachment().addon, link: LINK})
     })
 
-    it('rejects an Essential-tier database before onResolved', async () => {
-      const ctx = buildCtx({attachmentResolution: vi.fn().mockResolvedValue([pgAttachment({plan: 'heroku-postgresql:essential-1'})])})
-      const onResolved = vi.fn()
+    it('runs beforeDelete with the database and link name before deleting', async () => {
+      const ctx = buildCtx()
+      const beforeDelete = vi.fn(() => {
+        expect(ctx.data.link.delete).not.toHaveBeenCalled()
+      })
 
-      await expect(deleteFromDatabase(ctx, 'app-1', 'DATABASE', 'redis-link', {onResolved}))
+      await deleteFromDatabase(ctx, 'app-1', 'DATABASE', 'redis-link', {beforeDelete})
+
+      expect(beforeDelete).toHaveBeenCalledWith({addon: pgAttachment().addon, link: 'redis-link'})
+      expect(ctx.data.link.delete).toHaveBeenCalledOnce()
+    })
+
+    it('rejects an Essential-tier database before beforeDelete', async () => {
+      const ctx = buildCtx({attachmentResolution: vi.fn().mockResolvedValue([pgAttachment({plan: 'heroku-postgresql:essential-1'})])})
+      const beforeDelete = vi.fn()
+
+      await expect(deleteFromDatabase(ctx, 'app-1', 'DATABASE', 'redis-link', {beforeDelete}))
         .rejects.toBeInstanceOf(EssentialDatabaseNotSupportedError)
-      expect(onResolved).not.toHaveBeenCalled()
+      expect(beforeDelete).not.toHaveBeenCalled()
       expect(ctx.data.link.delete).not.toHaveBeenCalled()
     })
 
-    it('does not delete when onResolved throws', async () => {
+    it('does not delete when beforeDelete throws', async () => {
       const ctx = buildCtx()
 
       await expect(deleteFromDatabase(ctx, 'app-1', 'DATABASE', 'redis-link', {
-        onResolved() {
+        beforeDelete() {
           throw new Error('confirmation mismatch')
         },
       })).rejects.toThrow('confirmation mismatch')
+      expect(ctx.data.link.delete).not.toHaveBeenCalled()
+    })
+
+    it('does not delete when the signal aborts inside beforeDelete', async () => {
+      const ctx = buildCtx()
+      const controller = new AbortController()
+
+      await expect(deleteFromDatabase(ctx, 'app-1', 'DATABASE', 'redis-link', {
+        beforeDelete() {
+          controller.abort()
+        },
+        signal: controller.signal,
+      })).rejects.toThrow()
       expect(ctx.data.link.delete).not.toHaveBeenCalled()
     })
 
@@ -281,12 +391,18 @@ describe('link resource', () => {
       expect(linkExtensions.resource).toBe('link')
     })
 
-    it('keeps the generated link routes alongside the extensions', () => {
+    it('does not shadow any generated link route', () => {
+      const extensionKeys = Object.keys(linkExtensions.factory({} as never))
+      const routeKeys = Object.keys(routes.link)
+
+      expect(routeKeys.length).toBeGreaterThan(0)
+      expect(extensionKeys.filter(key => routeKeys.includes(key))).toEqual([])
+    })
+
+    it('exposes the extensions alongside the generated routes', () => {
       const sdk = new HerokuSDK({extensions: [linkExtensions]})
 
       expect(sdk.data.link.list).toBeTypeOf('function')
-      expect(sdk.data.link.create).toBeTypeOf('function')
-      expect(sdk.data.link.delete).toBeTypeOf('function')
       expect(sdk.data.link.listByApp).toBeTypeOf('function')
       expect(sdk.data.link.createForDatabase).toBeTypeOf('function')
       expect(sdk.data.link.deleteFromDatabase).toBeTypeOf('function')

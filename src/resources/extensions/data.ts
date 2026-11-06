@@ -8,15 +8,15 @@ export {
 export {databaseCredentialExtensions} from '../data/database-credential/index.js'
 export {databaseExtensions} from '../data/database.js'
 export {
-  type CreateForDatabaseBody,
-  type CreateForDatabaseOptions,
-  type CreateForDatabaseResult,
-  type DeleteFromDatabaseOptions,
-  type DeleteFromDatabaseResult,
+  type CreateLinkBody,
+  type CreateLinkOptions,
+  type CreateLinkResult,
+  type DeleteLinkOptions,
+  type DeleteLinkResult,
   InvalidLinkRemoteError,
   type LinkedDatabase,
   linkExtensions,
-  type ListByAppOptions as ListLinksByAppOptions,
+  type ListLinksByAppOptions,
   type PgLink,
 } from '../data/link.js'
 export {maintenanceExtensions} from '../data/maintenance/index.js'
@@ -24,7 +24,9 @@ export {
   EssentialDatabaseNotSupportedError,
   type LegacyDatabase,
   type ListLegacyByAppOptions,
+  PgDatabaseNotFoundError,
   postgresDatabaseExtensions,
+  type ResolvedPgDatabase,
 } from '../data/postgres-database.js'
 export {
   isCancellable,
