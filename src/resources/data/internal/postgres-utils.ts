@@ -36,6 +36,23 @@ export class NotAdvancedDatabaseError extends Error {
 }
 
 /**
+ * Thrown when an operation isn't supported on Essential-tier databases.
+ * Carries the add-on so callers can name it without a second resolve call.
+ */
+export class EssentialDatabaseNotSupportedError extends Error {
+  public readonly id = 'essential_database_not_supported'
+
+  constructor(public readonly addon: PostgresAddonLike, message: string) {
+    super(message)
+    this.name = 'EssentialDatabaseNotSupportedError'
+  }
+
+  public get body() {
+    return {id: this.id, message: this.message}
+  }
+}
+
+/**
  * Returns the first legacy database add-on on the app.
  */
 export async function findLegacyDatabase(

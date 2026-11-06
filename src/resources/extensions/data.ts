@@ -1,7 +1,31 @@
+export {
+  type AttachConnectionPoolingBody,
+  type AttachConnectionPoolingOptions,
+  type AttachConnectionPoolingResult,
+  type ConnectionPoolingAttachment,
+  connectionPoolingExtensions,
+} from '../data/connection-pooling.js'
 export {databaseCredentialExtensions} from '../data/database-credential/index.js'
 export {databaseExtensions} from '../data/database.js'
+export {
+  type CreateForDatabaseBody,
+  type CreateForDatabaseOptions,
+  type CreateForDatabaseResult,
+  type DeleteFromDatabaseOptions,
+  type DeleteFromDatabaseResult,
+  InvalidLinkRemoteError,
+  type LinkedDatabase,
+  linkExtensions,
+  type ListByAppOptions as ListLinksByAppOptions,
+  type PgLink,
+} from '../data/link.js'
 export {maintenanceExtensions} from '../data/maintenance/index.js'
-export {postgresDatabaseExtensions} from '../data/postgres-database.js'
+export {
+  EssentialDatabaseNotSupportedError,
+  type LegacyDatabase,
+  type ListLegacyByAppOptions,
+  postgresDatabaseExtensions,
+} from '../data/postgres-database.js'
 export {
   isCancellable,
   isRunnable,

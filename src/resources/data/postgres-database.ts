@@ -4,6 +4,7 @@ import type {PostgresCredentialListResult} from '@heroku/types/data'
 import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {AddOnAttachmentWithInclusions} from '../platform/add-on-attachment/resolve.js'
 import type {DeprovisioningAddOn, ResolvedAddOn} from '../platform/add-on/types.js'
 
 import {extendResource} from '../../core/extend-resource.js'
@@ -13,7 +14,9 @@ import {
   AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
 } from '../platform/add-on/errors.js'
 import {resolveAddonInternal} from '../platform/add-on/resolve.js'
-import {getPostgresServiceName, isAdvancedDatabase, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
+import {
+  getPostgresServiceName, isAdvancedDatabase, isLegacyDatabase, NotAdvancedDatabaseError,
+} from './internal/postgres-utils.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 export type ListCredentialsOptions = {
@@ -43,6 +46,18 @@ export type ListAttachmentsResult = {
   addon: ResolvedAddOn
   attachments: AddOnAttachment[]
   credentials: PostgresCredential[]
+}
+
+export type ListLegacyByAppOptions = {
+  signal?: AbortSignal
+}
+
+/**
+ * A legacy (non-Advanced) Postgres add-on visible to an app, with every name
+ * it's attached under on that app.
+ */
+export type LegacyDatabase = AddOnAttachmentWithInclusions['addon'] & {
+  attachmentNames: string[]
 }
 
 export type CreateAttachmentBody = Omit<AddOnAttachmentCreateOpts, 'addon' | 'app'>
@@ -200,6 +215,45 @@ export async function listAttachments(
   ])
 
   return {addon, attachments, credentials}
+}
+
+/**
+ * Lists the legacy (non-Advanced) Postgres databases attached to an app.
+ *
+ * Includes databases owned by other apps and Essential-tier databases.
+ * Databases attached more than once are returned once (first attachment
+ * wins, API order kept), with all of their attachment names on
+ * `attachmentNames`. Returns an empty array when the app has none.
+ */
+export async function listLegacyByApp(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  options: ListLegacyByAppOptions = {},
+): Promise<LegacyDatabase[]> {
+  const {signal} = options
+  signal?.throwIfAborted()
+
+  const platform = withSignal(
+    ctx.platform.withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'}),
+    signal,
+  )
+
+  const attachments = await platform.addOnAttachment.listByApp(appIdentity) as AddOnAttachmentWithInclusions[]
+
+  const byAddonId = new Map<string, LegacyDatabase>()
+  for (const attachment of attachments) {
+    const {addon} = attachment
+    if (!isLegacyDatabase(addon)) continue
+
+    const existing = byAddonId.get(addon.id)
+    if (existing) {
+      existing.attachmentNames.push(attachment.name)
+    } else {
+      byAddonId.set(addon.id, {...addon, attachmentNames: [attachment.name]})
+    }
+  }
+
+  return [...byAddonId.values()]
 }
 
 /**
@@ -380,6 +434,10 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
     addonIdentity?: string,
     options?: ListCredentialsOptions,
   ) => listCredentials(ctx, appIdentity, addonIdentity, options),
+  listLegacyByApp: (
+    appIdentity: string,
+    options?: ListLegacyByAppOptions,
+  ) => listLegacyByApp(ctx, appIdentity, options),
 }))
 
 export {
@@ -393,6 +451,7 @@ export {
 } from './internal/parse-attachment-factors.js'
 
 export {
+  EssentialDatabaseNotSupportedError,
   findLegacyDatabase,
   getPostgresServiceName,
   isAdvancedCredential,

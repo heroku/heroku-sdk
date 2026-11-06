@@ -10,7 +10,7 @@ import {
 } from '../platform/add-on/errors.js'
 import {getPostgresServiceName, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {
-  createAttachment, deleteAttachment, destroy, listAttachments, listCredentials, postgresDatabaseExtensions,
+  createAttachment, deleteAttachment, destroy, listAttachments, listCredentials, listLegacyByApp, postgresDatabaseExtensions,
 } from './postgres-database.js'
 
 function buildCtx(opts: {
@@ -375,6 +375,78 @@ describe('postgres-database resource', () => {
       expect(addon).toEqual(addonMock)
     })
 
+    it('throws NotAdvancedDatabaseError for classic-tier databases without fanning out', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:standard-0'})
+      const credentialList = vi.fn()
+      const listByAddOn = vi.fn()
+      const ctx = buildCtx({
+        addonResolution: vi.fn().mockResolvedValue([addonMock]),
+        credentialList,
+        listByAddOn,
+      })
+
+      const error = await listAttachments(ctx, 'pg-addon', {appIdentity: 'app-1'}).catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(NotAdvancedDatabaseError)
+      expect((error as NotAdvancedDatabaseError).addon).toEqual(addonMock)
+      expect(credentialList).not.toHaveBeenCalled()
+      expect(listByAddOn).not.toHaveBeenCalled()
+    })
+
+    it('throws if signal is aborted', async () => {
+      const ctx = buildCtx()
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(listAttachments(ctx, 'pg-addon', {signal: controller.signal})).rejects.toThrow()
+    })
+  })
+
+  describe('createAttachment', () => {
+    it('resolves the source database scoped to the target app, creates the attachment, and reports the latest release', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addonResolution = vi.fn().mockResolvedValue([addonMock])
+      const createAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
+      const releaseList = vi.fn().mockResolvedValue([{version: 42}])
+      const ctx = buildCtx({addonResolution, createAttachment: createAttachmentMock, releaseList})
+
+      const {addon, attachment, releaseVersion} = await createAttachment(ctx, 'target-app', 'pg-addon', {
+        confirm: 'target-app',
+        name: 'DATABASE',
+        // eslint-disable-next-line camelcase
+        namespace_config: {pool: 'default'},
+      })
+
+      expect(addonResolution).toHaveBeenCalledWith({addon: 'pg-addon', app: 'target-app'})
+      expect(createAttachmentMock).toHaveBeenCalledWith({
+        addon: 'pg-addon',
+        app: 'target-app',
+        confirm: 'target-app',
+        name: 'DATABASE',
+        // eslint-disable-next-line camelcase
+        namespace_config: {pool: 'default'},
+      })
+      expect(addon).toEqual(addonMock)
+      expect(attachment).toEqual({id: 'attachment-1', name: 'DATABASE'})
+      expect(releaseVersion).toBe(42)
+    })
+
+    it('retries unscoped when the scoped-to-app resolve finds no match', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      const addonResolution = vi.fn()
+        .mockRejectedValueOnce(new NotFoundError(new Response(null, {status: 404}), {id: 'addon-not-found', message: 'addon not found'}))
+        .mockResolvedValueOnce([addonMock])
+      const createAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
+      const releaseList = vi.fn().mockResolvedValue([{version: 1}])
+      const ctx = buildCtx({addonResolution, createAttachment: createAttachmentMock, releaseList})
+
+      const {addon} = await createAttachment(ctx, 'target-app', 'other-app-addon')
+
+      expect(addonResolution).toHaveBeenNthCalledWith(1, {addon: 'other-app-addon', app: 'target-app'})
+      expect(addonResolution).toHaveBeenNthCalledWith(2, {addon: 'other-app-addon'})
+      expect(addon).toEqual(addonMock)
+    })
+
     it('throws NotAdvancedDatabaseError for classic-tier databases without creating the attachment', async () => {
       const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:standard-0'})
       const addonResolution = vi.fn().mockResolvedValue([addonMock])
@@ -598,5 +670,68 @@ describe('postgres-database resource', () => {
 
       await expect(destroy(ctx, 'pg-addon', {signal: controller.signal})).rejects.toThrow()
     })
+  })
+})
+
+function legacyAttachment(name: string, addon: {app?: string; id: string; name: string; plan: string}) {
+  return {
+    addon: {
+      app: {id: `${addon.app ?? 'app-1'}-uuid`, name: addon.app ?? 'app-1'}, id: addon.id, name: addon.name, plan: {name: addon.plan},
+    },
+    app: {id: 'app-1-uuid', name: 'app-1'},
+    // eslint-disable-next-line camelcase
+    config_vars: [`${name}_URL`],
+    id: `att-${name}`,
+    name,
+  }
+}
+
+function legacyCtx(attachments: unknown[]) {
+  const listByApp = vi.fn().mockResolvedValue(attachments)
+  const withHeaders = vi.fn()
+  const platform = {
+    addOnAttachment: {listByApp},
+    withHeaders: withHeaders.mockImplementation(() => platform),
+    withOptions: () => platform,
+  }
+  return {ctx: {platform} as never, listByApp, withHeaders}
+}
+
+describe('listLegacyByApp', () => {
+  it('dedupes by add-on, grouping attachment names in API order', async () => {
+    const a = {id: 'a', name: 'pg-a', plan: 'heroku-postgresql:standard-0'}
+    const b = {id: 'b', name: 'pg-b', plan: 'heroku-postgresql:essential-0'}
+    const {ctx, listByApp, withHeaders} = legacyCtx([
+      legacyAttachment('DATABASE', a), legacyAttachment('HEROKU_POSTGRESQL_BLUE', b), legacyAttachment('HEROKU_POSTGRESQL_RED', a),
+    ])
+
+    const result = await listLegacyByApp(ctx, 'app-1')
+
+    expect(withHeaders).toHaveBeenCalledWith({'Accept-Inclusion': 'addon:plan,config_vars'})
+    expect(listByApp).toHaveBeenCalledWith('app-1')
+    expect(result.map(db => [db.name, db.attachmentNames])).toEqual([
+      ['pg-a', ['DATABASE', 'HEROKU_POSTGRESQL_RED']],
+      ['pg-b', ['HEROKU_POSTGRESQL_BLUE']],
+    ])
+  })
+
+  it('includes databases owned by other apps and excludes Advanced and non-Postgres add-ons', async () => {
+    const {ctx} = legacyCtx([
+      legacyAttachment('SHARED', {
+        app: 'app-2', id: 'shared', name: 'pg-shared', plan: 'heroku-postgresql:standard-0',
+      }),
+      legacyAttachment('ADV', {id: 'adv', name: 'pg-adv', plan: 'heroku-postgresql:advanced-beta'}),
+      legacyAttachment('REDIS', {id: 'r', name: 'redis-1', plan: 'heroku-redis:mini'}),
+    ])
+
+    const result = await listLegacyByApp(ctx, 'app-1')
+
+    expect(result.map(db => db.name)).toEqual(['pg-shared'])
+  })
+
+  it('returns an empty array when the app has no databases', async () => {
+    const {ctx} = legacyCtx([])
+
+    expect(await listLegacyByApp(ctx, 'app-1')).toEqual([])
   })
 })
