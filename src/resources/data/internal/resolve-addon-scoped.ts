@@ -11,9 +11,9 @@ import {resolveAddonInternal} from '../../platform/add-on/resolve.js'
  * owned by a different app still resolves by its globally-unique name.
  *
  * The global retry runs only when the scoped resolve misses the add-on: an
- * empty match (`AddonNotFoundError`) or a 404 that isn't about some other
- * resource. A 404 for the app itself (`resource: 'app'`) is rethrown so a
- * mistyped app isn't silently ignored. `app::x` identities and calls without
+ * empty match (`AddonNotFoundError`) or a 404 labeled `resource: 'add_on'`.
+ * Any other 404 — for the app itself (`resource: 'app'`) or one without a
+ * resource label — is rethrown, so a mistyped app is never silently ignored. `app::x` identities and calls without
  * an app go straight to the global resolve, since scoping wouldn't apply.
  */
 export async function resolveAddonScopedThenGlobal(
@@ -38,5 +38,5 @@ export async function resolveAddonScopedThenGlobal(
 
 function isAddonMiss(error: unknown): boolean {
   if (error instanceof AddonNotFoundError) return true
-  return error instanceof NotFoundError && (error.resource === undefined || error.resource === 'add_on')
+  return error instanceof NotFoundError && error.resource === 'add_on'
 }

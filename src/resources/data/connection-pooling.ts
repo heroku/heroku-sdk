@@ -44,6 +44,11 @@ export type AttachConnectionPoolingResult = {
  * The release lookup is best-effort: the pool is already attached by then, so
  * a failed lookup reports `releaseVersion: undefined` rather than rejecting
  * (an abort still rejects).
+ *
+ * A rejection doesn't always mean nothing changed: once `onAttached` runs, the
+ * attachment exists, so a throw from `onAttached` or an abort after it still
+ * leaves the pool attached. Don't blindly retry after a rejection — check the
+ * app's attachments first, or retrying may create a second pool attachment.
  */
 export async function attach(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,

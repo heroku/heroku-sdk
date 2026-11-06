@@ -362,7 +362,7 @@ describe('postgres-database resource', () => {
     it('retries unscoped when the scoped-to-app resolve finds no match', async () => {
       const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
       const addonResolution = vi.fn()
-        .mockRejectedValueOnce(notFoundError())
+        .mockRejectedValueOnce(new NotFoundError(new Response(null, {status: 404}), {id: 'not_found', message: 'addon not found', resource: 'add_on'}))
         .mockResolvedValueOnce([addonMock])
       const createAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
       const releaseList = vi.fn().mockResolvedValue([{version: 1}])

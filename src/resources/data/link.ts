@@ -13,9 +13,7 @@ import {resolveAddonScopedThenGlobal} from './internal/resolve-addon-scoped.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 import {listLegacyByApp} from './postgres-database.js'
 
-const REDIS_SERVICE_NAME = 'heroku-redis'
-
-/** A dataset link between a Postgres database and a remote data store. */
+/** A Data Link between a local Postgres database and a remote Postgres database. */
 // `@heroku/types` shares one shape across link list/info/create/delete results.
 export type PgLink = LinkInfoResult
 
@@ -62,12 +60,12 @@ export type DeleteLinkResult = {
   link: PgLink
 }
 
-/** Thrown when a link's remote isn't a Heroku Postgres or Heroku Key-Value Store add-on. */
+/** Thrown when a link's remote isn't a Heroku Postgres add-on. Data Links only connect Postgres to Postgres. */
 export class InvalidLinkRemoteError extends Error {
   public readonly id = 'invalid_link_remote'
 
   constructor(public readonly addon: ResolvedAddOn) {
-    super(`${addon.name} isn't a Heroku Postgres or Heroku Key-Value Store add-on, so it can't be linked.`)
+    super(`${addon.name} isn't a Heroku Postgres add-on, so it can't be linked. Data Links only connect Heroku Postgres databases.`)
     this.name = 'InvalidLinkRemoteError'
   }
 
@@ -84,7 +82,7 @@ function assertLinksSupported(addon: PostgresAddonLike & {name: string}) {
 
 function assertLinkableRemote(remote: ResolvedAddOn) {
   const service = remote.plan?.name?.split(':', 2)[0]
-  if (service !== REDIS_SERVICE_NAME && service !== getPostgresServiceName()) {
+  if (service !== getPostgresServiceName()) {
     throw new InvalidLinkRemoteError(remote)
   }
 }
@@ -128,16 +126,15 @@ export async function listByApp(
 }
 
 /**
- * Resolves a Postgres database and a remote data store, then links the
- * remote into the database.
+ * Resolves a local and a remote Postgres database, then links the remote
+ * into the local one.
  *
  * `databaseIdentity` resolves through the app's attachments (`''` means
  * `DATABASE_URL`). `remoteIdentity` resolves as an add-on, scoped to the app
  * first and then globally. Both resolve in parallel, so when both are invalid,
  * either error may surface.
  *
- * Throws `InvalidLinkRemoteError` when the remote isn't Postgres or Key-Value
- * Store, and `EssentialDatabaseNotSupportedError` when either side is
+ * Throws `InvalidLinkRemoteError` when the remote isn't Heroku Postgres, and `EssentialDatabaseNotSupportedError` when either side is
  * Essential-tier.
  */
 export async function createForDatabase(
