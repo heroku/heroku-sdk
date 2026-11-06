@@ -23,7 +23,7 @@ console.log(`Database (${app}::${addon ?? 'DATABASE_URL'}):`, dbInfo)
 const creds = await sdk.data.postgresDatabase.listCredentials(app, addon)
 console.log('Credentials:', creds)
 
-const maint = await sdk.data.maintenance.info(app, addon)
+const maint = await sdk.data.maintenance.info(addon ?? 'DATABASE_URL', {appIdentity: app})
 console.log('Maintenance:', maint)
 
 // transfer.listByApp is an upstream route on the data client (not an extension);
