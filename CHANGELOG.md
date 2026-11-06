@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.5](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.4...sdk-v0.12.5) (2026-11-06)
+
+
+### Features
+
+* add data maintenance extensions ([#185](https://github.com/heroku/heroku-sdk/issues/185)) ([73c860c](https://github.com/heroku/heroku-sdk/commit/73c860c05408713bdb96fe2b7160ab71562bd69e))
+
 ## [0.12.4](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.3...sdk-v0.12.4) (2026-11-05)
 
 
