@@ -11,7 +11,7 @@ import {extendResource} from '../../core/extend-resource.js'
 import {withSignal} from '../../core/with-signal.js'
 import {destroyAndWait} from '../platform/add-on/destroy-and-wait.js'
 import {
-  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
+  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError, AddonNotFoundError,
 } from '../platform/add-on/errors.js'
 import {resolveAddonInternal} from '../platform/add-on/resolve.js'
 import {
@@ -286,7 +286,8 @@ export async function createAttachment(
   try {
     addon = await resolveAddonInternal(platform, addonIdentity, {addonService: getPostgresServiceName(), appIdentity})
   } catch (error) {
-    if (!(error instanceof NotFoundError)) {
+    // An app-scoped miss surfaces either as a 404 or as an empty match after the service filter.
+    if (!(error instanceof NotFoundError) && !(error instanceof AddonNotFoundError)) {
       throw error
     }
 

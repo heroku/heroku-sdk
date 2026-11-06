@@ -447,6 +447,21 @@ describe('postgres-database resource', () => {
       expect(addon).toEqual(addonMock)
     })
 
+    it('retries unscoped when the scoped-to-app resolve matches only non-Postgres add-ons', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      // eslint-disable-next-line camelcase
+      const redis = {...buildAddon({id: 'redis-1', planName: 'heroku-redis:mini'}), addon_service: {name: 'heroku-redis'}}
+      const addonResolution = vi.fn()
+        .mockResolvedValueOnce([redis])
+        .mockResolvedValueOnce([addonMock])
+      const ctx = buildCtx({addonResolution, createAttachment: vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})})
+
+      const {addon} = await createAttachment(ctx, 'target-app', 'other-app-addon')
+
+      expect(addonResolution).toHaveBeenNthCalledWith(2, {addon: 'other-app-addon'})
+      expect(addon).toEqual(addonMock)
+    })
+
     it('throws NotAdvancedDatabaseError for classic-tier databases without creating the attachment', async () => {
       const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:standard-0'})
       const addonResolution = vi.fn().mockResolvedValue([addonMock])
