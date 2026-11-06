@@ -1,22 +1,22 @@
 import {
-  afterEach, describe, expect, it, vi,
+  afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {waitForCompletion} from './wait-for-completion.js'
 
-// Used to avoid timeouts in tests
+// Poll interval used by tests; advanced virtually via fake timers
 const WAIT_INTERVAL_MS = 5
 
-function buildAddon() {
+function buildAddon(planName: string = 'heroku-postgresql:standard-0') {
   return {
     // eslint-disable-next-line camelcase
     addon_service: {name: 'heroku-postgresql'},
     app: {id: 'app-uuid', name: 'app-1'},
     id: 'addon-1',
-    name: 'pg-addon',
-    plan: {name: 'heroku-postgresql:standard-0'},
+    name: 'postgres-curved-12345',
+    plan: {name: planName},
   }
 }
 
@@ -48,6 +48,10 @@ function buildCtx(opts: {
 }
 
 describe('waitForCompletion', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
   afterEach(() => {
     vi.useRealTimers()
   })
@@ -58,7 +62,7 @@ describe('waitForCompletion', () => {
     const ctx = buildCtx({maintenanceInfo, resolution})
 
     await expect(waitForCompletion(ctx, 'postgres-curved-12345'))
-      .rejects.toThrow('There currently isn\'t any maintenance in progress for pg-addon')
+      .rejects.toThrow('There currently isn\'t any maintenance in progress for postgres-curved-12345')
 
     expect(resolution).toHaveBeenCalledTimes(1)
     expect(maintenanceInfo).toHaveBeenCalledExactlyOnceWith('addon-1')
@@ -72,9 +76,19 @@ describe('waitForCompletion', () => {
       .mockResolvedValueOnce({status: 'completed'})
     const ctx = buildCtx({maintenanceInfo, resolution})
 
-    const result = await waitForCompletion(ctx, 'postgres-curved-12345', {intervalMs: WAIT_INTERVAL_MS})
+    const promise = waitForCompletion(ctx, 'postgres-curved-12345', {intervalMs: WAIT_INTERVAL_MS})
 
-    expect(maintenanceInfo).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(maintenanceInfo).toHaveBeenCalledTimes(1) // initial call
+
+    await vi.advanceTimersByTimeAsync(WAIT_INTERVAL_MS)
+    expect(maintenanceInfo).toHaveBeenCalledTimes(2) // wait poll 1
+
+    await vi.advanceTimersByTimeAsync(WAIT_INTERVAL_MS)
+    expect(maintenanceInfo).toHaveBeenCalledTimes(3) // wait poll 2
+
+    const result = await promise
+
     expect(resolution).toHaveBeenCalledTimes(1)
     expect(result).toEqual({status: 'completed'})
   })
@@ -86,15 +100,28 @@ describe('waitForCompletion', () => {
       .mockResolvedValueOnce({status: 'completed'})
     const ctx = buildCtx({maintenanceInfo, resolution})
 
-    const result = await waitForCompletion(ctx, 'DATABASE_URL', {appIdentity: 'app-1', intervalMs: WAIT_INTERVAL_MS})
+    const promise = waitForCompletion(ctx, 'DATABASE_URL', {appIdentity: 'app-1', intervalMs: WAIT_INTERVAL_MS})
+    await vi.advanceTimersByTimeAsync(WAIT_INTERVAL_MS)
+    const result = await promise
 
     expect(resolution).toHaveBeenCalledWith({addon: 'DATABASE_URL', app: 'app-1'})
     expect(result).toEqual({status: 'completed'})
   })
 
-  it('throws when timeoutMs elapses before completion', async () => {
-    vi.useFakeTimers()
+  it('throws for an essential tier database without calling beforeWait or maintenance.info', async () => {
+    const essentialAddon = buildAddon('heroku-postgresql:essential-0')
+    const resolution = vi.fn().mockResolvedValue([essentialAddon])
+    const maintenanceInfo = vi.fn().mockResolvedValueOnce({status: 'running'})
+    const ctx = buildCtx({maintenanceInfo, resolution})
+    const beforeWait = vi.fn()
 
+    await expect(waitForCompletion(ctx, 'postgres-curved-12345', {beforeWait}))
+      .rejects.toThrow('You can\'t await maintenance on an Essential tier database.')
+    expect(beforeWait).not.toHaveBeenCalled()
+    expect(maintenanceInfo).not.toHaveBeenCalled()
+  })
+
+  it('throws when timeoutMs elapses before completion', async () => {
     const maintenanceInfo = vi.fn().mockResolvedValue({status: 'running'})
     const ctx = buildCtx({maintenanceInfo})
 
@@ -121,7 +148,9 @@ describe('waitForCompletion', () => {
       calls.push('beforeWait')
     })
 
-    const result = await waitForCompletion(ctx, 'postgres-curved-12345', {beforeWait, intervalMs: WAIT_INTERVAL_MS})
+    const promise = waitForCompletion(ctx, 'postgres-curved-12345', {beforeWait, intervalMs: WAIT_INTERVAL_MS})
+    await vi.advanceTimersByTimeAsync(WAIT_INTERVAL_MS)
+    const result = await promise
 
     expect(beforeWait).toHaveBeenCalledWith({addon: buildAddon()})
     expect(calls).toEqual([
@@ -162,8 +191,6 @@ describe('waitForCompletion', () => {
   })
 
   it('aborts the poll delay when the signal fires mid-poll', async () => {
-    vi.useFakeTimers()
-
     const maintenanceInfo = vi.fn().mockResolvedValue({status: 'running'})
     const ctx = buildCtx({maintenanceInfo})
     const controller = new AbortController()

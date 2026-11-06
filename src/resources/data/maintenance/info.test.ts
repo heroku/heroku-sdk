@@ -39,7 +39,7 @@ function buildAddon() {
     addon_service: {name: 'heroku-postgresql'},
     app: {id: 'app-uuid', name: 'app-1'},
     id: 'addon-1',
-    name: 'pg-addon',
+    name: 'postgres-curved-12345',
     plan: {name: 'heroku-postgresql:standard-0'},
   }
 }
