@@ -41,6 +41,7 @@ function pgAttachment(overrides: {
   configVars?: string[]
   id?: string
   name?: string
+  namespace?: null | string
   planName?: string
 } = {}): AddOnAttachmentWithInclusions {
   return {
@@ -56,7 +57,7 @@ function pgAttachment(overrides: {
     id: overrides.attachmentId ?? 'attachment-id',
     log_input_url: null,
     name: overrides.name ?? 'DATABASE',
-    namespace: null,
+    namespace: overrides.namespace ?? null,
     updated_at: '2024-01-01T00:00:00Z',
     web_url: null,
   }
@@ -282,6 +283,24 @@ describe('resolvePgDatabase', () => {
     const ctx = buildCtx({infoForApp, resolutionByAttachment})
 
     await expect(resolvePgDatabase(ctx, 'app-1')).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
+  })
+
+  it('resolves an add-on name to its default attachment when it also has a connection-pooling attachment', async () => {
+    const resolutionByAttachment = vi.fn().mockResolvedValue([
+      pgAttachment({
+        attachmentId: 'attachment-1', configVars: ['DATABASE_URL'], name: 'DATABASE', planName: 'heroku-postgresql:standard-0',
+      }),
+      pgAttachment({
+        attachmentId: 'attachment-2', configVars: ['DATABASE_CONNECTION_POOL_URL'], name: 'DATABASE_CONNECTION_POOL', namespace: 'connection-pooling:default', planName: 'heroku-postgresql:standard-0',
+      }),
+    ])
+    const infoForApp = vi.fn()
+    const ctx = buildCtx({infoForApp, resolutionByAttachment})
+
+    const {attachment} = await resolvePgDatabase(ctx, 'app-1', {includeAttachment: true, input: 'pg'})
+
+    expect(attachment.name).toBe('DATABASE')
+    expect(infoForApp).not.toHaveBeenCalled()
   })
 
   it('collapses ambiguous matches that target the same database', async () => {

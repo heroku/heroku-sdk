@@ -119,16 +119,32 @@ export async function resolveAddonAttachment(
   return resolvedAttachment
 }
 
+/**
+ * Narrows resolution matches to one attachment.
+ *
+ * An add-on can carry namespaced attachments on the same app alongside its
+ * default one (e.g. `credential:<name>` from a credential attachment, or a
+ * connection-pooling attachment). When several attachments match, only the
+ * default (un-namespaced) ones are considered, matching `heroku-cli-util`'s
+ * resolver. If none of the matches is a default attachment, all of them are
+ * reported as ambiguous.
+ */
 function singularize(matches: AddOnAttachmentWithInclusions[]): ResolvedAddOnAttachment {
   if (matches.length === 0) {
     throw new AddonAttachmentNotFoundError()
   }
 
-  if (matches.length > 1) {
-    throw new AddonAttachmentAmbiguousError(matches)
+  let candidates = matches
+  if (candidates.length > 1) {
+    const defaults = candidates.filter(match => match.namespace === undefined || match.namespace === null)
+    if (defaults.length > 0) candidates = defaults
   }
 
-  const match = matches[0]
+  if (candidates.length > 1) {
+    throw new AddonAttachmentAmbiguousError(candidates)
+  }
+
+  const match = candidates[0]
   if (!match.addon?.id || !match.addon?.app?.id) {
     throw new Error(`Resolved attachment is missing required add-on fields (addon.id=${match.addon.id}, addon.app.id=${match.addon.app.id})`)
   }
