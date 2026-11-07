@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.6](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.5...sdk-v0.12.6) (2026-11-07)
+
+
+### Features
+
+* **data:** add link and connection pooling composites for v12 CLI ([#184](https://github.com/heroku/heroku-sdk/issues/184)) ([d89018c](https://github.com/heroku/heroku-sdk/commit/d89018cf6451973a84d12c206ea5d5f892b16e63))
+
 ## [0.12.5](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.4...sdk-v0.12.5) (2026-11-06)
 
 
