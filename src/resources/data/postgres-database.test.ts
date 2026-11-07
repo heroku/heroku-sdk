@@ -6,11 +6,11 @@ import {
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
 import {
-  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
+  AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError, AddonNotFoundError,
 } from '../platform/add-on/errors.js'
 import {getPostgresServiceName, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
 import {
-  createAttachment, deleteAttachment, destroy, listAttachments, listCredentials, postgresDatabaseExtensions,
+  createAttachment, deleteAttachment, destroy, listAttachments, listCredentials, listLegacyByApp, postgresDatabaseExtensions,
 } from './postgres-database.js'
 
 function buildCtx(opts: {
@@ -362,7 +362,7 @@ describe('postgres-database resource', () => {
     it('retries unscoped when the scoped-to-app resolve finds no match', async () => {
       const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
       const addonResolution = vi.fn()
-        .mockRejectedValueOnce(notFoundError())
+        .mockRejectedValueOnce(new NotFoundError(new Response(null, {status: 404}), {id: 'not_found', message: 'addon not found', resource: 'add_on'}))
         .mockResolvedValueOnce([addonMock])
       const createAttachmentMock = vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})
       const releaseList = vi.fn().mockResolvedValue([{version: 1}])
@@ -373,6 +373,38 @@ describe('postgres-database resource', () => {
       expect(addonResolution).toHaveBeenNthCalledWith(1, {addon: 'other-app-addon', app: 'target-app'})
       expect(addonResolution).toHaveBeenNthCalledWith(2, {addon: 'other-app-addon'})
       expect(addon).toEqual(addonMock)
+    })
+
+    it('retries unscoped when the scoped-to-app resolve matches only non-Postgres add-ons', async () => {
+      const addonMock = buildAddon({id: 'addon-1', planName: 'heroku-postgresql:advanced-0'})
+      // eslint-disable-next-line camelcase
+      const redis = {...buildAddon({id: 'redis-1', planName: 'heroku-redis:mini'}), addon_service: {name: 'heroku-redis'}}
+      const addonResolution = vi.fn()
+        .mockResolvedValueOnce([redis])
+        .mockResolvedValueOnce([addonMock])
+      const ctx = buildCtx({addonResolution, createAttachment: vi.fn().mockResolvedValue({id: 'attachment-1', name: 'DATABASE'})})
+
+      const {addon} = await createAttachment(ctx, 'target-app', 'other-app-addon')
+
+      expect(addonResolution).toHaveBeenNthCalledWith(2, {addon: 'other-app-addon'})
+      expect(addon).toEqual(addonMock)
+    })
+
+    it('resolves an app::addon identity once, without a redundant retry', async () => {
+      const addonResolution = vi.fn().mockResolvedValue([])
+      const ctx = buildCtx({addonResolution})
+
+      await expect(createAttachment(ctx, 'target-app', 'other-app::DATABASE')).rejects.toBeInstanceOf(AddonNotFoundError)
+      expect(addonResolution).toHaveBeenCalledOnce()
+    })
+
+    it('does not retry globally when the target app itself is not found', async () => {
+      const appNotFound = new NotFoundError(new Response(null, {status: 404}), {id: 'not_found', message: 'app not found', resource: 'app'})
+      const addonResolution = vi.fn().mockRejectedValue(appNotFound)
+      const ctx = buildCtx({addonResolution})
+
+      await expect(createAttachment(ctx, 'typo-app', 'pg-addon')).rejects.toBe(appNotFound)
+      expect(addonResolution).toHaveBeenCalledOnce()
     })
 
     it('throws NotAdvancedDatabaseError for classic-tier databases without creating the attachment', async () => {
@@ -598,5 +630,68 @@ describe('postgres-database resource', () => {
 
       await expect(destroy(ctx, 'pg-addon', {signal: controller.signal})).rejects.toThrow()
     })
+  })
+})
+
+function legacyAttachment(name: string, addon: {app?: string; id: string; name: string; plan: string}) {
+  return {
+    addon: {
+      app: {id: `${addon.app ?? 'app-1'}-uuid`, name: addon.app ?? 'app-1'}, id: addon.id, name: addon.name, plan: {name: addon.plan},
+    },
+    app: {id: 'app-1-uuid', name: 'app-1'},
+    // eslint-disable-next-line camelcase
+    config_vars: [`${name}_URL`],
+    id: `att-${name}`,
+    name,
+  }
+}
+
+function legacyCtx(attachments: unknown[]) {
+  const listByApp = vi.fn().mockResolvedValue(attachments)
+  const withHeaders = vi.fn()
+  const platform = {
+    addOnAttachment: {listByApp},
+    withHeaders: withHeaders.mockImplementation(() => platform),
+    withOptions: () => platform,
+  }
+  return {ctx: {platform} as never, listByApp, withHeaders}
+}
+
+describe('listLegacyByApp', () => {
+  it('dedupes by add-on, grouping attachment names in API order', async () => {
+    const a = {id: 'a', name: 'pg-a', plan: 'heroku-postgresql:standard-0'}
+    const b = {id: 'b', name: 'pg-b', plan: 'heroku-postgresql:essential-0'}
+    const {ctx, listByApp, withHeaders} = legacyCtx([
+      legacyAttachment('DATABASE', a), legacyAttachment('HEROKU_POSTGRESQL_BLUE', b), legacyAttachment('HEROKU_POSTGRESQL_RED', a),
+    ])
+
+    const result = await listLegacyByApp(ctx, 'app-1')
+
+    expect(withHeaders).toHaveBeenCalledWith({'Accept-Inclusion': 'addon:plan,config_vars'})
+    expect(listByApp).toHaveBeenCalledWith('app-1')
+    expect(result.map(db => [db.name, db.attachmentNames])).toEqual([
+      ['pg-a', ['DATABASE', 'HEROKU_POSTGRESQL_RED']],
+      ['pg-b', ['HEROKU_POSTGRESQL_BLUE']],
+    ])
+  })
+
+  it('includes databases owned by other apps and excludes Advanced and non-Postgres add-ons', async () => {
+    const {ctx} = legacyCtx([
+      legacyAttachment('SHARED', {
+        app: 'app-2', id: 'shared', name: 'pg-shared', plan: 'heroku-postgresql:standard-0',
+      }),
+      legacyAttachment('ADV', {id: 'adv', name: 'pg-adv', plan: 'heroku-postgresql:advanced-beta'}),
+      legacyAttachment('REDIS', {id: 'r', name: 'redis-1', plan: 'heroku-redis:mini'}),
+    ])
+
+    const result = await listLegacyByApp(ctx, 'app-1')
+
+    expect(result.map(db => db.name)).toEqual(['pg-shared'])
+  })
+
+  it('returns an empty array when the app has no databases', async () => {
+    const {ctx} = legacyCtx([])
+
+    expect(await listLegacyByApp(ctx, 'app-1')).toEqual([])
   })
 })

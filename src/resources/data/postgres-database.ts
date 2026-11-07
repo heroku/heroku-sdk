@@ -4,6 +4,7 @@ import type {PostgresCredentialListResult} from '@heroku/types/data'
 import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResolvedAddOnAttachment} from '../platform/add-on-attachment/resolve.js'
 import type {DeprovisioningAddOn, ResolvedAddOn} from '../platform/add-on/types.js'
 
 import {extendResource} from '../../core/extend-resource.js'
@@ -13,8 +14,11 @@ import {
   AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
 } from '../platform/add-on/errors.js'
 import {resolveAddonInternal} from '../platform/add-on/resolve.js'
-import {getPostgresServiceName, isAdvancedDatabase, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
-import {resolvePgDatabase} from './internal/resolve-pg-database.js'
+import {
+  getPostgresServiceName, isAdvancedDatabase, isLegacyDatabase, NotAdvancedDatabaseError,
+} from './internal/postgres-utils.js'
+import {resolveAddonScopedThenGlobal} from './internal/resolve-addon-scoped.js'
+import {type ResolvedPgDatabase, resolvePgDatabase} from './internal/resolve-pg-database.js'
 
 export type ListCredentialsOptions = {
   signal?: AbortSignal
@@ -43,6 +47,18 @@ export type ListAttachmentsResult = {
   addon: ResolvedAddOn
   attachments: AddOnAttachment[]
   credentials: PostgresCredential[]
+}
+
+export type ListLegacyByAppOptions = {
+  signal?: AbortSignal
+}
+
+/**
+ * A legacy (non-Advanced) Postgres add-on visible to an app, with every name
+ * it's attached under on that app.
+ */
+export type LegacyDatabase = ResolvedPgDatabase & {
+  attachmentNames: string[]
 }
 
 export type CreateAttachmentBody = Omit<AddOnAttachmentCreateOpts, 'addon' | 'app'>
@@ -203,6 +219,49 @@ export async function listAttachments(
 }
 
 /**
+ * Lists the legacy (non-Advanced) Postgres databases attached to an app.
+ *
+ * Includes databases owned by other apps and Essential-tier databases.
+ * Databases attached more than once are returned once (first attachment
+ * wins, API order kept), with all of their attachment names on
+ * `attachmentNames`. Returns an empty array when the app has none.
+ *
+ * Unlike `findLegacyDatabase` (first database the app *owns*) and the
+ * migration listing (owned databases only), this covers every legacy database
+ * the app can see.
+ */
+export async function listLegacyByApp(
+  ctx: Pick<ResourceCtx, 'platform'>,
+  appIdentity: string,
+  options: ListLegacyByAppOptions = {},
+): Promise<LegacyDatabase[]> {
+  const {signal} = options
+  signal?.throwIfAborted()
+
+  const platform = withSignal(
+    ctx.platform.withHeaders({'Accept-Inclusion': 'addon:plan,config_vars'}),
+    signal,
+  )
+
+  const attachments = await platform.addOnAttachment.listByApp(appIdentity) as ResolvedAddOnAttachment[]
+
+  const byAddonId = new Map<string, LegacyDatabase>()
+  for (const attachment of attachments) {
+    const {addon} = attachment
+    if (!isLegacyDatabase(addon)) continue
+
+    const existing = byAddonId.get(addon.id)
+    if (existing) {
+      existing.attachmentNames.push(attachment.name)
+    } else {
+      byAddonId.set(addon.id, {...addon, attachmentNames: [attachment.name]})
+    }
+  }
+
+  return [...byAddonId.values()]
+}
+
+/**
  * Resolves a source Postgres database by add-on identity, attaches it
  * to an app, and fetches the latest release version.
  *
@@ -225,19 +284,9 @@ export async function createAttachment(
   // Bind the signal so the resolve, create, and release-list requests abort in flight.
   const platform = withSignal(ctx.platform, signal)
 
-  // Resolve scoped to the target app first. If the target app has no match, retry
-  // unscoped so attaching a database owned by a *different* app still resolves by
-  // its globally-unique name.
-  let addon: ResolvedAddOn
-  try {
-    addon = await resolveAddonInternal(platform, addonIdentity, {addonService: getPostgresServiceName(), appIdentity})
-  } catch (error) {
-    if (!(error instanceof NotFoundError)) {
-      throw error
-    }
-
-    addon = await resolveAddonInternal(platform, addonIdentity, {addonService: getPostgresServiceName()})
-  }
+  // Resolve scoped to the target app first, then globally, so attaching a
+  // database owned by a *different* app still resolves by its globally-unique name.
+  const addon = await resolveAddonScopedThenGlobal(platform, addonIdentity, {addonService: getPostgresServiceName(), appIdentity})
 
   if (!isAdvancedDatabase(addon)) {
     throw new NotAdvancedDatabaseError(addon, `You can only attach Advanced-tier databases with postgresDatabase.createAttachment(). ${addon.name} isn't an Advanced-tier database.`)
@@ -380,6 +429,10 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
     addonIdentity?: string,
     options?: ListCredentialsOptions,
   ) => listCredentials(ctx, appIdentity, addonIdentity, options),
+  listLegacyByApp: (
+    appIdentity: string,
+    options?: ListLegacyByAppOptions,
+  ) => listLegacyByApp(ctx, appIdentity, options),
 }))
 
 export {
@@ -393,6 +446,7 @@ export {
 } from './internal/parse-attachment-factors.js'
 
 export {
+  EssentialDatabaseNotSupportedError,
   findLegacyDatabase,
   getPostgresServiceName,
   isAdvancedCredential,
@@ -404,3 +458,5 @@ export {
   isPostgresAddon,
   NotAdvancedDatabaseError,
 } from './internal/postgres-utils.js'
+
+export {PgDatabaseNotFoundError, type ResolvedPgDatabase} from './internal/resolve-pg-database.js'

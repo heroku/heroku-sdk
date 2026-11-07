@@ -164,6 +164,68 @@ describe('resolveAddonAttachment', () => {
     await expect(resolveAddonAttachment(ctx, 'my-app', 'DATABASE_URL')).rejects.toBeInstanceOf(AddonAttachmentAmbiguousError)
   })
 
+  describe('namespaced attachments', () => {
+    const app = {id: 'app-uuid', name: 'my-app'}
+    const addon = {app, id: 'addon-id', name: 'postgres-addon'}
+    const attachment = (name: string, namespace?: null | string) =>
+      ({
+        addon, id: `att-${name}`, name, namespace,
+      }) as AddOnAttachment
+
+    it.each([
+      ['a credential attachment', 'credential:analyst'],
+      ['a connection-pooling attachment', 'connection-pooling:default'],
+    ])('prefers the default attachment over %s on the same add-on', async (_label, namespace) => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [attachment('DATABASE', null), attachment('DATABASE_POOL', namespace)],
+      })
+
+      const result = await resolveAddonAttachment(ctx, 'my-app', 'postgres-addon')
+
+      expect(result.name).toBe('DATABASE')
+    })
+
+    it('treats an attachment without a namespace field as a default attachment', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [attachment('DATABASE'), attachment('ANALYST', 'credential:analyst')],
+      })
+
+      expect((await resolveAddonAttachment(ctx, 'my-app', 'postgres-addon')).name).toBe('DATABASE')
+    })
+
+    it('is still ambiguous when several default attachments match', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [
+          attachment('DATABASE', null),
+          attachment('HEROKU_POSTGRESQL_BLUE', null),
+          attachment('ANALYST', 'credential:analyst'),
+        ],
+      })
+
+      const error = await resolveAddonAttachment(ctx, 'my-app', 'postgres-addon').catch(error_ => error_)
+
+      expect(error).toBeInstanceOf(AddonAttachmentAmbiguousError)
+      expect(error.matches.map((m: AddOnAttachment) => m.name)).toEqual(['DATABASE', 'HEROKU_POSTGRESQL_BLUE'])
+    })
+
+    it('reports every match as ambiguous when none is a default attachment', async () => {
+      const {ctx} = buildCtx({
+        resolveByAttachmentResponses: [attachment('ANALYST', 'credential:analyst'), attachment('POOL', 'connection-pooling:default')],
+      })
+
+      const error = await resolveAddonAttachment(ctx, 'my-app', 'postgres-addon').catch(error_ => error_)
+
+      expect(error).toBeInstanceOf(AddonAttachmentAmbiguousError)
+      expect(error.matches).toHaveLength(2)
+    })
+
+    it('returns a single namespaced match as-is', async () => {
+      const {ctx} = buildCtx({resolveByAttachmentResponses: [attachment('ANALYST', 'credential:analyst')]})
+
+      expect((await resolveAddonAttachment(ctx, 'my-app', 'ANALYST')).name).toBe('ANALYST')
+    })
+  })
+
   it('throws if the signal is already aborted', async () => {
     const {ctx, resolutionByAttachment, withOptions} = buildCtx()
     const controller = new AbortController()
