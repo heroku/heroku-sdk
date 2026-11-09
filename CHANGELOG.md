@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.7](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.6...sdk-v0.12.7) (2026-11-09)
+
+
+### Dependencies
+
+* bump @heroku/heroku-fetch from 0.2.3 to 0.2.4 ([#188](https://github.com/heroku/heroku-sdk/issues/188)) ([6ec4ffc](https://github.com/heroku/heroku-sdk/commit/6ec4ffcd720c99534ef0f5704ed384ae9953533d))
+
 ## [0.12.6](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.5...sdk-v0.12.6) (2026-11-07)
 
 
