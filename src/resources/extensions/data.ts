@@ -5,7 +5,39 @@ export {
   type ConnectionPoolingAttachment,
   connectionPoolingExtensions,
 } from '../data/connection-pooling.js'
+export {
+  DatabaseAlreadyPromotedError,
+  databaseCommandExtensions,
+  type DatabaseCommandInfo,
+  DatabaseNotFollowerError,
+  DatabaseNotReadyError,
+  DatabaseReleasePhaseError,
+  type PromoteDatabaseOptions,
+  type PromoteDatabasePreview,
+  type PromoteDatabaseResult,
+  type ResetDatabaseOptions,
+  type ResetDatabaseResult,
+  type UnfollowDatabaseOptions,
+  type UnfollowDatabasePreview,
+  type UnfollowDatabaseResult,
+} from '../data/database-commands.js'
+export {
+  copyDatabase,
+  type DatabaseCopyEndpoint,
+  databaseCopyExtensions,
+  type DatabaseCopyOptions,
+  type DatabaseCopyResult,
+} from '../data/database-copy.js'
 export {databaseCredentialExtensions} from '../data/database-credential/index.js'
+export {
+  LegacyDatabaseWaitError,
+  legacyDatabaseWaitExtensions,
+  type LegacyDatabaseWaitResult,
+  type LegacyDatabaseWaitStatus,
+  waitForLegacyDatabaseReady,
+  type WaitForLegacyDatabaseReadyOptions,
+  type WaitForLegacyDatabaseReadyResult,
+} from '../data/database-wait-for-ready.js'
 export {databaseExtensions} from '../data/database.js'
 export {
   type CreateLinkBody,
