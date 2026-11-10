@@ -6,6 +6,17 @@ export {
   connectionPoolingExtensions,
 } from '../data/connection-pooling.js'
 export {type CredentialConnectionInfo, databaseCredentialExtensions} from '../data/database-credential/index.js'
+export {
+  type DatabaseSetting,
+  type DatabaseSettingKey,
+  type DatabaseSettings,
+  databaseSettingsExtensions,
+  type DatabaseSettingsOptions,
+  type GetAllDatabaseSettingsResult,
+  type GetDatabaseSettingResult,
+  UnknownSettingError,
+  type UpdateDatabaseSettingResult,
+} from '../data/database-settings/index.js'
 export {databaseExtensions} from '../data/database.js'
 export {
   type CreateLinkBody,
