@@ -368,7 +368,9 @@ describe('postgres-database credentials', () => {
       const rotateCredentialsMock = vi.fn().mockResolvedValue({message: 'credentials rotated'})
       const rotateCredentialMock = vi.fn().mockResolvedValue({message: 'credential rotated'})
       const listByAddOn = vi.fn().mockResolvedValue([])
-      const ctx = buildCtx({listByAddOn, resolutionByAttachment, rotateCredentials: rotateCredentialsMock, rotateCredential: rotateCredentialMock})
+      const ctx = buildCtx({
+        listByAddOn, resolutionByAttachment, rotateCredential: rotateCredentialMock, rotateCredentials: rotateCredentialsMock,
+      })
 
       const {addon, result} = await rotateCredential(ctx, 'app-1', {all: true, forced: true}, {addonIdentity: 'DATABASE_URL'})
 
