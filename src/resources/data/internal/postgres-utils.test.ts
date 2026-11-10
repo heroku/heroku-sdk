@@ -6,7 +6,7 @@ import {
 } from 'vitest'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database.js'
+import type {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database/credentials.js'
 
 import {
   findLegacyDatabase,

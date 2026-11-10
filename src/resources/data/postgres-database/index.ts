@@ -1,28 +1,37 @@
 import type {AddOnAttachment, AddOnAttachmentCreateOpts} from '@heroku/types/3.sdk'
-import type {PostgresCredentialListResult} from '@heroku/types/data'
+import type {PostgresCredentialListResult, PostgresDatabaseCreateCredentialsOpts} from '@heroku/types/data'
 
 import {HerokuApiError, NotFoundError} from '@heroku/heroku-fetch'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
-import type {ResolvedAddOnAttachment} from '../platform/add-on-attachment/resolve.js'
-import type {DeprovisioningAddOn, ResolvedAddOn} from '../platform/add-on/types.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
+import type {DeprovisioningAddOn, ResolvedAddOn} from '../../platform/add-on/types.js'
+import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
 
-import {extendResource} from '../../core/extend-resource.js'
-import {withSignal} from '../../core/with-signal.js'
-import {destroyAndWait} from '../platform/add-on/destroy-and-wait.js'
+import {extendResource} from '../../../core/extend-resource.js'
+import {withSignal} from '../../../core/with-signal.js'
+import {destroyAndWait} from '../../platform/add-on/destroy-and-wait.js'
 import {
   AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError,
-} from '../platform/add-on/errors.js'
-import {resolveAddonInternal} from '../platform/add-on/resolve.js'
+} from '../../platform/add-on/errors.js'
+import {resolveAddonInternal} from '../../platform/add-on/resolve.js'
 import {
   getPostgresServiceName, isAdvancedDatabase, isLegacyDatabase, NotAdvancedDatabaseError,
-} from './internal/postgres-utils.js'
-import {resolveAddonScopedThenGlobal} from './internal/resolve-addon-scoped.js'
-import {type ResolvedPgDatabase, resolvePgDatabase} from './internal/resolve-pg-database.js'
-
-export type ListCredentialsOptions = {
-  signal?: AbortSignal
-}
+} from '../internal/postgres-utils.js'
+import {resolveAddonScopedThenGlobal} from '../internal/resolve-addon-scoped.js'
+import {
+  createCredentials,
+  deleteCredential,
+  getUrl,
+  listCredentials,
+  type PostgresDatabaseCredentialOptions,
+  repairDefault,
+  type RotateAllCredentialsResult,
+  rotateCredential,
+  type RotateCredentialOptions,
+  type RotateCredentialOpts,
+  type RotateCredentialResult,
+} from './credentials.js'
 
 export type DeleteAttachmentOptions = {
   beforeDelete?: (preview: {addon: ResolvedAddOn; attachment: AddOnAttachment}) => Promise<void> | void
@@ -95,37 +104,6 @@ export type DestroyResult = {
   // database deprovisions asynchronously (and `wait` is not set), so callers can
   // branch on it without casting.
   result: DeprovisioningAddOn
-}
-
-// The OpenAPI spec declares no fixed response schema for listCredentials
-// (@heroku/types' PostgresDatabaseListCredentialsResult is `Record<string, unknown>`),
-// so we use a custom type here.
-export type CredentialInfo = {
-  credentials: Array<{
-    connections?: null | number
-    password: string
-    state: string
-    user: string
-  }>
-  database: string
-  host: string
-  name: string
-  port: number
-  state: string
-  uuid: string
-}
-
-export async function listCredentials(
-  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
-  appIdentity: string,
-  addonIdentity?: string,
-  options: ListCredentialsOptions = {},
-): Promise<CredentialInfo[]> {
-  options.signal?.throwIfAborted()
-  const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, ...options})
-  // Bind the signal so the request aborts in flight, not just during resolution.
-  const data = withSignal(ctx.data, options.signal)
-  return data.postgresDatabase.listCredentials(addon.id) as unknown as Promise<CredentialInfo[]>
 }
 
 /**
@@ -404,46 +382,85 @@ export async function destroy(
   }
 }
 
-export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', ctx => ({
-  createAttachment: (
+export const postgresDatabaseExtensions = extendResource('data', 'postgresDatabase', ctx => {
+  function rotateCredentialOverload(
     appIdentity: string,
-    addonIdentity: string,
-    body?: CreateAttachmentBody,
-    options?: CreateAttachmentOptions,
-  ) => createAttachment(ctx, appIdentity, addonIdentity, body, options),
-  deleteAttachment: (
+    body: RotateCredentialOpts & {all: true},
+    options?: RotateCredentialOptions,
+  ): Promise<RotateAllCredentialsResult>
+  function rotateCredentialOverload(
     appIdentity: string,
-    attachmentName: string,
-    options?: DeleteAttachmentOptions,
-  ) => deleteAttachment(ctx, appIdentity, attachmentName, options),
-  destroy: (
-    addonIdentity: string,
-    options?: DestroyOptions,
-  ) => destroy(ctx, addonIdentity, options),
-  listAttachments: (
-    addonIdentity: string,
-    options?: ListAttachmentsOptions,
-  ) => listAttachments(ctx, addonIdentity, options),
-  listCredentials: (
+    body?: RotateCredentialOpts,
+    options?: RotateCredentialOptions,
+  ): Promise<RotateCredentialResult>
+  function rotateCredentialOverload(
     appIdentity: string,
-    addonIdentity?: string,
-    options?: ListCredentialsOptions,
-  ) => listCredentials(ctx, appIdentity, addonIdentity, options),
-  listLegacyByApp: (
-    appIdentity: string,
-    options?: ListLegacyByAppOptions,
-  ) => listLegacyByApp(ctx, appIdentity, options),
-}))
+    body?: RotateCredentialOpts,
+    options?: RotateCredentialOptions,
+  ): Promise<RotateAllCredentialsResult | RotateCredentialResult> {
+    return rotateCredential(ctx, appIdentity, body, options)
+  }
+
+  return {
+    createAttachment: (
+      appIdentity: string,
+      addonIdentity: string,
+      body?: CreateAttachmentBody,
+      options?: CreateAttachmentOptions,
+    ) => createAttachment(ctx, appIdentity, addonIdentity, body, options),
+    createCredentials: (
+      appIdentity: string,
+      body: PostgresDatabaseCreateCredentialsOpts,
+      options?: PostgresDatabaseCredentialOptions,
+    ) => createCredentials(ctx, appIdentity, body, options),
+    deleteAttachment: (
+      appIdentity: string,
+      attachmentName: string,
+      options?: DeleteAttachmentOptions,
+    ) => deleteAttachment(ctx, appIdentity, attachmentName, options),
+    deleteCredential: (
+      appIdentity: string,
+      credName: string,
+      options?: PostgresDatabaseCredentialOptions,
+    ) => deleteCredential(ctx, appIdentity, credName, options),
+    destroy: (
+      addonIdentity: string,
+      options?: DestroyOptions,
+    ) => destroy(ctx, addonIdentity, options),
+    getUrl: (
+      appIdentity: string,
+      credName: string,
+      options?: PostgresDatabaseCredentialOptions,
+    ) => getUrl(ctx, appIdentity, credName, options),
+    listAttachments: (
+      addonIdentity: string,
+      options?: ListAttachmentsOptions,
+    ) => listAttachments(ctx, addonIdentity, options),
+    listCredentials: (
+      appIdentity: string,
+      options?: PostgresDatabaseCredentialOptions,
+    ) => listCredentials(ctx, appIdentity, options),
+    listLegacyByApp: (
+      appIdentity: string,
+      options?: ListLegacyByAppOptions,
+    ) => listLegacyByApp(ctx, appIdentity, options),
+    repairDefault: (
+      appIdentity: string,
+      options?: PostgresDatabaseCredentialOptions,
+    ) => repairDefault(ctx, appIdentity, options),
+    rotateCredential: rotateCredentialOverload,
+  }
+})
 
 export {
   AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError, AddonNotFoundError,
-} from '../platform/add-on/errors.js'
+} from '../../platform/add-on/errors.js'
 
-export type {DeprovisioningAddOn, ResolvedAddOn} from '../platform/add-on/types.js'
+export type {DeprovisioningAddOn, ResolvedAddOn} from '../../platform/add-on/types.js'
 
 export {
   type AttachmentFactors, parseAttachmentFactors,
-} from './internal/parse-attachment-factors.js'
+} from '../internal/parse-attachment-factors.js'
 
 export {
   EssentialDatabaseNotSupportedError,
@@ -457,6 +474,8 @@ export {
   isLegacyEssentialDatabase,
   isPostgresAddon,
   NotAdvancedDatabaseError,
-} from './internal/postgres-utils.js'
+} from '../internal/postgres-utils.js'
 
-export {PgDatabaseNotFoundError, type ResolvedPgDatabase} from './internal/resolve-pg-database.js'
+export {PgDatabaseNotFoundError, type ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
+
+export type {CredentialInfo} from './credentials.js'

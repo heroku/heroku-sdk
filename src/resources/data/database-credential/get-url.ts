@@ -9,7 +9,7 @@ import {resolveAddonInternal} from '../../platform/add-on/resolve.js'
 import {
   getPostgresServiceName, isAdvancedCredential, isAdvancedDatabase, isEssentialTier,
 } from '../internal/postgres-utils.js'
-import {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database.js'
+import {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database/credentials.js'
 
 export type CredentialConnectionInfo = {
   credName: string
