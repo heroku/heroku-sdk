@@ -1,11 +1,12 @@
 import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
 import type {DatabaseSettings, DatabaseSettingsOptions} from './index.js'
 
 import {withSignal} from '../../../core/with-signal.js'
-import {resolveSettingsDatabase} from './resolve.js'
+import {resolveSettingsDatabase} from '../internal/resolve-settings-database.js'
 
 export type GetAllDatabaseSettingsResult = {
-  addon: Awaited<ReturnType<typeof resolveSettingsDatabase>>
+  addon: ResolvedPgDatabase
   settings: DatabaseSettings
 }
 

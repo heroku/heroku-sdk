@@ -1,8 +1,8 @@
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
+import type {ResolvedPgDatabase} from './resolve-pg-database.js'
 
-import {EssentialDatabaseNotSupportedError, isEssentialTier} from '../internal/postgres-utils.js'
-import {resolvePgDatabase} from '../internal/resolve-pg-database.js'
+import {EssentialDatabaseNotSupportedError, isEssentialTier} from './postgres-utils.js'
+import {resolvePgDatabase} from './resolve-pg-database.js'
 
 /**
  * Resolves the database whose settings are being read or changed, rejecting

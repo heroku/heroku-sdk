@@ -5,8 +5,8 @@ import type {GetDatabaseSettingResult} from './get.js'
 import type {DatabaseSetting, DatabaseSettingKey, DatabaseSettingsOptions} from './index.js'
 
 import {withSignal} from '../../../core/with-signal.js'
+import {resolveSettingsDatabase} from '../internal/resolve-settings-database.js'
 import {UnknownSettingError} from './errors.js'
-import {resolveSettingsDatabase} from './resolve.js'
 
 export type UpdateDatabaseSettingResult<K extends DatabaseSettingKey = DatabaseSettingKey> = GetDatabaseSettingResult<K>
 
