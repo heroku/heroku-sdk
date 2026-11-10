@@ -33,14 +33,21 @@ function deriveCtx(ctx: ResourceCtx, method: 'withHeaders' | 'withOptions', args
 
   const options = args[0] as StickyRouteOptions | undefined
   const scoped: StickyRouteOptions = {}
-  if (options?.signal !== undefined) scoped.signal = options.signal
+  const operationSignal = options?.signal ?? ctx.operationSignal
+  if (operationSignal !== undefined) scoped.signal = operationSignal
   if (options?.timeout !== undefined) scoped.timeout = options.timeout
   if (Object.keys(scoped).length === 0) return ctx
 
   const cache = new Map<keyof ResourceCtx, unknown>()
   const derived = {} as ResourceCtx
+  Object.defineProperty(derived, 'operationSignal', {
+    enumerable: true,
+    value: operationSignal,
+  })
 
   for (const key of Object.keys(ctx) as Array<keyof ResourceCtx>) {
+    if (key === 'operationSignal') continue
+
     Object.defineProperty(derived, key, {
       enumerable: true,
       get() {

@@ -384,12 +384,12 @@ export const databaseCommandExtensions = extendResource('data', 'database', ctx 
     databaseIdentity?: string,
     options?: PromoteDatabaseOptions,
   ) => promoteDatabase(ctx, appIdentity, databaseIdentity, options),
-  reset: (
+  resetForApp: (
     appIdentity: string,
     databaseIdentity?: string,
     options?: ResetDatabaseOptions,
   ) => resetDatabase(ctx, appIdentity, databaseIdentity, options),
-  unfollow: (
+  unfollowForApp: (
     appIdentity: string,
     databaseIdentity?: string,
     options?: UnfollowDatabaseOptions,

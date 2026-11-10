@@ -1,10 +1,13 @@
 /* eslint-disable camelcase */
+import {HerokuApiClient} from '@heroku/heroku-fetch'
+import * as routes from '@heroku/types/data/routes'
 import {
-  describe, expect, it, vi,
+  afterEach, describe, expect, it, vi,
 } from 'vitest'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
+import {HerokuSDK} from '../../index.js'
 import {
   DatabaseAlreadyPromotedError,
   databaseCommandExtensions,
@@ -15,6 +18,8 @@ import {
   resetDatabase,
   unfollowDatabase,
 } from './database-commands.js'
+
+afterEach(() => vi.restoreAllMocks())
 
 const resolvedAttachment = {
   addon: {
@@ -32,6 +37,14 @@ const resolvedAttachment = {
   namespace: null,
   updated_at: '2024-01-01T00:00:00Z',
   web_url: null,
+}
+
+function mockApiResponse(body: unknown): Response {
+  return {
+    headers: new Headers({'content-length': '100'}),
+    json: vi.fn().mockResolvedValue(body),
+    status: 200,
+  } as unknown as Response
 }
 
 function buildCtx(opts: {
@@ -455,14 +468,86 @@ describe('database command extensions', () => {
     expect(databaseUnfollow).not.toHaveBeenCalled()
   })
 
-  it('exports and delegates promote, reset, and unfollow through the standalone extension bundle', async () => {
+  it('exports and delegates app-level commands through the standalone extension bundle', async () => {
     expect(databaseCommandExtensions.service).toBe('data')
     expect(databaseCommandExtensions.resource).toBe('database')
-    const ctx = buildCtx()
+    const databaseInfo = vi.fn().mockResolvedValue({following: 'postgres://host:5432/db'})
+    const databaseUnfollow = vi.fn().mockResolvedValue({message: 'unfollowed'})
+    const resolutionByAttachment = vi.fn().mockResolvedValue([resolvedAttachment])
+    const ctx = buildCtx({
+      configVars: vi.fn().mockResolvedValue({}),
+      databaseInfo,
+      databaseUnfollow,
+      resolutionByAttachment,
+    })
     const methods = databaseCommandExtensions.factory(ctx)
-    expect(Object.keys(methods)).toEqual(['promote', 'reset', 'unfollow'])
+    expect(Object.keys(methods)).toEqual(['promote', 'resetForApp', 'unfollowForApp'])
 
-    await methods.reset('test-app', 'DB_URL', {extensions: ['Postgis']})
+    await methods.resetForApp('test-app', 'DB_URL', {extensions: ['Postgis']})
     expect(ctx.data.database.reset).toHaveBeenCalledExactlyOnceWith('database-id', {extensions: ['postgis']})
+
+    await methods.unfollowForApp('test-app', 'FOLLOWER_URL')
+    expect(resolutionByAttachment).toHaveBeenNthCalledWith(2, {
+      addon_attachment: 'FOLLOWER_URL',
+      app: 'test-app',
+    })
+    expect(databaseInfo).toHaveBeenCalledExactlyOnceWith('database-id')
+    expect(databaseUnfollow).toHaveBeenCalledExactlyOnceWith('database-id')
+  })
+
+  it('does not shadow any generated database route', () => {
+    const extensionKeys = Object.keys(databaseCommandExtensions.factory({} as never))
+    const routeKeys = Object.keys(routes.database)
+
+    expect(routeKeys.length).toBeGreaterThan(0)
+    expect(extensionKeys.filter(key => routeKeys.includes(key))).toEqual([])
+  })
+
+  it('dispatches generated reset and unfollow methods while exposing app-level composites', async () => {
+    const requests: Array<{body?: unknown; method: string; path: string}> = []
+    vi.spyOn(HerokuApiClient.prototype, 'post').mockImplementation(async (path, body) => {
+      requests.push({body, method: 'POST', path})
+      return mockApiResponse([resolvedAttachment])
+    })
+    vi.spyOn(HerokuApiClient.prototype, 'get').mockImplementation(async path => {
+      requests.push({method: 'GET', path})
+      return mockApiResponse(path.endsWith('/config-vars')
+        ? {FOLLOWER_URL: 'postgres://host:5432/db'}
+        : {following: 'postgres://host:5432/db'})
+    })
+    vi.spyOn(HerokuApiClient.prototype, 'put').mockImplementation(async (path, body) => {
+      requests.push({body, method: 'PUT', path})
+      return mockApiResponse({message: 'done'})
+    })
+    const sdk = new HerokuSDK({extensions: [databaseCommandExtensions]})
+
+    expect(sdk.data.database.reset).toBeTypeOf('function')
+    expect(sdk.data.database.unfollow).toBeTypeOf('function')
+    expect(sdk.data.database.resetForApp).toBeTypeOf('function')
+    expect(sdk.data.database.unfollowForApp).toBeTypeOf('function')
+
+    await sdk.data.database.reset('database-id', {extensions: ['postgis']})
+    await sdk.data.database.unfollow('database-id')
+    await sdk.data.database.resetForApp('test-app', 'DATABASE_URL', {extensions: ['postgis']})
+    await sdk.data.database.unfollowForApp('test-app', 'FOLLOWER_URL')
+
+    expect(requests).toEqual([
+      {body: {extensions: ['postgis']}, method: 'PUT', path: '/client/v11/databases/database-id/reset'},
+      {method: 'PUT', path: '/client/v11/databases/database-id/unfollow'},
+      {
+        body: {addon_attachment: 'DATABASE_URL', app: 'test-app'},
+        method: 'POST',
+        path: '/actions/addon-attachments/resolve',
+      },
+      {body: {extensions: ['postgis']}, method: 'PUT', path: '/client/v11/databases/database-id/reset'},
+      {
+        body: {addon_attachment: 'FOLLOWER_URL', app: 'test-app'},
+        method: 'POST',
+        path: '/actions/addon-attachments/resolve',
+      },
+      {method: 'GET', path: '/client/v11/databases/database-id'},
+      {method: 'GET', path: '/apps/test-app/config-vars'},
+      {method: 'PUT', path: '/client/v11/databases/database-id/unfollow'},
+    ])
   })
 })

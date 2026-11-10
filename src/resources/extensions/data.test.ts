@@ -56,4 +56,11 @@ describe('data extensions barrel', () => {
       expect((value as ResourceExtension).service, `${name} should target data`).toBe('data')
     }
   })
+
+  it('exports DatabaseCopyTransferError from the public data extensions barrel', () => {
+    const error = new barrel.DatabaseCopyTransferError('transfer-1', 'failed')
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.transferId).toBe('transfer-1')
+  })
 })

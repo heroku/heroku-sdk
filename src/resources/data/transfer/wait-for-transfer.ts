@@ -4,23 +4,28 @@ import type {TransferInfoByAppResult} from '@heroku/types/data'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
-import {withSignal} from '../../../core/with-signal.js'
+import {combineSignals, withSignal} from '../../../core/with-signal.js'
 import {isAbortError} from '../../../utils/is-abort-error.js'
 import {wait} from '../../../utils/wait.js'
 
 const DEFAULT_INTERVAL_MS = 3000
 const MAX_FAILURES = 20
+const MAX_TIMER_DELAY_MS = 2_147_483_647
+const POLL_TIMED_OUT = Symbol('poll_timed_out')
 
 /**
  * Thrown by `waitForTransfer` when the transfer reaches a terminal state
  * with `succeeded: false`.
  */
 export class TransferFailedError extends Error {
+  public ancillaryErrors?: string[]
   public readonly id = 'transfer_failed'
+  public readonly transferId: string
 
   constructor(public readonly transfer: TransferInfoByAppResult) {
     super('An error occurred and the transfer did not finish.')
     this.name = 'TransferFailedError'
+    this.transferId = transfer.uuid
   }
 
   public get body() {
@@ -33,6 +38,7 @@ export class TransferFailedError extends Error {
  * transfer reaches a terminal state.
  */
 export class TransferTimeoutError extends Error {
+  public ancillaryErrors?: string[]
   public readonly id = 'transfer_timeout'
 
   constructor(public readonly transferId: string, public readonly timeoutMs: number) {
@@ -70,6 +76,89 @@ export type WaitForTransferOptions = {
   verbose?: boolean
 }
 
+async function pollTransfer(options: {
+  appIdentity: string
+  ctx: Pick<ResourceCtx, 'data' | 'operationSignal'>
+  deadline?: number
+  signal?: AbortSignal
+  transferId: string
+  verbose: boolean | undefined
+}): Promise<TransferInfoByAppResult | typeof POLL_TIMED_OUT> {
+  const {
+    appIdentity, ctx, deadline, signal, transferId, verbose,
+  } = options
+  const controller = new AbortController()
+  // Keep the operation signal as an input rather than aborting it when the
+  // deadline expires. HerokuApiClient composes this request signal with its
+  // constructor-level signal when it dispatches the request.
+  const operationSignal = combineSignals(ctx.operationSignal, signal)
+  const pollSignal = combineSignals(operationSignal, controller.signal)!
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let abortHandler: (() => void) | undefined
+  const timeoutPromise = deadline === undefined
+    ? undefined
+    : new Promise<typeof POLL_TIMED_OUT>(resolve => {
+      const checkDeadline = () => {
+        const remainingMs = deadline - Date.now()
+        if (remainingMs <= 0) {
+          resolve(POLL_TIMED_OUT)
+          controller.abort()
+          return
+        }
+
+        timer = setTimeout(checkDeadline, Math.min(remainingMs, MAX_TIMER_DELAY_MS))
+      }
+
+      checkDeadline()
+    })
+
+  let abortPromise: Promise<never> | undefined
+  if (operationSignal) {
+    abortPromise = new Promise((_, reject) => {
+      abortHandler = () => {
+        controller.abort(operationSignal.reason)
+        reject(operationSignal.reason ?? new Error('Aborted'))
+      }
+
+      operationSignal.addEventListener('abort', abortHandler, {once: true})
+
+      if (operationSignal.aborted) {
+        abortHandler()
+      }
+    })
+  }
+
+  try {
+    const pollRequest = withSignal(ctx.data, pollSignal).transfer.infoByApp(appIdentity, transferId, {verbose})
+    const promises: Array<Promise<TransferInfoByAppResult | typeof POLL_TIMED_OUT>> = [pollRequest]
+    if (timeoutPromise) promises.push(timeoutPromise)
+    if (abortPromise) {
+      promises.push(abortPromise)
+    }
+
+    return await Promise.race(promises)
+  } finally {
+    if (timer) {
+      clearTimeout(timer)
+    }
+
+    if (operationSignal && abortHandler) {
+      operationSignal.removeEventListener('abort', abortHandler)
+    }
+  }
+}
+
+async function waitForNextPoll(intervalMs: number, deadline: number | undefined, signal?: AbortSignal): Promise<void> {
+  const pollAt = Math.min(Date.now() + intervalMs, deadline ?? Number.POSITIVE_INFINITY)
+
+  while (true) {
+    const remainingMs = pollAt - Date.now()
+    if (remainingMs <= 0) return
+
+    await wait(Math.min(remainingMs, MAX_TIMER_DELAY_MS), signal)
+  }
+}
+
 /**
  * Poll `data.transfer.infoByApp` until the transfer reaches a terminal
  * state (`finished_at` set).
@@ -77,8 +166,9 @@ export type WaitForTransferOptions = {
  * Throws `TransferFailedError` if the transfer fails or `TransferTimeoutError`
  * if the transfer does not finish before timeout.
  */
+/* eslint-disable complexity */
 export async function waitForTransfer(
-  ctx: Pick<ResourceCtx, 'data'>,
+  ctx: Pick<ResourceCtx, 'data' | 'operationSignal'>,
   appIdentity: string,
   transferId: string,
   options: WaitForTransferOptions = {},
@@ -90,25 +180,44 @@ export async function waitForTransfer(
     timeoutMs,
     verbose,
   } = options
+  const operationSignal = combineSignals(ctx.operationSignal, signal)
 
-  signal?.throwIfAborted()
-
-  const data = withSignal(ctx.data, signal)
+  operationSignal?.throwIfAborted()
 
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
   let failures = 0
-  let transfer
+  let transfer: TransferInfoByAppResult | undefined
+
+  const makeTimeoutError = () => new TransferTimeoutError(transferId, timeoutMs!)
+
+  const poll = (deadlineValue = deadline, pollVerbose = verbose) => pollTransfer({
+    appIdentity, ctx, deadline: deadlineValue, signal: operationSignal, transferId, verbose: pollVerbose,
+  })
 
   while (true) {
-    signal?.throwIfAborted()
+    operationSignal?.throwIfAborted()
+
+    if (deadline !== undefined && Date.now() >= deadline) {
+      throw makeTimeoutError()
+    }
 
     try {
-      transfer = await data.transfer.infoByApp(appIdentity, transferId, {verbose})
+      const result = await poll()
+
+      if (result === POLL_TIMED_OUT) {
+        throw makeTimeoutError()
+      }
+
+      transfer = result
     } catch (error) {
       // Never retry a cancellation: a client- or caller-level abort must stop
       // the poll immediately rather than burn up to MAX_FAILURES attempts.
-      if (signal?.aborted || isAbortError(error)) {
+      if (error instanceof TransferTimeoutError || operationSignal?.aborted || isAbortError(error)) {
         throw error
+      }
+
+      if (deadline !== undefined && Date.now() >= deadline) {
+        throw makeTimeoutError()
       }
 
       failures++
@@ -124,17 +233,29 @@ export async function waitForTransfer(
         return transfer
       }
 
-      const verboseTransfer = verbose ? transfer : await data.transfer.infoByApp(appIdentity, transferId, {verbose: true})
+      const verboseTransfer = verbose
+        ? transfer
+        : await fetchVerboseTransfer()
+
+      if (verboseTransfer === POLL_TIMED_OUT) {
+        throw makeTimeoutError()
+      }
+
       throw new TransferFailedError(verboseTransfer)
     }
 
     if (deadline !== undefined && Date.now() >= deadline) {
-      throw new TransferTimeoutError(transferId, timeoutMs!)
+      throw makeTimeoutError()
     }
 
-    await wait(intervalMs, signal)
+    await waitForNextPoll(intervalMs, deadline, operationSignal)
+  }
+
+  async function fetchVerboseTransfer() {
+    return poll(deadline, true)
   }
 }
+/* eslint-enable complexity */
 
 export const transferExtensions = extendResource('data', 'transfer', ctx => ({
   waitForTransfer: (appIdentity: string, transferId: string, options?: WaitForTransferOptions) =>

@@ -28,7 +28,9 @@ sdk.data.database.promote('example-app', 'DATABASE_URL', {
   },
 })
 
-sdk.data.database.unfollow('example-app', 'DATABASE_URL', {
+// Generated `reset`/`unfollow` names stay reserved for their routes; app-scoped
+// composites use `ForApp` because they resolve the raw app/database identity.
+sdk.data.database.unfollowForApp('example-app', 'DATABASE_URL', {
   beforeUnfollow({following, origin}) {
     const originName: string = origin
     const leaderUrl: string = following
@@ -37,9 +39,18 @@ sdk.data.database.unfollow('example-app', 'DATABASE_URL', {
   },
 })
 
-sdk.data.database.reset('example-app', 'DATABASE_URL', {
+sdk.data.database.resetForApp('example-app', 'DATABASE_URL', {
   extensions: ['postgis'],
 })
+
+// Generated database route methods retain their direct add-on-id signatures.
+sdk.data.database.unfollow('database-id')
+sdk.data.database.reset('database-id', {extensions: ['postgis']})
+
+// @ts-expect-error The generated unfollow route accepts a database ID, not app/database inputs.
+sdk.data.database.unfollow('example-app', 'DATABASE_URL')
+// @ts-expect-error The generated reset route accepts a database ID, not app/database inputs.
+sdk.data.database.reset('example-app', 'DATABASE_URL')
 
 sdk.data.database.copy('example-app', 'DATABASE_URL', 'postgres://external.example/db', {
   onCredentialsChecked({credentialCount, hasAdditionalCredentials}) {

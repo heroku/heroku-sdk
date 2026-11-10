@@ -27,6 +27,7 @@ export {
   databaseCopyExtensions,
   type DatabaseCopyOptions,
   type DatabaseCopyResult,
+  DatabaseCopyTransferError,
 } from '../data/database-copy.js'
 export {databaseCredentialExtensions} from '../data/database-credential/index.js'
 export {
