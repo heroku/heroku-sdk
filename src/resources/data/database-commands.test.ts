@@ -2,7 +2,7 @@
 import {HerokuApiClient} from '@heroku/heroku-fetch'
 import * as routes from '@heroku/types/data/routes'
 import {
-  afterEach, describe, expect, it, vi,
+  afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
@@ -92,6 +92,18 @@ function buildCtx(opts: {
     data: data as never,
     platform: platform as never,
   }
+}
+
+function capturePlatformRequestSignals(ctx: ResourceCtx): AbortSignal[] {
+  const signals: AbortSignal[] = []
+  const platform = ctx.platform as unknown as {
+    withOptions: (options: {signal?: AbortSignal}) => unknown
+  }
+  platform.withOptions = vi.fn((options: {signal?: AbortSignal}) => {
+    if (options.signal) signals.push(options.signal)
+    return ctx.platform
+  })
+  return signals
 }
 
 describe('database command extensions', () => {
@@ -401,6 +413,337 @@ describe('database command extensions', () => {
     })
   })
 
+  describe('release-phase polling outcomes', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    })
+
+    it('returns failed when the attach release fails', async () => {
+      const attach = {id: 'attach-release', status: 'failed'}
+      const detach = {id: 'detach-release', status: 'succeeded'}
+      const releaseInfo = vi.fn()
+        .mockResolvedValueOnce(attach)
+        .mockResolvedValueOnce(detach)
+      const ctx = buildCtx({
+        formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+        releaseInfo,
+        releaseList: vi.fn().mockResolvedValue([
+          {description: 'Attach DATABASE', id: 'attach-release'},
+          {description: 'Detach DATABASE', id: 'detach-release'},
+        ]),
+      })
+
+      const result = await promoteDatabase(ctx, 'test-app', undefined, {force: true})
+
+      expect(releaseInfo).toHaveBeenNthCalledWith(1, 'test-app', 'attach-release')
+      expect(releaseInfo).toHaveBeenNthCalledWith(2, 'test-app', 'detach-release')
+      expect(result.releasePhase).toEqual({attach, detach, status: 'failed'})
+    })
+
+    it('returns timed_out when attach remains pending through releasePhaseTimeoutMs', async () => {
+      const attachRelease = {description: 'Attach DATABASE', id: 'attach-release'}
+      const releaseInfo = vi.fn(() => new Promise<never>(() => {}))
+      const ctx = buildCtx({
+        formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+        releaseInfo,
+        releaseList: vi.fn().mockResolvedValue([
+          attachRelease,
+          {description: 'Detach DATABASE', id: 'detach-release'},
+        ]),
+      })
+      let settled = false
+      const promise = promoteDatabase(ctx, 'test-app', undefined, {
+        force: true,
+        releasePhasePollIntervalMs: 10,
+        releasePhaseTimeoutMs: 20,
+      }).then(result => {
+        settled = true
+        return result
+      })
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(releaseInfo).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(19)
+      expect(settled).toBe(false)
+      expect(releaseInfo).toHaveBeenCalledOnce()
+
+      await vi.advanceTimersByTimeAsync(1)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(settled).toBe(true)
+      const result = await promise
+
+      expect(result.releasePhase).toEqual({attach: {...attachRelease, status: 'pending'}, status: 'timed_out'})
+      expect(releaseInfo).toHaveBeenCalledOnce()
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('stops polling when attach keeps returning pending through the deadline', async () => {
+      const attach = {id: 'attach-release', status: 'pending'}
+      const releaseInfo = vi.fn().mockResolvedValue(attach)
+      const ctx = buildCtx({
+        formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+        releaseInfo,
+        releaseList: vi.fn().mockResolvedValue([
+          {description: 'Attach DATABASE', id: 'attach-release'},
+          {description: 'Detach DATABASE', id: 'detach-release'},
+        ]),
+      })
+      let settled = false
+      const promise = promoteDatabase(ctx, 'test-app', undefined, {
+        force: true,
+        releasePhasePollIntervalMs: 10,
+        releasePhaseTimeoutMs: 25,
+      }).then(result => {
+        settled = true
+        return result
+      })
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(releaseInfo).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(24)
+      expect(settled).toBe(false)
+      expect(releaseInfo).toHaveBeenCalledTimes(3)
+
+      await vi.advanceTimersByTimeAsync(1)
+      const result = await promise
+
+      expect(result.releasePhase).toEqual({attach, status: 'timed_out'})
+      expect(releaseInfo).toHaveBeenCalledTimes(3)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('times out and aborts a deferred attach lookup; late success does not change the result', async () => {
+      let resolveAttach!: (release: {id: string; status: string}) => void
+      const deferredAttach = new Promise<{id: string; status: string}>(resolve => {
+        resolveAttach = resolve
+      })
+      const releaseInfo = vi.fn().mockReturnValue(deferredAttach)
+      const ctx = buildCtx({
+        formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+        releaseInfo,
+        releaseList: vi.fn().mockResolvedValue([
+          {description: 'Attach DATABASE', id: 'attach-release'},
+          {description: 'Detach DATABASE', id: 'detach-release'},
+        ]),
+      })
+      const requestSignals = capturePlatformRequestSignals(ctx)
+      let settled = false
+      const promise = promoteDatabase(ctx, 'test-app', undefined, {
+        force: true,
+        releasePhaseTimeoutMs: 20,
+      }).then(result => {
+        settled = true
+        return result
+      })
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(releaseInfo).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(19)
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      const result = await promise
+      expect(settled).toBe(true)
+      expect(requestSignals.at(-1)?.aborted).toBe(true)
+      expect(result.releasePhase).toEqual({
+        attach: {description: 'Attach DATABASE', id: 'attach-release', status: 'pending'},
+        status: 'timed_out',
+      })
+
+      resolveAttach({id: 'attach-release', status: 'succeeded'})
+      await Promise.resolve()
+      expect(result.releasePhase).toEqual({
+        attach: {description: 'Attach DATABASE', id: 'attach-release', status: 'pending'},
+        status: 'timed_out',
+      })
+      expect(releaseInfo).toHaveBeenCalledOnce()
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('bounds a deferred detach lookup by the deadline and ignores late success', async () => {
+      let resolveDetach!: (release: {id: string; status: string}) => void
+      const deferredDetach = new Promise<{id: string; status: string}>(resolve => {
+        resolveDetach = resolve
+      })
+      const attach = {id: 'attach-release', status: 'succeeded'}
+      const detach = {id: 'detach-release', status: 'succeeded'}
+      const releaseInfo = vi.fn()
+        .mockResolvedValueOnce(attach)
+        .mockReturnValueOnce(deferredDetach)
+      const ctx = buildCtx({
+        formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+        releaseInfo,
+        releaseList: vi.fn().mockResolvedValue([
+          {description: 'Attach DATABASE', id: 'attach-release'},
+          {description: 'Detach DATABASE', id: 'detach-release'},
+        ]),
+      })
+      const requestSignals = capturePlatformRequestSignals(ctx)
+      let settled = false
+      const promise = promoteDatabase(ctx, 'test-app', undefined, {
+        force: true,
+        releasePhaseTimeoutMs: 20,
+      }).then(result => {
+        settled = true
+        return result
+      })
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(releaseInfo).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(19)
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      const result = await promise
+
+      expect(settled).toBe(true)
+      expect(requestSignals.at(-1)?.aborted).toBe(true)
+      expect(result.releasePhase).toEqual({attach, status: 'succeeded'})
+      expect(result.releasePhase).not.toHaveProperty('detach')
+
+      resolveDetach(detach)
+      await Promise.resolve()
+      expect(result.releasePhase).toEqual({attach, status: 'succeeded'})
+      expect(releaseInfo).toHaveBeenCalledTimes(2)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('aborts while waiting between release polls', async () => {
+      const releaseInfo = vi.fn().mockResolvedValue({id: 'attach-release', status: 'pending'})
+      const ctx = buildCtx({
+        formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+        releaseInfo,
+        releaseList: vi.fn().mockResolvedValue([
+          {description: 'Attach DATABASE', id: 'attach-release'},
+          {description: 'Detach DATABASE', id: 'detach-release'},
+        ]),
+      })
+      const controller = new AbortController()
+      const reason = new Error('release polling cancelled')
+      const promise = promoteDatabase(ctx, 'test-app', undefined, {
+        force: true,
+        releasePhasePollIntervalMs: 100,
+        signal: controller.signal,
+      })
+
+      const expectation = expect(promise).rejects.toBe(reason)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(releaseInfo).toHaveBeenCalledExactlyOnceWith('test-app', 'attach-release')
+      await vi.advanceTimersByTimeAsync(25)
+      expect(releaseInfo).toHaveBeenCalledOnce()
+      expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+      controller.abort(reason)
+      await expectation
+
+      expect(releaseInfo).toHaveBeenCalledOnce()
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('does not poll again after 1ms when the poll interval exceeds the Node timer limit', async () => {
+      const releaseInfo = vi.fn().mockResolvedValue({id: 'attach-release', status: 'pending'})
+      const ctx = buildCtx({
+        formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+        releaseInfo,
+        releaseList: vi.fn().mockResolvedValue([
+          {description: 'Attach DATABASE', id: 'attach-release'},
+          {description: 'Detach DATABASE', id: 'detach-release'},
+        ]),
+      })
+      const fakeSetTimeout = globalThis.setTimeout
+      vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => (
+        fakeSetTimeout(callback, delay !== undefined && delay > 2_147_483_647 ? 1 : delay, ...args)
+      ))
+      const controller = new AbortController()
+      const reason = new Error('release polling cancelled')
+      const promise = promoteDatabase(ctx, 'test-app', undefined, {
+        force: true,
+        releasePhasePollIntervalMs: 2_147_483_648,
+        releasePhaseTimeoutMs: 3_000_000_000,
+        signal: controller.signal,
+      })
+      const expectation = expect(promise).rejects.toBe(reason)
+
+      try {
+        await vi.advanceTimersByTimeAsync(0)
+        expect(releaseInfo).toHaveBeenCalledOnce()
+        await vi.advanceTimersByTimeAsync(1)
+        expect(releaseInfo).toHaveBeenCalledOnce()
+        await vi.advanceTimersByTimeAsync(2_147_483_646)
+        expect(releaseInfo).toHaveBeenCalledOnce()
+        await vi.advanceTimersByTimeAsync(1)
+        expect(releaseInfo).toHaveBeenCalledTimes(2)
+      } finally {
+        controller.abort(reason)
+      }
+
+      await expectation
+
+      expect(releaseInfo).toHaveBeenCalledTimes(2)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it.each(['operation', 'caller'] as const)(
+      'aborts a deferred release request when the %s signal is cancelled',
+      async abortSource => {
+        let resolveRelease!: (release: {id: string; status: string}) => void
+        const deferredRelease = new Promise<{id: string; status: string}>(resolve => {
+          resolveRelease = resolve
+        })
+        const releaseInfo = vi.fn().mockReturnValue(deferredRelease)
+        const ctx = buildCtx({
+          formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+          releaseInfo,
+          releaseList: vi.fn().mockResolvedValue([
+            {description: 'Attach DATABASE', id: 'attach-release'},
+            {description: 'Detach DATABASE', id: 'detach-release'},
+          ]),
+        })
+        const operationController = new AbortController()
+        const callerController = new AbortController()
+        const reason = new Error(`${abortSource} release polling cancelled`)
+        ctx.operationSignal = operationController.signal
+        const requestSignals = capturePlatformRequestSignals(ctx)
+        const promise = promoteDatabase(ctx, 'test-app', undefined, {
+          force: true,
+          releasePhaseTimeoutMs: 10_000,
+          signal: callerController.signal,
+        })
+        const expectation = expect(promise).rejects.toBe(reason)
+        const abortingController = abortSource === 'operation' ? operationController : callerController
+        const otherController = abortSource === 'operation' ? callerController : operationController
+        try {
+          await vi.advanceTimersByTimeAsync(0)
+          expect(releaseInfo).toHaveBeenCalledOnce()
+          const requestSignal = requestSignals.at(-1)
+          expect(requestSignal).toBeDefined()
+          expect(requestSignal).not.toBe(operationController.signal)
+          expect(requestSignal).not.toBe(callerController.signal)
+          expect(requestSignal?.aborted).toBe(false)
+
+          abortingController.abort(reason)
+          await expectation
+
+          expect(requestSignal?.aborted).toBe(true)
+          expect(otherController.signal.aborted).toBe(false)
+          expect(releaseInfo).toHaveBeenCalledOnce()
+          expect(vi.getTimerCount()).toBe(0)
+
+          resolveRelease({id: 'attach-release', status: 'succeeded'})
+          await Promise.resolve()
+          expect(releaseInfo).toHaveBeenCalledOnce()
+        } finally {
+          if (!abortingController.signal.aborted) {
+            abortingController.abort(reason)
+            await expectation
+          }
+        }
+      },
+    )
+  })
+
   it('fails release-phase checks when required attach/detach releases are missing', async () => {
     const ctx = buildCtx({
       attachmentsByApp: vi.fn().mockResolvedValue([]),
@@ -548,6 +891,54 @@ describe('database command extensions', () => {
       {method: 'GET', path: '/client/v11/databases/database-id'},
       {method: 'GET', path: '/apps/test-app/config-vars'},
       {method: 'PUT', path: '/client/v11/databases/database-id/unfollow'},
+    ])
+  })
+
+  it('sends an empty reset body when extensions is an empty string', async () => {
+    const requests: Array<{body?: unknown; method: string; path: string}> = []
+    vi.spyOn(HerokuApiClient.prototype, 'post').mockImplementation(async (path, body) => {
+      requests.push({body, method: 'POST', path})
+      return mockApiResponse([resolvedAttachment])
+    })
+    vi.spyOn(HerokuApiClient.prototype, 'put').mockImplementation(async (path, body) => {
+      requests.push({body, method: 'PUT', path})
+      return mockApiResponse({message: 'reset'})
+    })
+    const sdk = new HerokuSDK({extensions: [databaseCommandExtensions]})
+
+    await sdk.data.database.resetForApp('test-app', 'DATABASE_URL', {extensions: ''})
+
+    expect(requests).toEqual([
+      {
+        body: {addon_attachment: 'DATABASE_URL', app: 'test-app'},
+        method: 'POST',
+        path: '/actions/addon-attachments/resolve',
+      },
+      {body: {}, method: 'PUT', path: '/client/v11/databases/database-id/reset'},
+    ])
+  })
+
+  it('sends an empty extensions array when extensions is an empty array', async () => {
+    const requests: Array<{body?: unknown; method: string; path: string}> = []
+    vi.spyOn(HerokuApiClient.prototype, 'post').mockImplementation(async (path, body) => {
+      requests.push({body, method: 'POST', path})
+      return mockApiResponse([resolvedAttachment])
+    })
+    vi.spyOn(HerokuApiClient.prototype, 'put').mockImplementation(async (path, body) => {
+      requests.push({body, method: 'PUT', path})
+      return mockApiResponse({message: 'reset'})
+    })
+    const sdk = new HerokuSDK({extensions: [databaseCommandExtensions]})
+
+    await sdk.data.database.resetForApp('test-app', 'DATABASE_URL', {extensions: []})
+
+    expect(requests).toEqual([
+      {
+        body: {addon_attachment: 'DATABASE_URL', app: 'test-app'},
+        method: 'POST',
+        path: '/actions/addon-attachments/resolve',
+      },
+      {body: {extensions: []}, method: 'PUT', path: '/client/v11/databases/database-id/reset'},
     ])
   })
 })

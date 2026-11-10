@@ -17,7 +17,7 @@ import type {ResourceCtx} from '../../core/extend-resource.js'
 import type {ResolvedPgDatabase} from './internal/resolve-pg-database.js'
 
 import {extendResource} from '../../core/extend-resource.js'
-import {withSignal} from '../../core/with-signal.js'
+import {combineSignals, withSignal} from '../../core/with-signal.js'
 import {wait} from '../../utils/wait.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 
@@ -27,6 +27,8 @@ const POOLER_ATTACHMENT_NAME = 'DATABASE_CONNECTION_POOL'
 const RELEASE_LIST_RANGE = 'version ..; max=5, order=desc'
 const RELEASE_PHASE_TIMEOUT_MS = 900_000
 const RELEASE_PHASE_POLL_INTERVAL_MS = 5000
+const MAX_TIMER_DELAY_MS = 2_147_483_647
+const RELEASE_PHASE_TIMED_OUT = Symbol('release_phase_timed_out')
 
 export type DatabaseCommandInfo = Omit<DatabaseInfoResult, 'leader'> & {
   following?: null | string
@@ -144,15 +146,16 @@ export type ResetDatabaseResult = {
 /** Resolve a database, protect the existing alias, and promote it to DATABASE. */
 // eslint-disable-next-line complexity -- preserve the legacy promotion sequence and its guards
 export async function promoteDatabase(
-  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
+  ctx: Pick<ResourceCtx, 'data' | 'operationSignal' | 'platform'>,
   appIdentity: string,
   databaseIdentity?: string,
   options: PromoteDatabaseOptions = {},
 ): Promise<PromoteDatabaseResult> {
   const {
     as, beforePromote, force, onBackupAttachment, releasePhasePollIntervalMs = RELEASE_PHASE_POLL_INTERVAL_MS,
-    releasePhaseTimeoutMs = RELEASE_PHASE_TIMEOUT_MS, signal,
+    releasePhaseTimeoutMs = RELEASE_PHASE_TIMEOUT_MS, signal: callerSignal,
   } = options
+  const signal = combineSignals(ctx.operationSignal, callerSignal)
   signal?.throwIfAborted()
 
   const resolved = await resolvePgDatabase(ctx, appIdentity, {
@@ -319,25 +322,122 @@ async function waitForDatabasePromotionRelease(
   if (!attachId || !detachId) throw new DatabaseReleasePhaseError(appIdentity)
 
   const deadline = Date.now() + options.timeoutMs
+  const pendingAttach = {...releases.find(release => release.id === attachId)!, status: 'pending'} as Release
+  let lastAttach = pendingAttach
   while (true) {
     options.signal?.throwIfAborted()
-    const attach = await platform.release.info(appIdentity, attachId)
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) return {attach: lastAttach, status: 'timed_out'}
+
+    const attach = await waitForReleaseInfo(
+      requestSignal => withSignal(platform, requestSignal).release.info(appIdentity, attachId),
+      remainingMs,
+      options.signal,
+    )
+    if (attach === RELEASE_PHASE_TIMED_OUT || Date.now() >= deadline) {
+      return {attach: lastAttach, status: 'timed_out'}
+    }
+
+    lastAttach = attach
     if (attach.status === 'succeeded') {
-      const detach = await platform.release.info(appIdentity, detachId)
+      const detach = await waitForReleaseInfo(
+        requestSignal => withSignal(platform, requestSignal).release.info(appIdentity, detachId),
+        deadline - Date.now(),
+        options.signal,
+      )
+      if (detach === RELEASE_PHASE_TIMED_OUT || Date.now() >= deadline) return {attach, status: 'succeeded'}
       return {attach, detach, status: 'succeeded'}
     }
 
     if (attach.status === 'failed') {
-      const detach = await platform.release.info(appIdentity, detachId)
+      const detach = await waitForReleaseInfo(
+        requestSignal => withSignal(platform, requestSignal).release.info(appIdentity, detachId),
+        deadline - Date.now(),
+        options.signal,
+      )
+      if (detach === RELEASE_PHASE_TIMED_OUT || Date.now() >= deadline) return {attach, status: 'failed'}
       return {attach, detach, status: 'failed'}
     }
 
-    if (Date.now() > deadline) return {attach, status: 'timed_out'}
-
-    await wait(options.pollIntervalMs, options.signal)
+    const pollDelayMs = Math.min(options.pollIntervalMs, deadline - Date.now())
+    await waitForPollInterval(pollDelayMs, options.signal)
   }
 }
 /* eslint-enable no-await-in-loop */
+
+/* eslint-disable no-await-in-loop -- timer chunks preserve one poll interval */
+async function waitForPollInterval(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!(ms > MAX_TIMER_DELAY_MS)) {
+    await wait(ms, signal)
+    return
+  }
+
+  const deadline = performance.now() + ms
+  while (true) {
+    const remainingMs = deadline - performance.now()
+    if (remainingMs <= 0) return
+
+    await wait(Math.min(remainingMs, MAX_TIMER_DELAY_MS), signal)
+  }
+}
+/* eslint-enable no-await-in-loop */
+
+async function waitForReleaseInfo<T>(
+  request: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<T | typeof RELEASE_PHASE_TIMED_OUT> {
+  signal?.throwIfAborted()
+  if (timeoutMs <= 0) return RELEASE_PHASE_TIMED_OUT
+
+  const timeoutController = new AbortController()
+  const requestSignal = combineSignals(signal, timeoutController.signal)!
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let abortHandler: (() => void) | undefined
+  const deadline = Date.now() + timeoutMs
+  const timeoutPromise = new Promise<typeof RELEASE_PHASE_TIMED_OUT>(resolve => {
+    const checkDeadline = () => {
+      const remainingMs = deadline - Date.now()
+      if (remainingMs <= 0) {
+        resolve(RELEASE_PHASE_TIMED_OUT)
+        timeoutController.abort()
+        return
+      }
+
+      timer = setTimeout(checkDeadline, Math.min(remainingMs, MAX_TIMER_DELAY_MS))
+    }
+
+    checkDeadline()
+  })
+
+  let abortPromise: Promise<never> | undefined
+  if (signal) {
+    abortPromise = new Promise((_, reject) => {
+      abortHandler = () => {
+        reject(signal.reason ?? new Error('Aborted'))
+        timeoutController.abort(signal.reason)
+      }
+
+      signal.addEventListener('abort', abortHandler, {once: true})
+      if (signal.aborted) abortHandler()
+    })
+  }
+
+  try {
+    // Promise.race keeps polling bounded even when the route/client ignores abort.
+    // Its rejection handler also remains attached if the request rejects later.
+    const requestPromise = Promise.resolve().then(() => {
+      signal?.throwIfAborted()
+      return request(requestSignal)
+    })
+    const promises: Array<Promise<T | typeof RELEASE_PHASE_TIMED_OUT>> = [requestPromise, timeoutPromise]
+    if (abortPromise) promises.push(abortPromise)
+    return await Promise.race(promises)
+  } finally {
+    if (timer) clearTimeout(timer)
+    if (signal && abortHandler) signal.removeEventListener('abort', abortHandler)
+  }
+}
 
 function databaseNameFromUrl(uri: string, configVars: ConfigVar): string {
   const names = Object.keys(configVars).filter(name => urlsMatch(configVars[name], uri))
