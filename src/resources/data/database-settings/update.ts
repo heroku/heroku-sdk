@@ -6,15 +6,19 @@ import type {DatabaseSetting, DatabaseSettingKey, DatabaseSettingsOptions} from 
 
 import {withSignal} from '../../../core/with-signal.js'
 import {resolveSettingsDatabase} from '../internal/resolve-settings-database.js'
-import {UnknownSettingError} from './errors.js'
+import {UnknownDatabaseSettingError} from './errors.js'
 
 export type UpdateDatabaseSettingResult<K extends DatabaseSettingKey = DatabaseSettingKey> = GetDatabaseSettingResult<K>
 
 /**
- * Sets one setting on a Postgres database and returns the updated setting.
+ * Sets one setting on a classic-tier Postgres database and returns the updated
+ * setting.
  *
- * Throws `EssentialDatabaseNotSupportedError` for Essential-tier databases, and
- * `UnknownSettingError` when the updated settings don't include `key`.
+ * Throws `EssentialDatabaseNotSupportedError` for Essential-tier databases and
+ * `AdvancedDatabaseNotSupportedError` for Advanced-tier databases (use
+ * `data.postgresSettings`), before sending anything. Throws
+ * `UnknownDatabaseSettingError` when the response doesn't include `key`; the
+ * update was sent, so it may have been applied.
  */
 export async function update<K extends DatabaseSettingKey>(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,
@@ -33,7 +37,9 @@ export async function update<K extends DatabaseSettingKey>(
   const body = {[key]: value} as PostgresDatabaseUpdateConfigOpts
   const settings = await data.postgresDatabase.updateConfig(addon.id, body)
   const setting = settings[key]
-  if (!setting) throw new UnknownSettingError(addon, key)
+  if (setting === undefined) {
+    throw new UnknownDatabaseSettingError(addon, key, `The update to ${key} was sent to ${addon.name}, but the response didn't include ${key}, so the change couldn't be confirmed.`)
+  }
 
-  return {addon, setting: setting as DatabaseSetting<K>}
+  return {addon, key, setting: setting as DatabaseSetting<K>}
 }

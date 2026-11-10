@@ -11,14 +11,15 @@ export type GetAllDatabaseSettingsResult = {
 }
 
 /**
- * Returns every configurable setting on a Postgres database, with each
- * setting's current value, default, and description.
+ * Returns every configurable setting on a classic-tier Postgres database, with
+ * each setting's current value, default, and description.
  *
  * `databaseIdentity` selects the database (an attachment name, config var,
  * `app::attachment`, or add-on name). It defaults to `DATABASE_URL`.
  *
- * Throws `EssentialDatabaseNotSupportedError` (carrying the resolved add-on)
- * for Essential-tier databases.
+ * Throws `EssentialDatabaseNotSupportedError` for Essential-tier databases and
+ * `AdvancedDatabaseNotSupportedError` for Advanced-tier databases (use
+ * `data.postgresSettings`). Both carry the resolved add-on.
  */
 export async function getAll(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,

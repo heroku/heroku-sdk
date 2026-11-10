@@ -9,7 +9,7 @@ export type DatabaseSettingsOptions = {
   signal?: AbortSignal
 }
 
-/** Every configurable setting on a Postgres database, keyed by setting name. */
+/** Every configurable setting on a classic-tier Postgres database, keyed by setting name. */
 export type DatabaseSettings = PostgresDatabaseConfigResult
 
 export type DatabaseSettingKey = keyof DatabaseSettings
@@ -17,7 +17,7 @@ export type DatabaseSettingKey = keyof DatabaseSettings
 /** One setting: its current `value`, `default`, and `desc` (plus `values` for enum settings). */
 export type DatabaseSetting<K extends DatabaseSettingKey = DatabaseSettingKey> = NonNullable<DatabaseSettings[K]>
 
-export {UnknownSettingError} from './errors.js'
+export {AdvancedDatabaseNotSupportedError, UnknownDatabaseSettingError} from './errors.js'
 export {getAll, type GetAllDatabaseSettingsResult} from './get-all.js'
 export {get, type GetDatabaseSettingResult} from './get.js'
 export {update, type UpdateDatabaseSettingResult} from './update.js'
