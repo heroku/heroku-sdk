@@ -6,7 +6,7 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
-import {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database.js'
+import {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database/credentials.js'
 
 const debug = createDebug('heroku:sdk:resources:postgres-database')
 

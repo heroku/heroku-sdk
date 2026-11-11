@@ -22,7 +22,7 @@ export type DatabaseCredentialOptions = {
 export {create, type CreateDatabaseCredentialResult} from './create.js'
 export {destroy, type DestroyDatabaseCredentialResult} from './destroy.js'
 export {
-  type GetDatabaseCredentialUrlResult, getUrl,
+  type CredentialConnectionInfo, type GetDatabaseCredentialUrlResult, getUrl,
 } from './get-url.js'
 export {list, type ListDatabaseCredentialsResult} from './list.js'
 export {
