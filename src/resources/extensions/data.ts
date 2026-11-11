@@ -11,6 +11,7 @@ export {
   type DatabaseSetting,
   type DatabaseSettingKey,
   type DatabaseSettings,
+  type DatabaseSettingsAddon,
   databaseSettingsExtensions,
   type DatabaseSettingsOptions,
   type GetAllDatabaseSettingsResult,

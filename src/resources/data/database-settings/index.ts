@@ -17,6 +17,7 @@ export type DatabaseSettingKey = keyof DatabaseSettings
 /** One setting: its current `value`, `default`, and `desc` (plus `values` for enum settings). */
 export type DatabaseSetting<K extends DatabaseSettingKey = DatabaseSettingKey> = NonNullable<DatabaseSettings[K]>
 
+export type {DatabaseSettingsAddon} from './addon.js'
 export {AdvancedDatabaseNotSupportedError, UnknownDatabaseSettingError} from './errors.js'
 export {getAll, type GetAllDatabaseSettingsResult} from './get-all.js'
 export {get, type GetDatabaseSettingResult} from './get.js'

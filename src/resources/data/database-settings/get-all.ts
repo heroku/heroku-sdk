@@ -1,12 +1,12 @@
 import type {ResourceCtx} from '../../../core/extend-resource.js'
-import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
 import type {DatabaseSettings, DatabaseSettingsOptions} from './index.js'
 
 import {withSignal} from '../../../core/with-signal.js'
 import {resolveSettingsDatabase} from '../internal/resolve-settings-database.js'
+import {type DatabaseSettingsAddon, toDatabaseSettingsAddon} from './addon.js'
 
 export type GetAllDatabaseSettingsResult = {
-  addon: ResolvedPgDatabase
+  addon: DatabaseSettingsAddon
   settings: DatabaseSettings
 }
 
@@ -19,7 +19,7 @@ export type GetAllDatabaseSettingsResult = {
  *
  * Throws `EssentialDatabaseNotSupportedError` for Essential-tier databases and
  * `AdvancedDatabaseNotSupportedError` for Advanced-tier databases (use
- * `data.postgresSettings`). Both carry the resolved add-on.
+ * `data.postgresSettings`). Both carry the add-on.
  */
 export async function getAll(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,
@@ -34,5 +34,5 @@ export async function getAll(
   const data = withSignal(ctx.data, signal)
   const settings = await data.postgresDatabase.config(addon.id)
 
-  return {addon, settings}
+  return {addon: toDatabaseSettingsAddon(addon), settings}
 }

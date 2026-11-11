@@ -6,6 +6,7 @@ import type {DatabaseSetting, DatabaseSettingKey, DatabaseSettingsOptions} from 
 
 import {withSignal} from '../../../core/with-signal.js'
 import {resolveSettingsDatabase} from '../internal/resolve-settings-database.js'
+import {toDatabaseSettingsAddon} from './addon.js'
 import {UnknownDatabaseSettingError} from './errors.js'
 
 export type UpdateDatabaseSettingResult<K extends DatabaseSettingKey = DatabaseSettingKey> = GetDatabaseSettingResult<K>
@@ -30,7 +31,7 @@ export async function update<K extends DatabaseSettingKey>(
 ): Promise<UpdateDatabaseSettingResult<K>> {
   const {signal} = options
   signal?.throwIfAborted()
-  const addon = await resolveSettingsDatabase(ctx, appIdentity, databaseIdentity, signal)
+  const addon = toDatabaseSettingsAddon(await resolveSettingsDatabase(ctx, appIdentity, databaseIdentity, signal))
   // Bind the signal so the request aborts in flight, not just during resolution.
   const data = withSignal(ctx.data, signal)
   const body: PostgresDatabaseUpdateConfigOpts = {[key]: value}

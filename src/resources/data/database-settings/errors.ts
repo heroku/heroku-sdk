@@ -1,4 +1,4 @@
-import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
+import {type DatabaseSettingsAddon, toDatabaseSettingsAddon} from './addon.js'
 
 /**
  * Thrown when a database's settings don't include the requested key. The
@@ -6,14 +6,16 @@ import type {ResolvedPgDatabase} from '../internal/resolve-pg-database.js'
  * usually means the setting isn't available on that database.
  */
 export class UnknownDatabaseSettingError extends Error {
+  public readonly addon: DatabaseSettingsAddon
   public readonly id = 'unknown_database_setting'
 
   constructor(
-    public readonly addon: ResolvedPgDatabase,
+    addon: DatabaseSettingsAddon,
     public readonly key: string,
     message = `${key} isn't a setting available on ${addon.name}.`,
   ) {
     super(message)
+    this.addon = toDatabaseSettingsAddon(addon)
     this.name = 'UnknownDatabaseSettingError'
   }
 
@@ -28,10 +30,12 @@ export class UnknownDatabaseSettingError extends Error {
  * Carries the add-on so callers can name it without a second resolve call.
  */
 export class AdvancedDatabaseNotSupportedError extends Error {
+  public readonly addon: DatabaseSettingsAddon
   public readonly id = 'advanced_database_not_supported'
 
-  constructor(public readonly addon: ResolvedPgDatabase) {
+  constructor(addon: DatabaseSettingsAddon) {
     super(`These database settings aren't supported on Advanced-tier databases. ${addon.name} is an Advanced-tier database.`)
+    this.addon = toDatabaseSettingsAddon(addon)
     this.name = 'AdvancedDatabaseNotSupportedError'
   }
 

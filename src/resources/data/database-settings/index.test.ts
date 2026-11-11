@@ -26,6 +26,8 @@ function pgAttachment(plan = 'heroku-postgresql:standard-0') {
   }
 }
 
+const ADDON = {id: 'addon-1', name: 'postgresql-db-1'}
+
 const SETTINGS = {
   log_lock_waits: {default: false, desc: 'Log lock waits.', value: true},
   log_min_duration_statement: {default: -1, desc: 'Log slow statements.', value: 0},
@@ -80,7 +82,7 @@ describe('databaseSettings resource', () => {
 
       expect(attachmentResolution).toHaveBeenCalledExactlyOnceWith(resolvesWith('DATABASE_URL'))
       expect(config).toHaveBeenCalledExactlyOnceWith('addon-1')
-      expect(result).toEqual({addon: pgAttachment().addon, settings: SETTINGS})
+      expect(result).toEqual({addon: ADDON, settings: SETTINGS})
     })
 
     it('resolves the given database identity', async () => {
@@ -112,7 +114,7 @@ describe('databaseSettings resource', () => {
         id: 'advanced_database_not_supported',
         message: 'These database settings aren\'t supported on Advanced-tier databases. postgresql-db-1 is an Advanced-tier database.',
       })
-      expect(error.addon.name).toBe('postgresql-db-1')
+      expect(error.addon).toEqual(ADDON)
       expect(config).not.toHaveBeenCalled()
     })
 
@@ -147,7 +149,7 @@ describe('databaseSettings resource', () => {
 
       const result = await get(ctx, 'app-1', 'log_statement')
 
-      expect(result).toEqual({addon: pgAttachment().addon, key: 'log_statement', setting: SETTINGS.log_statement})
+      expect(result).toEqual({addon: ADDON, key: 'log_statement', setting: SETTINGS.log_statement})
     })
 
     it('resolves the given database identity', async () => {
@@ -176,7 +178,7 @@ describe('databaseSettings resource', () => {
 
       expect(error).toBeInstanceOf(UnknownDatabaseSettingError)
       expect(error.key).toBe('track_functions')
-      expect(error.addon.name).toBe('postgresql-db-1')
+      expect(error.addon).toEqual(ADDON)
       expect(error.body).toEqual({id: 'unknown_database_setting', message: 'track_functions isn\'t a setting available on postgresql-db-1.'})
     })
 
@@ -219,7 +221,7 @@ describe('databaseSettings resource', () => {
 
       expect(attachmentResolution).toHaveBeenCalledExactlyOnceWith(resolvesWith('DATABASE_URL'))
       expect(updateConfig).toHaveBeenCalledExactlyOnceWith('addon-1', {log_lock_waits: true})
-      expect(result).toEqual({addon: pgAttachment().addon, key: 'log_lock_waits', setting: SETTINGS.log_lock_waits})
+      expect(result).toEqual({addon: ADDON, key: 'log_lock_waits', setting: SETTINGS.log_lock_waits})
     })
 
     it('resolves the given database identity and sends dotted auto_explain keys as-is', async () => {
@@ -252,7 +254,7 @@ describe('databaseSettings resource', () => {
 
       expect(error).toBeInstanceOf(UnknownDatabaseSettingError)
       expect(error.key).toBe('log_connections')
-      expect(error.addon.name).toBe('postgresql-db-1')
+      expect(error.addon).toEqual(ADDON)
       expect(error.message).toBe('The update to log_connections was sent to postgresql-db-1, but the response didn\'t include log_connections, so the change couldn\'t be confirmed.')
     })
 
@@ -306,7 +308,7 @@ describe('databaseSettings resource', () => {
       }))
       const sdk = new HerokuSDK({clientOptions: {token: 'test-token'}, extensions: [databaseSettingsExtensions]})
 
-      await expect(sdk.data.databaseSettings.getAll('app-1')).resolves.toEqual({addon: pgAttachment().addon, settings: SETTINGS})
+      await expect(sdk.data.databaseSettings.getAll('app-1')).resolves.toEqual({addon: ADDON, settings: SETTINGS})
       await expect(sdk.data.databaseSettings.get('app-1', 'log_statement')).resolves.toMatchObject({key: 'log_statement'})
       await expect(sdk.data.databaseSettings.update('app-1', 'log_lock_waits', true)).resolves.toMatchObject({key: 'log_lock_waits'})
 
