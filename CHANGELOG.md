@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.13.0...sdk-v0.13.1) (2026-11-11)
+
+
+### Features
+
+* **data:** add database settings composites for v12 CLI ([#193](https://github.com/heroku/heroku-sdk/issues/193)) ([907817a](https://github.com/heroku/heroku-sdk/commit/907817a5e9d766ffc6e0fd9eeebd1bd0657e9151))
+
 ## [0.13.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.7...sdk-v0.13.0) (2026-11-11)
 
 
