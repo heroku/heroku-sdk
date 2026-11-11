@@ -5,6 +5,33 @@ export {
   type ConnectionPoolingAttachment,
   connectionPoolingExtensions,
 } from '../data/connection-pooling.js'
+export {
+  DatabaseAlreadyPromotedError,
+  databaseCommandExtensions,
+  type DatabaseCommandInfo,
+  DatabaseNotFollowerError,
+  DatabaseNotReadyError,
+  DatabasePromotionError,
+  DatabaseReleasePhaseError,
+  type PromoteDatabaseOptions,
+  type PromoteDatabasePartialResult,
+  type PromoteDatabasePreview,
+  type PromoteDatabaseResult,
+  type PromotionMutationStatus,
+  type ResetDatabaseOptions,
+  type ResetDatabaseResult,
+  type UnfollowDatabaseOptions,
+  type UnfollowDatabasePreview,
+  type UnfollowDatabaseResult,
+} from '../data/database-commands.js'
+export {
+  copyDatabase,
+  type DatabaseCopyEndpoint,
+  databaseCopyExtensions,
+  type DatabaseCopyOptions,
+  type DatabaseCopyResult,
+  DatabaseCopyTransferError,
+} from '../data/database-copy.js'
 export {type CredentialConnectionInfo, databaseCredentialExtensions} from '../data/database-credential/index.js'
 export {
   AdvancedDatabaseNotSupportedError,
@@ -19,6 +46,15 @@ export {
   UnknownDatabaseSettingError,
   type UpdateDatabaseSettingResult,
 } from '../data/database-settings/index.js'
+export {
+  LegacyDatabaseWaitError,
+  legacyDatabaseWaitExtensions,
+  type LegacyDatabaseWaitResult,
+  type LegacyDatabaseWaitStatus,
+  waitForLegacyDatabaseReady,
+  type WaitForLegacyDatabaseReadyOptions,
+  type WaitForLegacyDatabaseReadyResult,
+} from '../data/database-wait-for-ready.js'
 export {databaseExtensions} from '../data/database.js'
 export {
   type CreateLinkBody,

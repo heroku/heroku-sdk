@@ -171,6 +171,31 @@ describe('mergeExtensions', () => {
     expect(seen).toEqual([undefined, a.signal, b.signal])
   })
 
+  it('tracks the persistent last-wins operation signal in each derived context', () => {
+    const ctx = {...fakeCtx()}
+    const ext = extendResource('data', 'transfer', derived => ({
+      signal: () => derived.operationSignal,
+    }))
+    const makeRoutes = (): Record<string, unknown> => ({
+      transfer: {},
+      withOptions: vi.fn().mockImplementation(makeRoutes),
+    })
+    const routes = makeRoutes()
+    const merged = mergeExtensions(routes, [ext], ctx) as {
+      transfer: {signal: () => AbortSignal | undefined}
+      withOptions: (options: object) => typeof merged
+    }
+    const first = new AbortController()
+    const replacement = new AbortController()
+
+    expect(merged.withOptions({signal: first.signal}).transfer.signal()).toBe(first.signal)
+    expect(merged.withOptions({timeout: 100}).transfer.signal()).toBeUndefined()
+    expect(merged.withOptions({signal: first.signal}).withOptions({timeout: 100}).transfer.signal()).toBe(first.signal)
+    expect(merged.withOptions({signal: first.signal}).withOptions({signal: replacement.signal}).transfer.signal())
+      .toBe(replacement.signal)
+    expect(ctx.operationSignal).toBeUndefined()
+  })
+
   it('propagates only signal/timeout from a client-level withOptions to ctx clients', () => {
     // Record the exact options each ctx sibling is re-derived with, so we can
     // assert the endpoint-specific body/headers do NOT ride cross-service.

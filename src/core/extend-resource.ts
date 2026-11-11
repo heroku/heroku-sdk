@@ -50,6 +50,10 @@ export type ResourceCtx = {
    * longer supported.
    */
   makeClient?: (inheritFrom: ServiceName, overrides?: HerokuApiClientOptions) => HerokuApiClient
+  /**
+   * Signal configured by `withOptions` for this extension operation, if any.
+   */
+  operationSignal?: AbortSignal
   /** Available to SDK-provided extensions; optional for compatibility with existing extension contexts. */
   repositoriesApi?: RepositoriesApiClient
 } & BaseResourceCtx
