@@ -33,8 +33,7 @@ export async function update<K extends DatabaseSettingKey>(
   const addon = await resolveSettingsDatabase(ctx, appIdentity, databaseIdentity, signal)
   // Bind the signal so the request aborts in flight, not just during resolution.
   const data = withSignal(ctx.data, signal)
-  // `PostgresDatabaseUpdateConfigOpts` only lists some of the keys the endpoint accepts.
-  const body = {[key]: value} as PostgresDatabaseUpdateConfigOpts
+  const body: PostgresDatabaseUpdateConfigOpts = {[key]: value}
   const settings = await data.postgresDatabase.updateConfig(addon.id, body)
   const setting = settings[key]
   if (setting === undefined) {
