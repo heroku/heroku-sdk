@@ -1,6 +1,6 @@
 {
   "name": "@heroku/sdk",
-  "version": "0.12.7",
+  "version": "0.13.0",
   "description": "Heroku SDK",
   "author": "Heroku",
   "type": "module",
@@ -113,6 +113,10 @@
     "./resources/data/maintenance": {
       "types": "./dist/resources/data/maintenance/index.d.ts",
       "default": "./dist/resources/data/maintenance/index.js"
+    },
+    "./resources/data/postgres-database": {
+      "types": "./dist/resources/data/postgres-database/index.d.ts",
+      "default": "./dist/resources/data/postgres-database/index.js"
     },
     "./resources/data/redis": {
       "types": "./dist/resources/data/redis/index.d.ts",

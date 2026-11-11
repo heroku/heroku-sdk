@@ -32,7 +32,7 @@ export {
   type DatabaseCopyResult,
   DatabaseCopyTransferError,
 } from '../data/database-copy.js'
-export {databaseCredentialExtensions} from '../data/database-credential/index.js'
+export {type CredentialConnectionInfo, databaseCredentialExtensions} from '../data/database-credential/index.js'
 export {
   LegacyDatabaseWaitError,
   legacyDatabaseWaitExtensions,
@@ -57,13 +57,32 @@ export {
 } from '../data/link.js'
 export {maintenanceExtensions} from '../data/maintenance/index.js'
 export {
+  createCredentials,
+  type CreateCredentialsResult,
+  type CredentialInfo,
+  deleteCredential,
+  type DeleteCredentialResult,
+  getUrl,
+  type GetUrlResult,
+  listCredentials,
+  type ListCredentialsResult,
+  type PostgresDatabaseCredentialOptions,
+  repairDefault,
+  type RepairDefaultResult,
+  type RotateAllCredentialsResult,
+  rotateCredential,
+  type RotateCredentialOptions,
+  type RotateCredentialOpts,
+  type RotateCredentialResult,
+} from '../data/postgres-database/credentials.js'
+export {
   EssentialDatabaseNotSupportedError,
   type LegacyDatabase,
   type ListLegacyByAppOptions,
   PgDatabaseNotFoundError,
   postgresDatabaseExtensions,
   type ResolvedPgDatabase,
-} from '../data/postgres-database.js'
+} from '../data/postgres-database/index.js'
 export {
   isCancellable,
   isRunnable,

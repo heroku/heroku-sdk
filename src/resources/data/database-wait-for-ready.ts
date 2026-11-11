@@ -6,13 +6,13 @@ import createDebug from 'debug'
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 import type {ResolvedPgDatabase} from './internal/resolve-pg-database.js'
-import type {LegacyDatabase} from './postgres-database.js'
+import type {LegacyDatabase} from './postgres-database/index.js'
 
 import {extendResource} from '../../core/extend-resource.js'
 import {combineSignals, withSignal} from '../../core/with-signal.js'
 import {waitForDuration} from '../../utils/request-with-timeout.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
-import {listLegacyByApp} from './postgres-database.js'
+import {listLegacyByApp} from './postgres-database/index.js'
 
 const debug = createDebug('heroku:sdk:resources:database')
 

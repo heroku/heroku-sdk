@@ -3,15 +3,15 @@ import {
   describe, expect, it, vi,
 } from 'vitest'
 
-import type {ResourceCtx} from '../../core/extend-resource.js'
+import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {
   AddonAppMismatchError, AddonConfirmationRequiredError, AddonDestroyFailedError, AddonNotFoundError,
-} from '../platform/add-on/errors.js'
-import {getPostgresServiceName, NotAdvancedDatabaseError} from './internal/postgres-utils.js'
+} from '../../platform/add-on/errors.js'
+import {getPostgresServiceName, NotAdvancedDatabaseError} from '../internal/postgres-utils.js'
 import {
-  createAttachment, deleteAttachment, destroy, listAttachments, listCredentials, listLegacyByApp, postgresDatabaseExtensions,
-} from './postgres-database.js'
+  createAttachment, deleteAttachment, destroy, listAttachments, listLegacyByApp, postgresDatabaseExtensions,
+} from './index.js'
 
 function buildCtx(opts: {
   addOnDelete?: ReturnType<typeof vi.fn>
@@ -21,14 +21,11 @@ function buildCtx(opts: {
   credentialList?: ReturnType<typeof vi.fn>
   deleteAttachment?: ReturnType<typeof vi.fn>
   infoByApp?: ReturnType<typeof vi.fn>
-  list?: ReturnType<typeof vi.fn>
   listByAddOn?: ReturnType<typeof vi.fn>
   releaseList?: ReturnType<typeof vi.fn>
-  resolutionByAttachment?: ReturnType<typeof vi.fn>
 } = {}): Pick<ResourceCtx, 'data' | 'platform'> {
   const data: Record<string, unknown> = {
     postgresCredential: {list: opts.credentialList ?? vi.fn().mockResolvedValue({items: []})},
-    postgresDatabase: {listCredentials: opts.list ?? vi.fn()},
   }
   // Self-referential so a `.withOptions({signal})` chain resolves back to data.
   data.withOptions = vi.fn(() => data)
@@ -46,7 +43,6 @@ function buildCtx(opts: {
         delete: opts.deleteAttachment ?? vi.fn(),
         infoByApp: opts.infoByApp ?? vi.fn(),
         listByAddOn: opts.listByAddOn ?? vi.fn().mockResolvedValue([]),
-        resolution: opts.resolutionByAttachment ?? vi.fn(),
       },
       release: {list: opts.releaseList ?? vi.fn().mockResolvedValue([{version: 1}])},
       withHeaders() {
@@ -88,49 +84,6 @@ function notFoundError(): NotFoundError {
 }
 
 describe('postgres-database resource', () => {
-  it('listCredentials resolves the addon and calls postgresDatabase.listCredentials', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue([
-      {
-        addon: {
-          app: {id: 'app-uuid', name: 'app-1'},
-          id: 'addon-x',
-          name: 'pg-attached',
-          plan: {name: 'heroku-postgresql:essential-0'},
-        },
-        app: {id: 'app-uuid', name: 'app-1'},
-        id: 'attachment-id',
-        name: 'DATABASE',
-      },
-    ])
-    const list = vi.fn().mockResolvedValue([{name: 'default', state: 'created'}])
-
-    const result = await listCredentials(buildCtx({list, resolutionByAttachment}), 'app-1', 'DATABASE_URL')
-
-    expect(list).toHaveBeenCalledWith('addon-x')
-    expect(result).toEqual([{name: 'default', state: 'created'}])
-  })
-
-  it('binds the signal to the data client so the request aborts in flight', async () => {
-    const resolutionByAttachment = vi.fn().mockResolvedValue([
-      {
-        addon: {
-          app: {id: 'app-uuid', name: 'app-1'}, id: 'addon-x', name: 'pg-attached', plan: {name: 'heroku-postgresql:essential-0'},
-        },
-        app: {id: 'app-uuid', name: 'app-1'},
-        id: 'attachment-id',
-        name: 'DATABASE',
-      },
-    ])
-    const list = vi.fn().mockResolvedValue([])
-    const ctx = buildCtx({list, resolutionByAttachment})
-    const controller = new AbortController()
-
-    await listCredentials(ctx, 'app-1', 'DATABASE_URL', {signal: controller.signal})
-
-    expect((ctx.data as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
-      .toHaveBeenCalledWith({signal: controller.signal})
-  })
-
   it('postgresDatabaseExtensions declares service: data, resource: postgresDatabase', () => {
     expect(postgresDatabaseExtensions.service).toBe('data')
     expect(postgresDatabaseExtensions.resource).toBe('postgresDatabase')

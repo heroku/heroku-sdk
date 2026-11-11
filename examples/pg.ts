@@ -20,7 +20,7 @@ const addon = process.env.ADDON
 const dbInfo = await sdk.data.database.describe(app, addon)
 console.log(`Database (${app}::${addon ?? 'DATABASE_URL'}):`, dbInfo)
 
-const creds = await sdk.data.postgresDatabase.listCredentials(app, addon)
+const creds = await sdk.data.postgresDatabase.listCredentials(app, {addonIdentity: addon})
 console.log('Credentials:', creds)
 
 const maint = await sdk.data.maintenance.info(addon ?? 'DATABASE_URL', {appIdentity: app})

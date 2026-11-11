@@ -3,7 +3,7 @@ import type {TransferCreateOpts, TransferCreateResult, TransferInfoByAppResult} 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 import type {Poller} from '../../utils/poller.js'
 import type {ResolvedPgDatabaseWithAttachment} from './internal/resolve-pg-database.js'
-import type {CredentialInfo} from './postgres-database.js'
+import type {CredentialInfo} from './postgres-database/credentials.js'
 import type {WaitForTransferOptions} from './transfer/wait-for-transfer.js'
 
 import {extendResource, makeCtxClient} from '../../core/extend-resource.js'
