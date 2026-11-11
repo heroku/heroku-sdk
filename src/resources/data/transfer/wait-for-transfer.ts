@@ -6,11 +6,10 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import {extendResource} from '../../../core/extend-resource.js'
 import {combineSignals, withSignal} from '../../../core/with-signal.js'
 import {isAbortError} from '../../../utils/is-abort-error.js'
-import {wait} from '../../../utils/wait.js'
+import {requestWithTimeout, waitForDuration} from '../../../utils/request-with-timeout.js'
 
 const DEFAULT_INTERVAL_MS = 3000
 const MAX_FAILURES = 20
-const MAX_TIMER_DELAY_MS = 2_147_483_647
 const POLL_TIMED_OUT = Symbol('poll_timed_out')
 
 /**
@@ -87,76 +86,16 @@ async function pollTransfer(options: {
   const {
     appIdentity, ctx, deadline, signal, transferId, verbose,
   } = options
-  const controller = new AbortController()
-  // Keep the operation signal as an input rather than aborting it when the
-  // deadline expires. HerokuApiClient composes this request signal with its
-  // constructor-level signal when it dispatches the request.
   const operationSignal = combineSignals(ctx.operationSignal, signal)
-  const pollSignal = combineSignals(operationSignal, controller.signal)!
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let abortHandler: (() => void) | undefined
-  const timeoutPromise = deadline === undefined
-    ? undefined
-    : new Promise<typeof POLL_TIMED_OUT>(resolve => {
-      const checkDeadline = () => {
-        const remainingMs = deadline - Date.now()
-        if (remainingMs <= 0) {
-          resolve(POLL_TIMED_OUT)
-          controller.abort()
-          return
-        }
-
-        timer = setTimeout(checkDeadline, Math.min(remainingMs, MAX_TIMER_DELAY_MS))
-      }
-
-      checkDeadline()
-    })
-
-  let abortPromise: Promise<never> | undefined
-  if (operationSignal) {
-    abortPromise = new Promise((_, reject) => {
-      abortHandler = () => {
-        controller.abort(operationSignal.reason)
-        reject(operationSignal.reason ?? new Error('Aborted'))
-      }
-
-      operationSignal.addEventListener('abort', abortHandler, {once: true})
-
-      if (operationSignal.aborted) {
-        abortHandler()
-      }
-    })
-  }
-
-  try {
-    const pollRequest = withSignal(ctx.data, pollSignal).transfer.infoByApp(appIdentity, transferId, {verbose})
-    const promises: Array<Promise<TransferInfoByAppResult | typeof POLL_TIMED_OUT>> = [pollRequest]
-    if (timeoutPromise) promises.push(timeoutPromise)
-    if (abortPromise) {
-      promises.push(abortPromise)
-    }
-
-    return await Promise.race(promises)
-  } finally {
-    if (timer) {
-      clearTimeout(timer)
-    }
-
-    if (operationSignal && abortHandler) {
-      operationSignal.removeEventListener('abort', abortHandler)
-    }
-  }
-}
-
-async function waitForNextPoll(intervalMs: number, deadline: number | undefined, signal?: AbortSignal): Promise<void> {
-  const pollAt = Math.min(Date.now() + intervalMs, deadline ?? Number.POSITIVE_INFINITY)
-
-  while (true) {
-    const remainingMs = pollAt - Date.now()
-    if (remainingMs <= 0) return
-
-    await wait(Math.min(remainingMs, MAX_TIMER_DELAY_MS), signal)
-  }
+  return requestWithTimeout(
+    requestSignal => withSignal(ctx.data, combineSignals(operationSignal, requestSignal))
+      .transfer.infoByApp(appIdentity, transferId, {verbose}),
+    {
+      signal: operationSignal,
+      timeoutMs: deadline === undefined ? undefined : deadline - Date.now(),
+      timeoutValue: POLL_TIMED_OUT,
+    },
+  )
 }
 
 /**
@@ -248,7 +187,7 @@ export async function waitForTransfer(
       throw makeTimeoutError()
     }
 
-    await waitForNextPoll(intervalMs, deadline, operationSignal)
+    await waitForDuration(deadline === undefined ? intervalMs : Math.min(intervalMs, deadline - Date.now()), operationSignal)
   }
 
   async function fetchVerboseTransfer() {

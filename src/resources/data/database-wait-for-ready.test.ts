@@ -30,10 +30,12 @@ function buildAddon(id: string, name = `postgres-${id}`) {
 
 function buildCtx(opts: {
   listByApp?: Fn
+  operationSignal?: AbortSignal
   resolution?: Fn
   waitStatus?: Fn
   withDataOptions?: (options?: {signal?: AbortSignal}) => void
-} = {}): Pick<ResourceCtx, 'data' | 'platform'> {
+  withPlatformOptions?: (options?: {signal?: AbortSignal}) => void
+} = {}): Pick<ResourceCtx, 'data' | 'operationSignal' | 'platform'> {
   const data = {
     database: {waitStatus: opts.waitStatus ?? vi.fn().mockResolvedValue({message: 'ready', 'waiting?': false})},
     withOptions(options?: {signal?: AbortSignal}) {
@@ -49,12 +51,13 @@ function buildCtx(opts: {
     withHeaders() {
       return platform
     },
-    withOptions() {
+    withOptions(options?: {signal?: AbortSignal}) {
+      opts.withPlatformOptions?.(options)
       return platform
     },
   }
 
-  return {data: data as never, platform: platform as never}
+  return {data: data as never, operationSignal: opts.operationSignal, platform: platform as never}
 }
 
 describe('legacyDatabaseWaitExtensions', () => {
@@ -209,6 +212,105 @@ describe('waitForLegacyDatabaseReady', () => {
     expect(waitStatus).toHaveBeenCalledOnce()
   })
 
+  it('combines operation and per-call signals while waiting between polls', async () => {
+    const operationController = new AbortController()
+    const callerController = new AbortController()
+    const waitStatus = vi.fn().mockResolvedValue({message: 'pending', 'waiting?': true})
+    const ctx = buildCtx({operationSignal: operationController.signal, waitStatus})
+
+    const promise = waitForLegacyDatabaseReady(ctx, 'my-app', 'DATABASE_URL', {
+      signal: callerController.signal, waitIntervalMs: 5000,
+    })
+    const expectation = expect(promise).rejects.toThrow(/aborted/i)
+    await vi.advanceTimersByTimeAsync(0)
+    operationController.abort()
+    await vi.advanceTimersByTimeAsync(0)
+    await expectation
+
+    expect(waitStatus).toHaveBeenCalledOnce()
+    expect(callerController.signal.aborted).toBe(false)
+  })
+
+  it('aborts the poll delay from the per-call signal without aborting the operation signal', async () => {
+    const operationController = new AbortController()
+    const callerController = new AbortController()
+    const waitStatus = vi.fn().mockResolvedValue({message: 'pending', 'waiting?': true})
+    const ctx = buildCtx({operationSignal: operationController.signal, waitStatus})
+
+    const promise = waitForLegacyDatabaseReady(ctx, 'my-app', 'DATABASE_URL', {
+      signal: callerController.signal, waitIntervalMs: 5000,
+    })
+    const expectation = expect(promise).rejects.toThrow(/aborted/i)
+    await vi.advanceTimersByTimeAsync(0)
+    callerController.abort()
+    await vi.advanceTimersByTimeAsync(0)
+    await expectation
+
+    expect(waitStatus).toHaveBeenCalledOnce()
+    expect(callerController.signal.aborted).toBe(true)
+    expect(operationController.signal.aborted).toBe(false)
+  })
+
+  it('aborts an in-flight resolution from the per-call signal without aborting the operation signal', async () => {
+    const operationController = new AbortController()
+    const callerController = new AbortController()
+    const abortReason = new Error('caller cancelled')
+    let requestSignal: AbortSignal | undefined
+    const resolution = vi.fn(() => new Promise<never>((_resolve, reject) => {
+      requestSignal?.addEventListener('abort', () => reject(requestSignal?.reason ?? new Error('request aborted')), {once: true})
+    }))
+    const withPlatformOptions = vi.fn((options?: {signal?: AbortSignal}) => {
+      requestSignal = options?.signal
+    })
+    const ctx = buildCtx({operationSignal: operationController.signal, resolution, withPlatformOptions})
+
+    const promise = waitForLegacyDatabaseReady(ctx, 'my-app', 'DATABASE_URL', {signal: callerController.signal})
+    const expectation = expect(promise).rejects.toBe(abortReason)
+
+    expect(withPlatformOptions).toHaveBeenCalledExactlyOnceWith({signal: expect.any(AbortSignal)})
+    expect(requestSignal).not.toBe(operationController.signal)
+    expect(requestSignal).not.toBe(callerController.signal)
+    expect(resolution).toHaveBeenCalledOnce()
+    expect(requestSignal?.aborted).toBe(false)
+    callerController.abort(abortReason)
+    await expectation
+
+    expect(resolution).toHaveBeenCalledOnce()
+    expect(ctx.data.database.waitStatus).not.toHaveBeenCalled()
+    expect(callerController.signal.aborted).toBe(true)
+    expect(operationController.signal.aborted).toBe(false)
+  })
+
+  it('aborts an in-flight resolution from the operation signal without aborting the per-call signal', async () => {
+    const operationController = new AbortController()
+    const callerController = new AbortController()
+    const abortReason = new Error('operation cancelled')
+    let requestSignal: AbortSignal | undefined
+    const resolution = vi.fn(() => new Promise<never>((_resolve, reject) => {
+      requestSignal?.addEventListener('abort', () => reject(requestSignal?.reason ?? new Error('request aborted')), {once: true})
+    }))
+    const withPlatformOptions = vi.fn((options?: {signal?: AbortSignal}) => {
+      requestSignal = options?.signal
+    })
+    const ctx = buildCtx({operationSignal: operationController.signal, resolution, withPlatformOptions})
+
+    const promise = waitForLegacyDatabaseReady(ctx, 'my-app', 'DATABASE_URL', {signal: callerController.signal})
+    const expectation = expect(promise).rejects.toBe(abortReason)
+
+    expect(withPlatformOptions).toHaveBeenCalledExactlyOnceWith({signal: expect.any(AbortSignal)})
+    expect(requestSignal).not.toBe(operationController.signal)
+    expect(requestSignal).not.toBe(callerController.signal)
+    expect(resolution).toHaveBeenCalledOnce()
+    expect(requestSignal?.aborted).toBe(false)
+    operationController.abort(abortReason)
+    await expectation
+
+    expect(resolution).toHaveBeenCalledOnce()
+    expect(ctx.data.database.waitStatus).not.toHaveBeenCalled()
+    expect(operationController.signal.aborted).toBe(true)
+    expect(callerController.signal.aborted).toBe(false)
+  })
+
   it('binds the signal to the data client so it aborts an in-flight request', async () => {
     const controller = new AbortController()
     let requestSignal: AbortSignal | undefined
@@ -228,5 +330,57 @@ describe('waitForLegacyDatabaseReady', () => {
     expect(waitStatus).toHaveBeenCalledOnce()
     controller.abort()
     await expectation
+  })
+
+  it('combines operation and per-call signals for an in-flight request', async () => {
+    const operationController = new AbortController()
+    const callerController = new AbortController()
+    let requestSignal: AbortSignal | undefined
+    const waitStatus = vi.fn(() => new Promise<never>((_resolve, reject) => {
+      requestSignal?.addEventListener('abort', () => reject(requestSignal?.reason ?? new Error('request aborted')), {once: true})
+    }))
+    const withDataOptions = vi.fn((options?: {signal?: AbortSignal}) => {
+      requestSignal = options?.signal
+    })
+    const ctx = buildCtx({operationSignal: operationController.signal, waitStatus, withDataOptions})
+
+    const promise = waitForLegacyDatabaseReady(ctx, 'my-app', 'DATABASE_URL', {signal: callerController.signal})
+    const expectation = expect(promise).rejects.toThrow(/aborted/i)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(requestSignal).toBeInstanceOf(AbortSignal)
+    expect(requestSignal).not.toBe(operationController.signal)
+    expect(requestSignal).not.toBe(callerController.signal)
+    operationController.abort()
+    await expectation
+
+    expect(waitStatus).toHaveBeenCalledOnce()
+    expect(callerController.signal.aborted).toBe(false)
+  })
+
+  it('aborts an in-flight request from the per-call signal without aborting the operation signal', async () => {
+    const operationController = new AbortController()
+    const callerController = new AbortController()
+    let requestSignal: AbortSignal | undefined
+    const waitStatus = vi.fn(() => new Promise<never>((_resolve, reject) => {
+      requestSignal?.addEventListener('abort', () => reject(requestSignal?.reason ?? new Error('request aborted')), {once: true})
+    }))
+    const withDataOptions = vi.fn((options?: {signal?: AbortSignal}) => {
+      requestSignal = options?.signal
+    })
+    const ctx = buildCtx({operationSignal: operationController.signal, waitStatus, withDataOptions})
+
+    const promise = waitForLegacyDatabaseReady(ctx, 'my-app', 'DATABASE_URL', {signal: callerController.signal})
+    const expectation = expect(promise).rejects.toThrow(/aborted/i)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(requestSignal).toBeInstanceOf(AbortSignal)
+    expect(requestSignal).not.toBe(operationController.signal)
+    expect(requestSignal).not.toBe(callerController.signal)
+    callerController.abort()
+    await expectation
+
+    expect(waitStatus).toHaveBeenCalledOnce()
+    expect(operationController.signal.aborted).toBe(false)
   })
 })

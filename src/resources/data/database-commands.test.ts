@@ -13,6 +13,7 @@ import {
   databaseCommandExtensions,
   DatabaseNotFollowerError,
   DatabaseNotReadyError,
+  DatabasePromotionError,
   DatabaseReleasePhaseError,
   promoteDatabase,
   resetDatabase,
@@ -57,6 +58,7 @@ function buildCtx(opts: {
   databaseUnfollow?: ReturnType<typeof vi.fn>
   databaseWaitStatus?: ReturnType<typeof vi.fn>
   formationList?: ReturnType<typeof vi.fn>
+  operationSignal?: AbortSignal
   releaseInfo?: ReturnType<typeof vi.fn>
   releaseList?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
@@ -90,6 +92,7 @@ function buildCtx(opts: {
 
   return {
     data: data as never,
+    operationSignal: opts.operationSignal,
     platform: platform as never,
   }
 }
@@ -165,6 +168,20 @@ describe('database command extensions', () => {
     expect(databaseReset).not.toHaveBeenCalled()
   })
 
+  it('aborts reset if the SDK operation signal is cancelled in the callback', async () => {
+    const databaseReset = vi.fn()
+    const operationController = new AbortController()
+    const reason = new Error('SDK operation cancelled')
+
+    await expect(resetDatabase(buildCtx({databaseReset, operationSignal: operationController.signal}), 'test-app', undefined, {
+      beforeReset() {
+        operationController.abort(reason)
+      },
+    })).rejects.toBe(reason)
+
+    expect(databaseReset).not.toHaveBeenCalled()
+  })
+
   it('does not reset if beforeReset rejects', async () => {
     const databaseReset = vi.fn()
     const failure = new Error('confirmation declined')
@@ -190,6 +207,72 @@ describe('database command extensions', () => {
     expect((ctx.data as unknown as {withOptions: ReturnType<typeof vi.fn>}).withOptions)
       .toHaveBeenCalledWith({signal: controller.signal})
     expect(databaseReset).toHaveBeenCalledExactlyOnceWith('database-id', {})
+  })
+
+  it.each(['operation', 'caller'] as const)(
+    'aborts an in-flight reset request when the %s signal is cancelled',
+    async abortSource => {
+      const operationController = new AbortController()
+      const callerController = new AbortController()
+      const ctx = buildCtx({operationSignal: operationController.signal})
+      const requestSignals: AbortSignal[] = []
+      const data = ctx.data as unknown as {
+        withOptions: ReturnType<typeof vi.fn>
+      }
+      data.withOptions.mockImplementation((options: {signal?: AbortSignal}) => {
+        if (options.signal) requestSignals.push(options.signal)
+
+        return ctx.data
+      })
+      let markRequestStarted!: () => void
+      const requestStarted = new Promise<void>(resolve => {
+        markRequestStarted = resolve
+      })
+      const databaseReset = vi.fn((_id: string, _body: unknown) => new Promise<never>((_resolve, reject) => {
+        markRequestStarted()
+        const requestSignal = requestSignals.at(-1)
+        if (!requestSignal) {
+          reject(new Error('reset request signal was not bound'))
+          return
+        }
+
+        requestSignal.addEventListener('abort', () => reject(requestSignal.reason), {once: true})
+      }))
+      ctx.data.database.reset = databaseReset as never
+      const reason = new Error(`${abortSource} cancellation`)
+
+      const promise = resetDatabase(ctx, 'test-app', undefined, {signal: callerController.signal})
+      const expectation = expect(promise).rejects.toBe(reason)
+      await requestStarted
+      const effectiveSignal = requestSignals.at(-1)
+      expect(effectiveSignal).toBeDefined()
+      expect(effectiveSignal).not.toBe(operationController.signal)
+      expect(effectiveSignal).not.toBe(callerController.signal)
+
+      const abortingController = abortSource === 'operation' ? operationController : callerController
+      const otherController = abortSource === 'operation' ? callerController : operationController
+      abortingController.abort(reason)
+      await expectation
+
+      expect(effectiveSignal?.aborted).toBe(true)
+      expect(otherController.signal.aborted).toBe(false)
+      expect(databaseReset).toHaveBeenCalledExactlyOnceWith('database-id', {})
+    },
+  )
+
+  it('does no reset work when the SDK operation signal is already aborted', async () => {
+    const resolutionByAttachment = vi.fn()
+    const databaseReset = vi.fn()
+    const ctx = buildCtx({
+      databaseReset,
+      operationSignal: AbortSignal.abort(),
+      resolutionByAttachment,
+    })
+
+    await expect(resetDatabase(ctx, 'test-app')).rejects.toThrow()
+
+    expect(resolutionByAttachment).not.toHaveBeenCalled()
+    expect(databaseReset).not.toHaveBeenCalled()
   })
 
   it('does no work when already aborted', async () => {
@@ -254,7 +337,7 @@ describe('database command extensions', () => {
     })
 
     expect(calls).toEqual(['confirm'])
-    expect(events).toEqual(['confirm', 'create', 'ready', 'create', 'create', 'info'])
+    expect(events).toEqual(['ready', 'confirm', 'create', 'create', 'create', 'info'])
     expect(databaseWaitStatus).toHaveBeenCalledExactlyOnceWith('database-id')
     expect(attachmentCreate).toHaveBeenNthCalledWith(1, {
       addon: current.addon.name,
@@ -301,7 +384,7 @@ describe('database command extensions', () => {
     })
   })
 
-  it('reports a newly-created backup alias before later readiness failures', async () => {
+  it('checks readiness before creating a backup alias or invoking beforePromote', async () => {
     const addon = {...resolvedAttachment.addon, id: 'old-id', name: 'old-postgres'}
     const current = {
       ...resolvedAttachment, addon, name: 'DATABASE', namespace: undefined,
@@ -312,17 +395,19 @@ describe('database command extensions', () => {
     const backup = {...current, id: 'backup-id', name: 'RED'}
     const attachmentCreate = vi.fn().mockResolvedValue(backup)
     const onBackupAttachment = vi.fn()
+    const beforePromote = vi.fn()
     const ctx = buildCtx({
       attachmentCreate,
       attachmentsByApp: vi.fn().mockResolvedValue([current, alias]),
       databaseWaitStatus: vi.fn().mockResolvedValue({message: 'pending', 'waiting?': true}),
     })
 
-    await expect(promoteDatabase(ctx, 'test-app', undefined, {onBackupAttachment}))
+    await expect(promoteDatabase(ctx, 'test-app', undefined, {beforePromote, onBackupAttachment}))
       .rejects.toBeInstanceOf(DatabaseNotReadyError)
 
-    expect(attachmentCreate).toHaveBeenCalledOnce()
-    expect(onBackupAttachment).toHaveBeenCalledExactlyOnceWith(backup)
+    expect(attachmentCreate).not.toHaveBeenCalled()
+    expect(onBackupAttachment).not.toHaveBeenCalled()
+    expect(beforePromote).not.toHaveBeenCalled()
   })
 
   it('rejects promoting the same attachment and does no mutation', async () => {
@@ -338,7 +423,7 @@ describe('database command extensions', () => {
     expect(attachmentCreate).not.toHaveBeenCalled()
   })
 
-  it('does not run beforePromote mutation steps when database is not ready', async () => {
+  it('checks readiness before running beforePromote', async () => {
     const beforePromote = vi.fn()
     const attachmentCreate = vi.fn()
     const status = {message: 'pending', 'waiting?': true}
@@ -355,7 +440,7 @@ describe('database command extensions', () => {
     expect(error.status.message).toBe('pending')
     expect(error.status['waiting?']).toBe(true)
     expect(error.message).toBe('Database cannot be promoted while in state: pending')
-    expect(beforePromote).toHaveBeenCalledOnce()
+    expect(beforePromote).not.toHaveBeenCalled()
     expect(attachmentCreate).not.toHaveBeenCalled()
   })
 
@@ -384,7 +469,7 @@ describe('database command extensions', () => {
     })).rejects.toThrow()
     expect(callbackAttachmentCreate).not.toHaveBeenCalled()
     expect(callbackAttachmentDelete).not.toHaveBeenCalled()
-    expect(callbackDatabaseWaitStatus).not.toHaveBeenCalled()
+    expect(callbackDatabaseWaitStatus).toHaveBeenCalledExactlyOnceWith('database-id')
   })
 
   it('records follower state and polls the release-phase attach/detach statuses', async () => {
@@ -628,7 +713,10 @@ describe('database command extensions', () => {
         signal: controller.signal,
       })
 
-      const expectation = expect(promise).rejects.toBe(reason)
+      const expectation = expect(promise).rejects.toMatchObject({
+        cause: reason,
+        result: {mutationStatus: {attachment: {attempted: true, status: 'created'}}},
+      })
       await vi.advanceTimersByTimeAsync(0)
       expect(releaseInfo).toHaveBeenCalledExactlyOnceWith('test-app', 'attach-release')
       await vi.advanceTimersByTimeAsync(25)
@@ -664,7 +752,10 @@ describe('database command extensions', () => {
         releasePhaseTimeoutMs: 3_000_000_000,
         signal: controller.signal,
       })
-      const expectation = expect(promise).rejects.toBe(reason)
+      const expectation = expect(promise).rejects.toMatchObject({
+        cause: reason,
+        result: {mutationStatus: {attachment: {attempted: true, status: 'created'}}},
+      })
 
       try {
         await vi.advanceTimersByTimeAsync(0)
@@ -711,7 +802,10 @@ describe('database command extensions', () => {
           releasePhaseTimeoutMs: 10_000,
           signal: callerController.signal,
         })
-        const expectation = expect(promise).rejects.toBe(reason)
+        const expectation = expect(promise).rejects.toMatchObject({
+          cause: reason,
+          result: {mutationStatus: {attachment: {attempted: true, status: 'created'}}},
+        })
         const abortingController = abortSource === 'operation' ? operationController : callerController
         const otherController = abortSource === 'operation' ? callerController : operationController
         try {
@@ -728,6 +822,7 @@ describe('database command extensions', () => {
 
           expect(requestSignal?.aborted).toBe(true)
           expect(otherController.signal.aborted).toBe(false)
+          expect(reason).toHaveProperty('promotionResult.attachment')
           expect(releaseInfo).toHaveBeenCalledOnce()
           expect(vi.getTimerCount()).toBe(0)
 
@@ -751,8 +846,197 @@ describe('database command extensions', () => {
       releaseList: vi.fn().mockResolvedValue([]),
     })
 
-    await expect(promoteDatabase(ctx, 'test-app', undefined, {force: true}))
-      .rejects.toBeInstanceOf(DatabaseReleasePhaseError)
+    const error = await promoteDatabase(ctx, 'test-app', undefined, {force: true}).catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(DatabasePromotionError)
+    expect(error.cause).toBeInstanceOf(DatabaseReleasePhaseError)
+    expect(error.result.attachment).toEqual({name: 'DATABASE'})
+    expect(error.result.mutationStatus).toEqual({
+      attachment: {attempted: true, status: 'created'},
+      backupAttachment: {attempted: false, status: 'not_attempted'},
+      poolerAttachment: {attempted: false, status: 'not_attempted'},
+    })
+    expect(error.result.releasePhase).toEqual({status: 'unknown'})
+  })
+
+  it('includes the created backup alias when its callback throws', async () => {
+    const current = {
+      ...resolvedAttachment,
+      addon: {...resolvedAttachment.addon, id: 'old-id', name: 'old-postgres'},
+      name: 'DATABASE',
+    }
+    const backup = {...current, id: 'backup-id', name: 'RED'}
+    const failure = new Error('backup callback failed')
+    const attachmentCreate = vi.fn().mockResolvedValue(backup)
+    const onBackupAttachment = vi.fn(() => {
+      throw failure
+    })
+    const error = await promoteDatabase(buildCtx({
+      attachmentCreate,
+      attachmentsByApp: vi.fn().mockResolvedValue([current]),
+    }), 'test-app', undefined, {force: true, onBackupAttachment}).catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(DatabasePromotionError)
+    expect(error.cause).toBe(failure)
+    expect(error.result.backupAttachment).toEqual(backup)
+    expect(error.result.attachment).toBeUndefined()
+    expect(error.result.mutationStatus).toEqual({
+      attachment: {attempted: false, status: 'not_attempted'},
+      backupAttachment: {attempted: true, status: 'created'},
+      poolerAttachment: {attempted: false, status: 'not_attempted'},
+    })
+    expect(attachmentCreate).toHaveBeenCalledOnce()
+  })
+
+  it('marks backup attachment outcome unknown when create rejects and skips later mutations', async () => {
+    const current = {
+      ...resolvedAttachment,
+      addon: {...resolvedAttachment.addon, id: 'old-id', name: 'old-postgres'},
+      name: 'DATABASE',
+    }
+    const pooler = {...current, name: 'DATABASE_CONNECTION_POOL', namespace: 'connection-pooling:default'}
+    const failure = new Error('connection lost while creating backup alias')
+    const attachmentCreate = vi.fn().mockRejectedValue(failure)
+    const onBackupAttachment = vi.fn()
+    const error = await promoteDatabase(buildCtx({
+      attachmentCreate,
+      attachmentsByApp: vi.fn().mockResolvedValue([current, pooler]),
+    }), 'test-app', undefined, {force: true, onBackupAttachment}).catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(DatabasePromotionError)
+    expect(error.cause).toBe(failure)
+    expect(error.result.backupAttachment).toBeUndefined()
+    expect(error.result.attachment).toBeUndefined()
+    expect(error.result.poolerAttachment).toBeUndefined()
+    expect(error.result.mutationStatus).toEqual({
+      attachment: {attempted: false, status: 'not_attempted'},
+      backupAttachment: {attempted: true, status: 'unknown'},
+      poolerAttachment: {attempted: false, status: 'not_attempted'},
+    })
+    expect(attachmentCreate).toHaveBeenCalledExactlyOnceWith({
+      addon: current.addon.name,
+      app: 'test-app',
+      confirm: 'test-app',
+      namespace: current.namespace,
+    })
+    expect(onBackupAttachment).not.toHaveBeenCalled()
+  })
+
+  it('marks promoted attachment outcome unknown when create rejects after remote acceptance', async () => {
+    const remoteAttachment = {...resolvedAttachment, id: 'remote-promoted-id'}
+    const failure = new Error('connection lost after create')
+    let remotelyAccepted: typeof remoteAttachment | undefined
+    const attachmentCreate = vi.fn(async () => {
+      remotelyAccepted = remoteAttachment
+      throw failure
+    })
+    const error = await promoteDatabase(buildCtx({attachmentCreate}), 'test-app', undefined, {force: true})
+      .catch(error_ => error_)
+
+    expect(remotelyAccepted).toEqual(remoteAttachment)
+    expect(error).toBeInstanceOf(DatabasePromotionError)
+    expect(error.cause).toBe(failure)
+    expect(error.result.attachment).toBeUndefined()
+    expect(error.result.mutationStatus.attachment).toEqual({attempted: true, status: 'unknown'})
+    expect(error.result.mutationStatus.backupAttachment).toEqual({attempted: false, status: 'not_attempted'})
+    expect(error.result.mutationStatus.poolerAttachment).toEqual({attempted: false, status: 'not_attempted'})
+  })
+
+  it('returns a partial promotion result when database info fails after promotion', async () => {
+    const promotionAttachment = {...resolvedAttachment, id: 'promoted-id'}
+    const failure = new Error('database info unavailable')
+    const attachmentCreate = vi.fn().mockResolvedValue(promotionAttachment)
+    const error = await promoteDatabase(buildCtx({
+      attachmentCreate,
+      databaseInfo: vi.fn().mockRejectedValue(failure),
+    }), 'test-app', undefined, {force: true}).catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(DatabasePromotionError)
+    expect(error.cause).toBe(failure)
+    expect(error.result).toEqual({
+      addon: resolvedAttachment.addon,
+      attachment: promotionAttachment,
+      mutationStatus: {
+        attachment: {attempted: true, status: 'created'},
+        backupAttachment: {attempted: false, status: 'not_attempted'},
+        poolerAttachment: {attempted: false, status: 'not_attempted'},
+      },
+    })
+  })
+
+  it.each([
+    ['formation lookup', {formationList: vi.fn().mockRejectedValue(new Error('formation failed'))}],
+    ['release lookup', {
+      formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+      releaseList: vi.fn().mockRejectedValue(new Error('release list failed')),
+    }],
+    ['release status lookup', {
+      formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+      releaseInfo: vi.fn().mockRejectedValue(new Error('release status failed')),
+      releaseList: vi.fn().mockResolvedValue([
+        {description: 'Attach DATABASE', id: 'attach-release'},
+        {description: 'Detach DATABASE', id: 'detach-release'},
+      ]),
+    }],
+  ])('preserves promotion outcome when %s fails', async (step, options) => {
+    const promotionAttachment = {...resolvedAttachment, id: 'promoted-id'}
+    const error = await promoteDatabase(buildCtx({
+      attachmentCreate: vi.fn().mockResolvedValue(promotionAttachment),
+      ...options,
+    }), 'test-app', undefined, {force: true}).catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(DatabasePromotionError)
+    expect(error.result.attachment).toEqual(promotionAttachment)
+    expect(error.result.database).toEqual({})
+    expect(error.result.mutationStatus.attachment).toEqual({attempted: true, status: 'created'})
+    expect(error.result.releasePhase).toEqual(step === 'release status lookup'
+      ? {attach: {description: 'Attach DATABASE', id: 'attach-release', status: 'pending'}, status: 'unknown'}
+      : {status: 'unknown'})
+  })
+
+  it('preserves promotion outcome when optional pooler attachment fails', async () => {
+    const current = {
+      ...resolvedAttachment,
+      addon: {...resolvedAttachment.addon, id: 'old-id', name: 'old-postgres'},
+      name: 'DATABASE',
+    }
+    const pooler = {...current, name: 'DATABASE_CONNECTION_POOL', namespace: 'connection-pooling:default'}
+    const promotionAttachment = {...resolvedAttachment, id: 'promoted-id'}
+    const failure = new Error('pooler attach failed')
+    const attachmentCreate = vi.fn()
+      .mockResolvedValueOnce(promotionAttachment)
+      .mockRejectedValueOnce(failure)
+    const error = await promoteDatabase(buildCtx({
+      attachmentCreate,
+      attachmentsByApp: vi.fn().mockResolvedValue([current, {...current, name: 'RED'}, pooler]),
+    }), 'test-app', undefined, {force: true}).catch(error_ => error_)
+
+    expect(error).toBeInstanceOf(DatabasePromotionError)
+    expect(error.cause).toBe(failure)
+    expect(error.result.attachment).toEqual(promotionAttachment)
+    expect(error.result.database).toBeUndefined()
+    expect(error.result.mutationStatus).toEqual({
+      attachment: {attempted: true, status: 'created'},
+      backupAttachment: {attempted: false, status: 'not_attempted'},
+      poolerAttachment: {attempted: true, status: 'unknown'},
+    })
+    expect(error.result.releasePhase).toBeUndefined()
+  })
+
+  it.each([
+    ['zero release-phase timeout', {releasePhaseTimeoutMs: 0}],
+    ['negative release-phase timeout', {releasePhaseTimeoutMs: -1}],
+    ['non-finite release-phase timeout', {releasePhaseTimeoutMs: Number.NaN}],
+    ['zero poll interval', {releasePhasePollIntervalMs: 0}],
+    ['negative poll interval', {releasePhasePollIntervalMs: -1}],
+    ['non-finite poll interval', {releasePhasePollIntervalMs: Number.POSITIVE_INFINITY}],
+  ])('rejects invalid %s before any promotion work', async (_setting, options) => {
+    const attachmentCreate = vi.fn()
+    const resolutionByAttachment = vi.fn()
+    await expect(promoteDatabase(buildCtx({attachmentCreate, resolutionByAttachment}), 'test-app', undefined, options))
+      .rejects.toBeInstanceOf(RangeError)
+    expect(resolutionByAttachment).not.toHaveBeenCalled()
+    expect(attachmentCreate).not.toHaveBeenCalled()
   })
 
   it('resolves follower display information before callback, then sends typed unfollow request', async () => {
@@ -810,6 +1094,64 @@ describe('database command extensions', () => {
     })).rejects.toThrow()
     expect(databaseUnfollow).not.toHaveBeenCalled()
   })
+
+  it.each(['operation', 'caller'] as const)(
+    'aborts an in-flight unfollow request when the %s signal is cancelled',
+    async abortSource => {
+      const operationController = new AbortController()
+      const callerController = new AbortController()
+      const requestSignals: AbortSignal[] = []
+      let markRequestStarted!: () => void
+      const requestStarted = new Promise<void>(resolve => {
+        markRequestStarted = resolve
+      })
+      const databaseUnfollow = vi.fn((_id: string) => new Promise<never>((_resolve, reject) => {
+        markRequestStarted()
+        const requestSignal = requestSignals.at(-1)
+        if (!requestSignal) {
+          reject(new Error('unfollow request signal was not bound'))
+          return
+        }
+
+        requestSignal.addEventListener('abort', () => reject(requestSignal.reason), {once: true})
+      }))
+      const ctx = buildCtx({
+        configVars: vi.fn().mockResolvedValue({}),
+        databaseInfo: vi.fn().mockResolvedValue({following: 'postgres://host:5432/db'}),
+        databaseUnfollow,
+        operationSignal: operationController.signal,
+      })
+      const data = ctx.data as unknown as {
+        database: {unfollow: typeof databaseUnfollow}
+        withOptions: ReturnType<typeof vi.fn>
+      }
+      data.withOptions.mockImplementation((options: {signal?: AbortSignal}) => {
+        if (options.signal) requestSignals.push(options.signal)
+
+        return ctx.data
+      })
+      const reason = new Error(`${abortSource} cancellation`)
+
+      const promise = unfollowDatabase(ctx, 'test-app', undefined, {
+        signal: callerController.signal,
+      })
+      const expectation = expect(promise).rejects.toBe(reason)
+      await requestStarted
+      const effectiveSignal = requestSignals.at(-1)
+      expect(effectiveSignal).toBeDefined()
+      expect(effectiveSignal).not.toBe(operationController.signal)
+      expect(effectiveSignal).not.toBe(callerController.signal)
+
+      const abortingController = abortSource === 'operation' ? operationController : callerController
+      const otherController = abortSource === 'operation' ? callerController : operationController
+      abortingController.abort(reason)
+      await expectation
+
+      expect(effectiveSignal?.aborted).toBe(true)
+      expect(otherController.signal.aborted).toBe(false)
+      expect(databaseUnfollow).toHaveBeenCalledExactlyOnceWith('database-id')
+    },
+  )
 
   it('exports and delegates app-level commands through the standalone extension bundle', async () => {
     expect(databaseCommandExtensions.service).toBe('data')

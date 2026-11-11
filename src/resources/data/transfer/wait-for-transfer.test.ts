@@ -174,8 +174,13 @@ describe('waitForTransfer', () => {
   it('aborts a pending poll when the caller signal aborts', async () => {
     const controller = new AbortController()
     const abortReason = new Error('caller cancelled')
+    let markRequestStarted!: () => void
+    const requestStarted = new Promise<void>(resolve => {
+      markRequestStarted = resolve
+    })
     let pollSignal: AbortSignal | undefined
     const infoByAppMock = vi.fn().mockImplementation(() => new Promise((_, reject) => {
+      markRequestStarted()
       pollSignal?.addEventListener('abort', () => reject(abortReason), {once: true})
     }))
     const ctx = buildCtx({
@@ -187,6 +192,7 @@ describe('waitForTransfer', () => {
     const pending = waitForTransfer(ctx, 'app-1', 'xfer-1', {signal: controller.signal, timeoutMs: 1000})
       .then(value => ({value}), error_ => ({error_}))
 
+    await requestStarted
     controller.abort(abortReason)
 
     const settled = await pending
@@ -200,9 +206,15 @@ describe('waitForTransfer', () => {
     // Model the derived routes client returned by sdk.data.withOptions({signal}).
     const clientController = new AbortController()
     const callerController = new AbortController()
+    const abortReason = new Error('client cancelled')
+    let markRequestStarted!: () => void
+    const requestStarted = new Promise<void>(resolve => {
+      markRequestStarted = resolve
+    })
     let requestSignal: AbortSignal | undefined
     const infoByAppMock = vi.fn((_app: string, _transfer: string, _options: unknown, signal?: AbortSignal) =>
       new Promise((_, reject) => {
+        markRequestStarted()
         signal?.addEventListener('abort', () => reject(signal.reason), {once: true})
       }))
     const ctx = buildCtx({
@@ -215,15 +227,16 @@ describe('waitForTransfer', () => {
       .transfer.waitForTransfer('app-1', 'xfer-1', {signal: callerController.signal, timeoutMs: 1000})
       .then(value => ({value}), error_ => ({error_}))
 
+    await requestStarted
     const effectiveSignal = infoByAppMock.mock.calls[0]?.[3]
     expect(effectiveSignal).toBeInstanceOf(AbortSignal)
     expect(effectiveSignal).not.toBe(clientController.signal)
 
-    clientController.abort()
+    clientController.abort(abortReason)
 
     const settled = await pending
     const {error_} = settled
-    expect(error_).toMatchObject({name: 'AbortError'})
+    expect(error_).toBe(abortReason)
     expect((effectiveSignal as AbortSignal).aborted).toBe(true)
     expect(requestSignal).toBe(effectiveSignal)
     expect(callerController.signal.aborted).toBe(false)
@@ -315,15 +328,24 @@ describe('waitForTransfer', () => {
   it('stops immediately once the signal has aborted, whatever the poll error', async () => {
     const controller = new AbortController()
     const error = new Error('socket hang up')
+    const abortReason = new Error('caller cancelled')
+    let markRequestStarted!: () => void
+    const requestStarted = new Promise<void>(resolve => {
+      markRequestStarted = resolve
+    })
     // The request fails and the signal aborts in the same tick (e.g. a
     // client-level cancellation): the abort must win over the retry counter.
     const infoByAppMock = vi.fn().mockImplementation(() => {
-      controller.abort()
+      markRequestStarted()
+      controller.abort(abortReason)
       return Promise.reject(error)
     })
     const ctx = buildCtx({infoByApp: infoByAppMock})
 
-    await expect(waitForTransfer(ctx, 'app-1', 'xfer-1', {intervalMs: DEFAULT_INTERVAL_MS, signal: controller.signal})).rejects.toBe(error)
+    const pending = waitForTransfer(ctx, 'app-1', 'xfer-1', {intervalMs: DEFAULT_INTERVAL_MS, signal: controller.signal})
+    const expectation = expect(pending).rejects.toBe(abortReason)
+    await requestStarted
+    await expectation
     expect(infoByAppMock).toHaveBeenCalledOnce()
   })
 })

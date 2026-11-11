@@ -52,7 +52,7 @@ sdk.data.database.unfollow('example-app', 'DATABASE_URL')
 // @ts-expect-error The generated reset route accepts a database ID, not app/database inputs.
 sdk.data.database.reset('example-app', 'DATABASE_URL')
 
-sdk.data.database.copy('example-app', 'DATABASE_URL', 'postgres://external.example/db', {
+const copyResult = await sdk.data.database.copy('example-app', 'DATABASE_URL', 'postgres://external.example/db', {
   onCredentialsChecked({credentialCount, hasAdditionalCredentials}) {
     const count: number | undefined = credentialCount
     const shouldWarn: boolean = hasAdditionalCredentials
@@ -60,6 +60,8 @@ sdk.data.database.copy('example-app', 'DATABASE_URL', 'postgres://external.examp
     void shouldWarn
   },
 })
+const copyWarnings: string[] = copyResult.warnings
+void copyWarnings
 
 sdk.data.database.waitForReady('example-app', 'DATABASE_URL', {
   // @ts-expect-error Legacy wait callbacks receive the database and status together.

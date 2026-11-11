@@ -9,8 +9,8 @@ import type {ResolvedPgDatabase} from './internal/resolve-pg-database.js'
 import type {LegacyDatabase} from './postgres-database.js'
 
 import {extendResource} from '../../core/extend-resource.js'
-import {withSignal} from '../../core/with-signal.js'
-import {wait} from '../../utils/wait.js'
+import {combineSignals, withSignal} from '../../core/with-signal.js'
+import {waitForDuration} from '../../utils/request-with-timeout.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 import {listLegacyByApp} from './postgres-database.js'
 
@@ -64,24 +64,25 @@ export class LegacyDatabaseWaitError extends Error {
  * aborted. The default 404 retry budget and interval match the CLI behavior.
  */
 export async function waitForLegacyDatabaseReady(
-  ctx: Pick<ResourceCtx, 'data' | 'platform'>,
+  ctx: Pick<ResourceCtx, 'data' | 'operationSignal' | 'platform'>,
   appIdentity: string,
   addonIdentity?: string,
   options: WaitForLegacyDatabaseReadyOptions = {},
 ): Promise<WaitForLegacyDatabaseReadyResult> {
   const {onPoll, signal} = options
+  const operationSignal = combineSignals(ctx.operationSignal, signal)
   const waitIntervalMs = normalizeWaitInterval(options.waitIntervalMs)
-  signal?.throwIfAborted()
+  operationSignal?.throwIfAborted()
 
   const databases: Array<LegacyDatabase | ResolvedPgDatabase> = addonIdentity === undefined
-    ? await listLegacyByApp(ctx, appIdentity, {signal})
-    : [await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, signal})]
+    ? await listLegacyByApp(ctx, appIdentity, {signal: operationSignal})
+    : [await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, signal: operationSignal})]
 
   const results: LegacyDatabaseWaitResult[] = []
-  const data = withSignal(ctx.data, signal)
+  const data = withSignal(ctx.data, operationSignal)
 
   for (const addon of databases) {
-    const status = await waitForDatabase(data, addon, {onPoll, signal, waitIntervalMs})
+    const status = await waitForDatabase(data, addon, {onPoll, signal: operationSignal, waitIntervalMs})
     results.push({addon, status})
   }
 
@@ -122,7 +123,7 @@ async function waitForDatabase(
       return status
     }
 
-    await wait(waitIntervalMs, signal)
+    await waitForDuration(waitIntervalMs, signal)
   }
 }
 

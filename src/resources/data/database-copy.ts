@@ -33,9 +33,16 @@ type ResolvedCopyEndpoint = {
   url: string
 }
 
+type CopySecrets = {
+  databaseUrls: string[]
+  literalValues: string[]
+}
+
 /**
- * Progress callbacks are non-blocking: async rejections settled by outcome are
- * reported, while pending hooks cannot delay polling. `beforeCopy` is awaited.
+ * Progress callbacks are non-blocking: synchronous failures and async
+ * rejections observed by transfer completion are reported, while pending
+ * hooks cannot delay polling. Later rejections are handled but excluded from
+ * the returned warning snapshot. `beforeCopy` is awaited.
  */
 export type DatabaseCopyOptions = WaitForTransferOptions & {
   /** Runs after resolving and validating both endpoints, before transfer creation. */
@@ -44,7 +51,7 @@ export type DatabaseCopyOptions = WaitForTransferOptions & {
   copyPoller?: Poller<{source: DatabaseCopyEndpoint; target: DatabaseCopyEndpoint}>
   /** Legacy pg:copy token for Basic-auth source credential lookup only. */
   credentialToken?: string
-  /** Runs after source credential lookup and before waiting, so callers can render the CLI warning. */
+  /** Runs after source credential lookup settles, alongside transfer polling. */
   onCredentialsChecked?: (result: Pick<DatabaseCopyResult, 'credentialCount' | 'hasAdditionalCredentials'>) => Promise<void> | void
   /**
    * Called after each transfer poll. Async work is observed for rejection but
@@ -63,6 +70,12 @@ export type DatabaseCopyResult = {
   source: DatabaseCopyEndpoint
   target: DatabaseCopyEndpoint
   transfer: TransferInfoByAppResult
+  /**
+   * Non-fatal credential lookup and progress callback failures observed by
+   * transfer completion. Later async rejections are handled but excluded; this
+   * snapshot is not mutated after return.
+   */
+  warnings: string[]
 }
 
 /** A post-create failure that retains the remote transfer identity and outcome. */
@@ -108,22 +121,32 @@ export async function copyDatabase(
 ): Promise<DatabaseCopyResult> {
   const {beforeCopy, copyPoller, credentialToken, onCredentialsChecked, signal: callerSignal, waitPoller, ...waitOptions} = options
   const signal = combineSignals(ctx.operationSignal, callerSignal)
-  throwIfAborted(signal, [sourceIdentity, targetIdentity])
 
   let source: ResolvedCopyEndpoint | undefined
   let target: ResolvedCopyEndpoint | undefined
-  const secrets = [sourceIdentity, targetIdentity]
+
+  const secrets: CopySecrets = {
+    databaseUrls: [sourceIdentity, targetIdentity].filter(identity => /^postgres:\/\//.test(identity)),
+    literalValues: [],
+  }
+  if (credentialToken !== undefined) {
+    const basicAuthorization = `Basic ${Buffer.from(`:${credentialToken}`).toString('base64')}`
+    secrets.literalValues.push(credentialToken, encodeURIComponent(credentialToken), basicAuthorization, basicAuthorization.slice('Basic '.length))
+  }
+
+  throwIfAborted(signal, secrets)
+
   const resolvedEndpoints = await Promise.allSettled([
     resolveCopyEndpoint(ctx, appIdentity, sourceIdentity, signal),
     resolveCopyEndpoint(ctx, appIdentity, targetIdentity, signal),
   ])
   for (const result of resolvedEndpoints) {
-    if (result.status === 'fulfilled') secrets.push(result.value.url)
+    if (result.status === 'fulfilled') secrets.databaseUrls.push(result.value.url)
   }
 
   const failedResolution = resolvedEndpoints.find(result => result.status === 'rejected')
   if (failedResolution?.status === 'rejected') {
-    throw safeError(failedResolution.reason, [sourceIdentity, targetIdentity, ...secrets])
+    throw safeError(failedResolution.reason, secrets)
   }
 
   if (resolvedEndpoints[0].status === 'fulfilled') source = resolvedEndpoints[0].value
@@ -150,10 +173,10 @@ export async function copyDatabase(
   try {
     await beforeCopy?.(progress)
   } catch (error) {
-    throw safeError(error, [resolvedSource.url, resolvedTarget.url])
+    throw safeError(error, secrets)
   }
 
-  throwIfAborted(signal, [resolvedSource.url, resolvedTarget.url])
+  throwIfAborted(signal, secrets)
   const copyStartErrors: unknown[] = []
   let recordCopyStartError = (error: unknown): void => {
     copyStartErrors.push(error)
@@ -162,10 +185,10 @@ export async function copyDatabase(
   try {
     const result = copyPoller?.onStart?.(progress)
     if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
-      Promise.resolve(result).catch(error => recordCopyStartError(error))
+      (result as PromiseLike<unknown>).then(undefined, error => recordCopyStartError(error))
     }
   } catch (error) {
-    throw safeError(error, [resolvedSource.url, resolvedTarget.url])
+    recordCopyStartError(error)
   }
 
   const herokuDatabase = resolvedTarget.database ?? resolvedSource.database!
@@ -188,25 +211,22 @@ export async function copyDatabase(
   try {
     created = await data.transfer.create(herokuDatabase.addon.id, body as TransferCreateOpts)
   } catch (error) {
-    throw safeError(error, [resolvedSource.url, resolvedTarget.url])
+    throw safeError(error, secrets)
   }
 
   const transferId = created.uuid
-  secrets.push(resolvedSource.url, resolvedTarget.url)
-  if (credentialToken !== undefined) {
-    const basicAuthorization = `Basic ${Buffer.from(`:${credentialToken}`).toString('base64')}`
-    secrets.push(`https://credential.invalid/?token=${encodeURIComponent(credentialToken)}&authorization=${encodeURIComponent(basicAuthorization)}`)
-  }
+  secrets.databaseUrls.push(resolvedSource.url, resolvedTarget.url)
 
   const safeCreated = sanitizeTransfer(created, secrets)
   const ancillaryErrors: {error: Error; stage: string}[] = []
+  const warnings: string[] = []
   const recordAncillaryError = (stage: string, error: unknown) => {
-    ancillaryErrors.push({error: safeError(error, secrets), stage})
+    const sanitized = safeError(error, secrets)
+    ancillaryErrors.push({error: sanitized, stage})
+    warnings.push(`${stage} failed: ${sanitized.message}`)
   }
 
-  recordCopyStartError = (error: unknown): void => {
-    recordAncillaryError('copy progress callback', error)
-  }
+  recordCopyStartError = (error: unknown): void => recordAncillaryError('copy progress callback', error)
 
   for (const error of copyStartErrors.splice(0)) recordCopyStartError(error)
 
@@ -224,13 +244,22 @@ export async function copyDatabase(
       : undefined,
     signal: callerSignal,
   }).then(
-    transfer => ({transfer}),
+    transfer => {
+      if (!signal?.aborted) {
+        // Observe a settled stop-hook rejection before publishing the completed
+        // outcome, without waiting for a hook that remains pending.
+        runAncillaryCallback(
+          () => waitPoller?.onStop?.(safeCreated as TransferCreateResult),
+          error => recordAncillaryError('wait progress callback', error),
+        )
+      }
+
+      return {transfer}
+    },
     error => ({error}),
   )
 
-  await Promise.resolve()
   runAncillaryCallback(() => copyPoller?.onStop?.(progress), error => recordAncillaryError('copy progress callback', error))
-  await Promise.resolve()
 
   let credentialCount: number | undefined
   let credentialLookupNeeded = true
@@ -242,42 +271,24 @@ export async function copyDatabase(
 
   const credentialData = withSignal(ctx.data, combineSignals(signal, credentialController.signal))
 
-  let settleCredentialLookup!: () => void
-  const credentialOutcome = new Promise<void>(resolve => {
-    settleCredentialLookup = resolve
-  })
-  const startCredentialLookup = () => {
-    getCredentialCount().then(result => {
-      if (credentialLookupNeeded) {
-        if ('error' in result) recordAncillaryError('source credential lookup', result.error)
-        else {
-          credentialCount = result.count
-          runAncillaryCallback(
-            () => onCredentialsChecked?.({credentialCount, hasAdditionalCredentials: (credentialCount ?? 0) > 1}),
-            error => recordAncillaryError('credential callback', error),
-          )
-        }
+  getCredentialCount().then(result => {
+    credentialLookupSettled = true
+    if (credentialLookupNeeded) {
+      if ('error' in result) recordAncillaryError('source credential lookup', result.error)
+      else {
+        credentialCount = result.count
+        runAncillaryCallback(
+          () => onCredentialsChecked?.({credentialCount, hasAdditionalCredentials: (credentialCount ?? 0) > 1}),
+          error => recordAncillaryError('credential callback', error),
+        )
       }
-    }).catch(error => {
-      if (credentialLookupNeeded) recordAncillaryError('source credential lookup', error)
-    }).then(() => {
-      credentialLookupSettled = true
-      settleCredentialLookup()
-    }).catch(() => {
-      credentialLookupSettled = true
-      settleCredentialLookup()
-    })
-  }
+    }
+  }).catch(error => {
+    credentialLookupSettled = true
+    if (credentialLookupNeeded) recordAncillaryError('source credential lookup', error)
+  })
 
-  startCredentialLookup()
-
-  const firstOutcome = await Promise.race([
-    waitOutcome.then(result => ({kind: 'transfer' as const, result})),
-    credentialOutcome.then(() => ({kind: 'credentials' as const})),
-  ])
-  const outcome = firstOutcome.kind === 'transfer' ? firstOutcome.result : await waitOutcome
-
-  await Promise.resolve()
+  const outcome = await waitOutcome
 
   if (!credentialLookupSettled) {
     credentialLookupNeeded = false
@@ -285,17 +296,6 @@ export async function copyDatabase(
   }
 
   signal?.removeEventListener('abort', abortCredentialLookup)
-  if (credentialLookupSettled) await credentialOutcome
-
-  if (!('error' in outcome) && !signal?.aborted) {
-    // onStop is an observer: it must not change the completed transfer outcome.
-    runAncillaryCallback(() => waitPoller?.onStop?.(safeCreated as TransferCreateResult), () => {})
-  }
-
-  // Let callbacks already settled with the transfer outcome report their error,
-  // but never wait for a callback that remains pending.
-  await Promise.resolve()
-  for (const error of copyStartErrors.splice(0)) recordAncillaryError('copy progress callback', error)
 
   if ('error' in outcome) {
     if (signal?.aborted) {
@@ -338,15 +338,6 @@ export async function copyDatabase(
     throw new DatabaseCopyTransferError(transferId, 'waiting was aborted', undefined, {aborted: true, cause: abortError})
   }
 
-  if (ancillaryErrors.length > 0) {
-    throw new DatabaseCopyTransferError(
-      transferId,
-      describeAncillaryErrors(ancillaryErrors),
-      transfer,
-      {cause: ancillaryErrors[0].error},
-    )
-  }
-
   const hasAdditionalCredentials = (credentialCount ?? 0) > 1
   return {
     credentialCount,
@@ -354,6 +345,9 @@ export async function copyDatabase(
     source: publicEndpoint(resolvedSource, secrets),
     target: publicEndpoint(resolvedTarget, secrets),
     transfer,
+    // Callback rejections can arrive after this result is returned. Keep their
+    // rejection handlers attached, but do not let them mutate the public result.
+    warnings: [...warnings],
   }
 
   async function getCredentialCount(): Promise<{count: number | undefined} | {error: unknown}> {
@@ -374,7 +368,7 @@ export async function copyDatabase(
   }
 }
 
-function publicEndpoint(endpoint: ResolvedCopyEndpoint, secrets: string[]): DatabaseCopyEndpoint {
+function publicEndpoint(endpoint: ResolvedCopyEndpoint, secrets: CopySecrets): DatabaseCopyEndpoint {
   const {confirm: endpointConfirm, database, name, url} = endpoint
   const confirm = database ? endpointConfirm : new URL(url).hostname
 
@@ -431,24 +425,24 @@ function runAncillaryCallback(callback: () => unknown, onError: (error: unknown)
   try {
     const result = callback()
     if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
-      Promise.resolve(result).then(undefined, reportError)
+      (result as PromiseLike<unknown>).then(undefined, reportError)
     }
   } catch (error) {
     reportError(error)
   }
 }
 
-function sanitizeTransfer<T>(value: T, secrets: string[]): T {
+function sanitizeTransfer<T>(value: T, secrets: CopySecrets): T {
   return sanitizeValue(value, secrets, new WeakMap())
 }
 
-function sanitizeValue<T>(value: T, secrets: string[], seen: WeakMap<object, unknown>): T {
+function sanitizeValue<T>(value: T, secrets: CopySecrets, seen: WeakMap<object, unknown>): T {
   if (typeof value === 'string') {
-    return redactDatabaseUrls(value, secrets) as T
+    return redactKnownSecrets(value, secrets) as T
   }
 
   if (value instanceof Error) {
-    return sanitizeError(value, collectSecretsFrom(value, secrets), seen) as T
+    return sanitizeError(value, secrets, seen) as T
   }
 
   if (Array.isArray(value)) {
@@ -460,7 +454,7 @@ function sanitizeValue<T>(value: T, secrets: string[], seen: WeakMap<object, unk
   }
 
   if (value && typeof value === 'object') {
-    if (value instanceof URL) return redactDatabaseUrls(value.toString(), secrets) as T
+    if (value instanceof URL) return redactKnownSecrets(value.toString(), secrets) as T
     if (seen.has(value)) return seen.get(value) as T
     const sanitized = Object.create(Object.getPrototypeOf(value)) as Record<PropertyKey, unknown>
     seen.set(value, sanitized)
@@ -469,7 +463,7 @@ function sanitizeValue<T>(value: T, secrets: string[], seen: WeakMap<object, unk
       if (descriptor?.enumerable && 'value' in descriptor) {
         Object.defineProperty(sanitized, key, {
           ...descriptor,
-          value: isSensitiveProperty(key) ? 'REDACTED' : sanitizeValue(descriptor.value, secrets, seen),
+          value: isDatabaseUrlProperty(key) ? 'postgres://[REDACTED]' : sanitizeValue(descriptor.value, secrets, seen),
         })
       }
     }
@@ -480,14 +474,13 @@ function sanitizeValue<T>(value: T, secrets: string[], seen: WeakMap<object, unk
   return value
 }
 
-function safeError(error: unknown, secrets: string[]): Error {
+function safeError(error: unknown, secrets: CopySecrets): Error {
   const source = error instanceof Error ? error : new Error(String(error), {cause: error})
-  return sanitizeError(source, collectSecretsFrom(source, secrets), new WeakMap())
+  return sanitizeError(source, secrets, new WeakMap())
 }
 
-function sanitizeError(error: Error, secrets: string[], seen: WeakMap<object, unknown>): Error {
+function sanitizeError(error: Error, secrets: CopySecrets, seen: WeakMap<object, unknown>): Error {
   if (seen.has(error)) return seen.get(error) as Error
-  const allSecrets = collectSecretsFrom(error, secrets)
   const safe = new Error('Sanitized error')
   Object.setPrototypeOf(safe, Object.getPrototypeOf(error))
   seen.set(error, safe)
@@ -505,9 +498,9 @@ function sanitizeError(error: Error, secrets: string[], seen: WeakMap<object, un
     }
 
     let value: unknown
-    if (isSensitiveProperty(key)) value = 'REDACTED'
-    else if (key === 'message' || key === 'name' || key === 'stack') value = redactDatabaseUrls(String(fieldValue), allSecrets)
-    else value = sanitizeValue(fieldValue, allSecrets, seen)
+    if (isDatabaseUrlProperty(key)) value = 'postgres://[REDACTED]'
+    else if (key === 'message' || key === 'name' || key === 'stack') value = redactKnownSecrets(String(fieldValue), secrets)
+    else value = sanitizeValue(fieldValue, secrets, seen)
     Object.defineProperty(safe, key, {
       configurable: true,
       enumerable: descriptor.enumerable ?? false,
@@ -517,7 +510,7 @@ function sanitizeError(error: Error, secrets: string[], seen: WeakMap<object, un
   }
 
   if (!Object.hasOwn(safe, 'name')) {
-    Object.defineProperty(safe, 'name', {configurable: true, value: redactDatabaseUrls(error.name, allSecrets), writable: true})
+    Object.defineProperty(safe, 'name', {configurable: true, value: redactKnownSecrets(error.name, secrets), writable: true})
   }
 
   return safe
@@ -527,29 +520,17 @@ function describeAncillaryErrors(errors: {error: Error; stage: string}[]): strin
   return errors.map(({error, stage}) => `${stage} failed: ${error.message}`).join('; ')
 }
 
-function redactDatabaseUrls(value: string, secrets: string[]): string {
+function redactKnownSecrets(value: string, secrets: CopySecrets): string {
   let redacted = value
-  redacted = redacted.replaceAll(/[a-z][a-z\d+.-]*:\/\/[^\s"'<>]+/gi, match => {
-    const trailingPunctuation = match.match(/[,.;!?)]*$/)?.[0] ?? ''
-    const url = trailingPunctuation ? match.slice(0, -trailingPunctuation.length) : match
-    return `${redactUrl(url)}${trailingPunctuation}`
-  })
-
-  for (const secret of [...secrets].filter(value => value.includes('://')).sort((left, right) => right.length - left.length)) {
-    redacted = redacted.replaceAll(secret, redactPostgresUrl(secret))
+  for (const url of [...new Set(secrets.databaseUrls)].filter(Boolean).sort((left, right) => right.length - left.length)) {
+    redacted = redacted.replaceAll(url, redactUrl(url))
   }
 
-  const sensitiveValues = collectSensitiveValues(secrets)
-  for (const secret of [...sensitiveValues].sort((left, right) => right.length - left.length)) {
-    const escaped = secret.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
-    redacted = redacted.replaceAll(new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'gu'), '$1REDACTED')
+  for (const secret of [...new Set(secrets.literalValues)].filter(Boolean).sort((left, right) => right.length - left.length)) {
+    redacted = redacted.replaceAll(secret, 'REDACTED')
   }
 
   return redacted
-}
-
-function redactPostgresUrl(value: string): string {
-  return redactUrl(value)
 }
 
 function redactUrl(value: string): string {
@@ -561,94 +542,11 @@ function redactUrl(value: string): string {
   }
 }
 
-function collectSensitiveValues(urls: string[]): string[] {
-  const values = new Set<string>()
-  const add = (value: string) => {
-    if (!value) return
-    values.add(value)
-    try {
-      const decoded = decodeURIComponent(value.replaceAll('+', ' '))
-      if (decoded) values.add(decoded)
-    } catch {
-      // Malformed percent-encoding is still redacted in its raw form.
-    }
-  }
-
-  for (const candidate of urls) collectSensitiveValuesFromUrl(candidate, add)
-
-  return [...values]
+function isDatabaseUrlProperty(key: PropertyKey): boolean {
+  return key === 'from_url' || key === 'to_url'
 }
 
-function collectSensitiveValuesFromUrl(candidate: string, add: (value: string) => void): void {
-  try {
-    const url = new URL(candidate)
-    const authority = candidate.match(/^[a-z][a-z\d+.-]*:\/\/([^/?#]*)/i)?.[1] ?? ''
-    const rawUserInfo = authority.slice(0, authority.lastIndexOf('@'))
-    if (rawUserInfo) {
-      for (const component of rawUserInfo.split(':')) add(component)
-    }
-
-    add(url.username)
-    add(url.password)
-
-    for (const [key, value] of url.searchParams) {
-      if (isSensitiveQueryParam(key)) add(value)
-    }
-
-    const rawQuery = candidate.split('?', 2)[1]?.split('#', 1)[0]
-    if (rawQuery) {
-      for (const parameter of rawQuery.split('&')) {
-        const [rawKey, ...rawValue] = parameter.split('=')
-        if (isSensitiveQueryParam(decodeQueryComponent(rawKey))) add(rawValue.join('='))
-      }
-    }
-  } catch {
-    // Non-URL identities do not contribute credential components.
-  }
-}
-
-function collectSecretsFrom(value: unknown, secrets: string[], seen = new WeakSet<object>()): string[] {
-  const candidates = [...secrets]
-  visitForSecrets(value, candidates, seen)
-  return [...new Set([...candidates, ...collectSensitiveValues(candidates)])]
-}
-
-function visitForSecrets(value: unknown, candidates: string[], seen: WeakSet<object>): void {
-  if (typeof value === 'string') {
-    candidates.push(...(value.match(/[a-z][a-z\d+.-]*:\/\/[^\s"'<>]+/gi) ?? []))
-    return
-  }
-
-  if (!value || typeof value !== 'object' || seen.has(value)) return
-  seen.add(value)
-  if (value instanceof URL) {
-    candidates.push(value.toString())
-    return
-  }
-
-  for (const key of Reflect.ownKeys(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key)
-    if (descriptor && 'value' in descriptor) visitForSecrets(descriptor.value, candidates, seen)
-  }
-}
-
-function decodeQueryComponent(value: string): string {
-  try {
-    return decodeURIComponent(value.replaceAll('+', ' '))
-  } catch {
-    return value
-  }
-}
-
-function isSensitiveQueryParam(key: string): boolean {
-  return /(?:pass(?:word)?|pwd|token|secret|credential|auth|user(?:name)?|(?:api|access|private)[_-]?key)/i.test(key)
-}
-
-function isSensitiveProperty(key: PropertyKey): boolean {
-  return typeof key === 'string' && isSensitiveQueryParam(key)
-}
-
-function throwIfAborted(signal: AbortSignal | undefined, secrets: string[]): void {
+function throwIfAborted(signal: AbortSignal | undefined, secrets: CopySecrets): void {
   if (signal?.aborted) throw safeError(signal.reason ?? Object.assign(new Error('The operation was aborted'), {name: 'AbortError'}), secrets)
 }
 
