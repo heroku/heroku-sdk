@@ -34,6 +34,19 @@ export {
 } from '../data/database-copy.js'
 export {type CredentialConnectionInfo, databaseCredentialExtensions} from '../data/database-credential/index.js'
 export {
+  AdvancedDatabaseNotSupportedError,
+  type DatabaseSetting,
+  type DatabaseSettingKey,
+  type DatabaseSettings,
+  type DatabaseSettingsAddon,
+  databaseSettingsExtensions,
+  type DatabaseSettingsOptions,
+  type GetAllDatabaseSettingsResult,
+  type GetDatabaseSettingResult,
+  UnknownDatabaseSettingError,
+  type UpdateDatabaseSettingResult,
+} from '../data/database-settings/index.js'
+export {
   LegacyDatabaseWaitError,
   legacyDatabaseWaitExtensions,
   type LegacyDatabaseWaitResult,
