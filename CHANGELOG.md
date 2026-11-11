@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.13.1...sdk-v0.13.2) (2026-11-11)
+
+
+### Features
+
+* **data:** add legacy postgres command extensions ([#190](https://github.com/heroku/heroku-sdk/issues/190)) ([48127f0](https://github.com/heroku/heroku-sdk/commit/48127f097ee69bb3fffcd3a377b1cd5a8047b5ce))
+
 ## [0.13.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.13.0...sdk-v0.13.1) (2026-11-11)
 
 
