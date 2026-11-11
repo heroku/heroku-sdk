@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.13.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.7...sdk-v0.13.0) (2026-11-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* add extensions for postgres database credentials ([#192](https://github.com/heroku/heroku-sdk/issues/192))
+
+### Features
+
+* add extensions for postgres database credentials ([#192](https://github.com/heroku/heroku-sdk/issues/192)) ([53887df](https://github.com/heroku/heroku-sdk/commit/53887df7de361b30a31f73dba01e538c7ff8a311))
+
 ## [0.12.7](https://github.com/heroku/heroku-sdk/compare/sdk-v0.12.6...sdk-v0.12.7) (2026-11-09)
 
 
