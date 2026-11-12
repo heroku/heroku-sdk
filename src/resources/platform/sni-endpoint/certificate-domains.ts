@@ -45,7 +45,7 @@ export class CertificateDomainsMismatchError extends Error {
 
 /**
  * Thrown before upload when `createAndAssociate` gets neither `domains` nor
- * `resolveDomains` and the certificate covers some of the app's domains, so the caller
+ * `chooseDomains` and the certificate covers some of the app's domains, so the caller
  * has to choose which to associate. `matches` lists them.
  */
 export class CertificateDomainsRequiredError extends Error {

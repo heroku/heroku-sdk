@@ -59,7 +59,7 @@ describe('createAndAssociate', () => {
     vi.restoreAllMocks()
   })
 
-  describe('with resolveDomains', () => {
+  describe('with chooseDomains', () => {
     it('creates the endpoint, offers the covered domains, associates the selected ones, and re-fetches', async () => {
       const sniEndpoint = buildSniEndpoint({name: 'tokyo-1234'})
       const associated = {...sniEndpoint, domains: ['d1']}
@@ -72,12 +72,12 @@ describe('createAndAssociate', () => {
         sniEndpointCreate: vi.fn().mockResolvedValue(sniEndpoint),
         sniEndpointInfo: vi.fn().mockResolvedValue(associated),
       })
-      const resolveDomains = vi.fn().mockResolvedValue(['www.example.com'])
+      const chooseDomains = vi.fn().mockResolvedValue(['www.example.com'])
 
-      const result = await createAndAssociate(ctx, 'my-app', certificate, {resolveDomains})
+      const result = await createAndAssociate(ctx, 'my-app', certificate, {chooseDomains})
 
       expect(platform.sniEndpoint.create).toHaveBeenCalledWith('my-app', {certificate_chain: sanCert, private_key: 'PRIVATE_KEY'})
-      expect(resolveDomains).toHaveBeenCalledExactlyOnceWith(['www.example.com', 'v1.api.example.com'])
+      expect(chooseDomains).toHaveBeenCalledExactlyOnceWith(['www.example.com', 'v1.api.example.com'])
       expect(platform.domain.update).toHaveBeenCalledExactlyOnceWith('my-app', 'www.example.com', {sni_endpoint: 'tokyo-1234'})
       expect(platform.sniEndpoint.info).toHaveBeenCalledExactlyOnceWith('my-app', sniEndpoint.id)
       expect(result).toEqual(associated)
@@ -86,24 +86,24 @@ describe('createAndAssociate', () => {
     it('matches against the certificate\'s own names, not the API\'s cert_domains', async () => {
       const sniEndpoint = buildSniEndpoint({ssl_cert: {...buildSniEndpoint().ssl_cert, cert_domains: ['shop.example.org']}})
       const {ctx} = buildCtx({domainList: vi.fn().mockResolvedValue(appDomains), sniEndpointCreate: vi.fn().mockResolvedValue(sniEndpoint)})
-      const resolveDomains = vi.fn().mockResolvedValue([])
+      const chooseDomains = vi.fn().mockResolvedValue([])
 
-      await createAndAssociate(ctx, 'my-app', certificate, {resolveDomains})
+      await createAndAssociate(ctx, 'my-app', certificate, {chooseDomains})
 
-      expect(resolveDomains).toHaveBeenCalledExactlyOnceWith(['www.example.com', 'v1.api.example.com'])
+      expect(chooseDomains).toHaveBeenCalledExactlyOnceWith(['www.example.com', 'v1.api.example.com'])
     })
 
-    it('skips resolveDomains, association, and the re-fetch when nothing is covered', async () => {
+    it('skips chooseDomains, association, and the re-fetch when nothing is covered', async () => {
       const sniEndpoint = buildSniEndpoint()
       const {ctx, platform} = buildCtx({
         domainList: vi.fn().mockResolvedValue([readyDomain({hostname: 'unrelated.example.org'})]),
         sniEndpointCreate: vi.fn().mockResolvedValue(sniEndpoint),
       })
-      const resolveDomains = vi.fn()
+      const chooseDomains = vi.fn()
 
-      const result = await createAndAssociate(ctx, 'my-app', certificate, {resolveDomains})
+      const result = await createAndAssociate(ctx, 'my-app', certificate, {chooseDomains})
 
-      expect(resolveDomains).not.toHaveBeenCalled()
+      expect(chooseDomains).not.toHaveBeenCalled()
       expect(platform.domain.update).not.toHaveBeenCalled()
       expect(platform.sniEndpoint.info).not.toHaveBeenCalled()
       expect(result).toBe(sniEndpoint)
@@ -112,20 +112,20 @@ describe('createAndAssociate', () => {
     it('associates every selected domain', async () => {
       const {ctx, platform} = buildCtx({domainList: vi.fn().mockResolvedValue(appDomains)})
 
-      await createAndAssociate(ctx, 'my-app', certificate, {resolveDomains: async candidates => candidates})
+      await createAndAssociate(ctx, 'my-app', certificate, {chooseDomains: async candidates => candidates})
 
       expect(platform.domain.update).toHaveBeenCalledTimes(2)
       expect(platform.domain.update).toHaveBeenCalledWith('my-app', 'www.example.com', {sni_endpoint: 'tokyo-1234'})
       expect(platform.domain.update).toHaveBeenCalledWith('my-app', 'v1.api.example.com', {sni_endpoint: 'tokyo-1234'})
     })
 
-    it('makes no association calls when resolveDomains returns an empty selection', async () => {
+    it('makes no association calls when chooseDomains returns an empty selection', async () => {
       const {ctx, platform} = buildCtx({domainList: vi.fn().mockResolvedValue(appDomains)})
-      const resolveDomains = vi.fn().mockResolvedValue([])
+      const chooseDomains = vi.fn().mockResolvedValue([])
 
-      await createAndAssociate(ctx, 'my-app', certificate, {resolveDomains})
+      await createAndAssociate(ctx, 'my-app', certificate, {chooseDomains})
 
-      expect(resolveDomains).toHaveBeenCalledOnce()
+      expect(chooseDomains).toHaveBeenCalledOnce()
       expect(platform.domain.update).not.toHaveBeenCalled()
     })
 
@@ -144,7 +144,7 @@ describe('createAndAssociate', () => {
       })
 
       await createAndAssociate(ctx, 'my-app', certificate, {
-        async resolveDomains(candidates) {
+        async chooseDomains(candidates) {
           calls.push('resolve')
           return candidates.slice(0, 1)
         },
@@ -165,24 +165,24 @@ describe('createAndAssociate', () => {
       })
 
       await createAndAssociate(ctx, 'my-app', certificate, {
-        domainPoller: {onStart: () => calls.push('start'), onStop: () => calls.push('stop')},
-        intervalMs: 1,
-        async resolveDomains(candidates) {
+        async chooseDomains(candidates) {
           calls.push('resolve')
           return candidates
         },
+        domainPoller: {onStart: () => calls.push('start'), onStop: () => calls.push('stop')},
+        intervalMs: 1,
       })
 
       expect(calls).toEqual(['start', 'info', 'stop', 'resolve'])
       expect(platform.domain.update).toHaveBeenCalledExactlyOnceWith('my-app', 'www.example.com', {sni_endpoint: 'tokyo-1234'})
     })
 
-    it('wraps a resolveDomains rejection in SniEndpointAssociationError and makes no association calls', async () => {
+    it('wraps a chooseDomains rejection in SniEndpointAssociationError and makes no association calls', async () => {
       const sniEndpoint = buildSniEndpoint({id: 'e1', name: 'tokyo-1234'})
       const {ctx, platform} = buildCtx({domainList: vi.fn().mockResolvedValue(appDomains), sniEndpointCreate: vi.fn().mockResolvedValue(sniEndpoint)})
       const cancelled = new Error('User cancelled')
 
-      const error = await createAndAssociate(ctx, 'my-app', certificate, {resolveDomains: vi.fn().mockRejectedValue(cancelled)}).catch(error_ => error_)
+      const error = await createAndAssociate(ctx, 'my-app', certificate, {chooseDomains: vi.fn().mockRejectedValue(cancelled)}).catch(error_ => error_)
 
       expect(error).toBeInstanceOf(SniEndpointAssociationError)
       expect(error.message).toBe('The certificate was uploaded to my-app as tokyo-1234, but associating it with domains failed: User cancelled')
@@ -193,12 +193,12 @@ describe('createAndAssociate', () => {
       expect(platform.domain.update).not.toHaveBeenCalled()
     })
 
-    it('rethrows an abort from resolveDomains as is, not wrapped', async () => {
+    it('rethrows an abort from chooseDomains as is, not wrapped', async () => {
       const controller = new AbortController()
       const {ctx} = buildCtx({domainList: vi.fn().mockResolvedValue(appDomains)})
 
       const error = await createAndAssociate(ctx, 'my-app', certificate, {
-        async resolveDomains() {
+        async chooseDomains() {
           controller.abort()
           throw controller.signal.reason
         },
@@ -212,7 +212,7 @@ describe('createAndAssociate', () => {
     it('stops waiting and makes no association calls when aborted during the domain wait', async () => {
       const controller = new AbortController()
       const pending = buildDomain({hostname: 'www.example.com', status: 'pending'})
-      const resolveDomains = vi.fn()
+      const chooseDomains = vi.fn()
       const {ctx, platform} = buildCtx({
         domainList: vi.fn(async () => {
           controller.abort()
@@ -220,12 +220,12 @@ describe('createAndAssociate', () => {
         }),
       })
 
-      const error = await createAndAssociate(ctx, 'my-app', certificate, {intervalMs: 1000, resolveDomains, signal: controller.signal}).catch(error_ => error_)
+      const error = await createAndAssociate(ctx, 'my-app', certificate, {chooseDomains, intervalMs: 1000, signal: controller.signal}).catch(error_ => error_)
 
       expect(error.name).toBe('AbortError')
       expect(platform.sniEndpoint.create).toHaveBeenCalledOnce()
       expect(platform.domain.info).not.toHaveBeenCalled()
-      expect(resolveDomains).not.toHaveBeenCalled()
+      expect(chooseDomains).not.toHaveBeenCalled()
       expect(platform.domain.update).not.toHaveBeenCalled()
     })
   })
@@ -333,7 +333,7 @@ describe('createAndAssociate', () => {
     })
   })
 
-  describe('with neither domains nor resolveDomains', () => {
+  describe('with neither domains nor chooseDomains', () => {
     it('uploads without associating when the certificate covers none of the app\'s domains', async () => {
       const sniEndpoint = buildSniEndpoint()
       const {ctx, platform} = buildCtx({
@@ -373,11 +373,11 @@ describe('createAndAssociate', () => {
       expect(platform.sniEndpoint.create).not.toHaveBeenCalled()
     })
 
-    it('rejects domains with resolveDomains, before any request', async () => {
+    it('rejects domains with chooseDomains, before any request', async () => {
       const {ctx, platform} = buildCtx()
-      const options = {domains: [], resolveDomains: vi.fn()} as never
+      const options = {chooseDomains: vi.fn(), domains: []} as never
 
-      await expect(createAndAssociate(ctx, 'my-app', certificate, options)).rejects.toThrow(new TypeError('Pass domains or resolveDomains, not both.'))
+      await expect(createAndAssociate(ctx, 'my-app', certificate, options)).rejects.toThrow(new TypeError('Pass domains or chooseDomains, not both.'))
       expect(platform.domain.list).not.toHaveBeenCalled()
       expect(platform.sniEndpoint.create).not.toHaveBeenCalled()
     })

@@ -33,7 +33,7 @@ type CreateAndAssociateCommonOptions = {
 }
 
 /**
- * Thrown when a step after the upload fails (the domain wait, `resolveDomains`, or an
+ * Thrown when a step after the upload fails (the domain wait, `chooseDomains`, or an
  * association). The certificate exists on the app by then, so the error names the
  * created endpoint for cleanup; the original error is its `cause`, and its `statusCode`
  * is the cause's, when it has one.
@@ -62,11 +62,16 @@ export class SniEndpointAssociationError extends Error {
 /**
  * How to choose the hostnames to associate. Pass at most one of:
  *   - `domains`: a fixed list, checked before upload.
- *   - `resolveDomains`: a callback that chooses from the matching hostnames after upload.
+ *   - `chooseDomains`: a callback that chooses from the matching hostnames after upload.
  *   - neither: associate none, but only if the certificate covers none of the app's domains;
  *     otherwise throws `CertificateDomainsRequiredError` before upload, listing them.
  */
 export type CreateAndAssociateOptions = CreateAndAssociateCommonOptions & ({
+  /** Given the app hostnames the certificate covers, returns the subset to associate. */
+  chooseDomains: (candidates: string[]) => Promise<string[]>
+  domains?: never
+} | {
+  chooseDomains?: never
   /**
    * The hostnames to associate, for callers that can't prompt. Checked before
    * anything is uploaded: each must be one of the app's domains (case-insensitively)
@@ -74,14 +79,9 @@ export type CreateAndAssociateOptions = CreateAndAssociateCommonOptions & ({
    * `CertificateDomainsMismatchError` is thrown. `[]` associates none.
    */
   domains: string[]
-  resolveDomains?: never
 } | {
+  chooseDomains?: never
   domains?: never
-  /** Given the app hostnames the certificate covers, returns the subset to associate. */
-  resolveDomains: (candidates: string[]) => Promise<string[]>
-} | {
-  domains?: never
-  resolveDomains?: never
 })
 
 /**
@@ -96,20 +96,20 @@ export type CreateAndAssociateOptions = CreateAndAssociateCommonOptions & ({
  *    with neither option, check that the certificate covers none of the app's domains.
  * 2. Create the SNI endpoint.
  * 3. Wait for domains to reach ready status (`succeeded`/`none`): the requested ones
- *    with `domains`, all of the app's pending domains with `resolveDomains`. `timeoutMs`
+ *    with `domains`, all of the app's pending domains with `chooseDomains`. `timeoutMs`
  *    (default 30s) applies per pending domain, polling every `intervalMs` (default 1s).
- * 4. With `resolveDomains`: list the app's domains and, if the certificate covers any,
- *    call `resolveDomains` with them to choose which to associate.
+ * 4. With `chooseDomains`: list the app's domains and, if the certificate covers any,
+ *    call `chooseDomains` with them to choose which to associate.
  * 5. Associate the chosen hostnames with the endpoint in parallel (`domain.update`).
  *
- * @throws `TypeError` (before upload) if both `domains` and `resolveDomains` are passed.
+ * @throws `TypeError` (before upload) if both `domains` and `chooseDomains` are passed.
  * @throws `CertificateParseError` (before upload) if the certificate chain can't be read.
  * @throws `CertificateDomainsMismatchError` (before upload) if `domains` names a
  * hostname that isn't on the app or isn't covered by the certificate.
  * @throws `CertificateDomainsRequiredError` (before upload) if neither option is passed
  * and the certificate covers some of the app's domains.
  * @throws `SniEndpointAssociationError` (after upload, naming the created endpoint) if
- * the domain readiness wait times out or a domain fails, `resolveDomains` throws, or
+ * the domain readiness wait times out or a domain fails, `chooseDomains` throws, or
  * an association call rejects. An abort is rethrown as is.
  * @returns the SNI endpoint. When domains were associated, it's re-fetched so its
  * `domains` list includes them; if that re-fetch fails, its error is thrown as is
@@ -129,8 +129,8 @@ export async function createAndAssociate(
   } = options
 
   signal?.throwIfAborted()
-  if (options.domains !== undefined && options.resolveDomains !== undefined) {
-    throw new TypeError('Pass domains or resolveDomains, not both.')
+  if (options.domains !== undefined && options.chooseDomains !== undefined) {
+    throw new TypeError('Pass domains or chooseDomains, not both.')
   }
 
   const platform = withSignal(ctx.platform, signal)
@@ -139,7 +139,7 @@ export async function createAndAssociate(
   let requested: Domain[] = []
   if (options.domains) {
     requested = await checkRequestedDomains(ctx, appIdentity, names, {requested: options.domains, signal})
-  } else if (!options.resolveDomains) {
+  } else if (!options.chooseDomains) {
     const matches = matchDomains(names, (await platform.domain.list(appIdentity)).map(d => d.hostname))
     if (matches.length > 0) throw new CertificateDomainsRequiredError(appIdentity, matches)
   }
@@ -152,10 +152,10 @@ export async function createAndAssociate(
   const waitOptions = {signal, timeoutMs, waitIntervalMs: intervalMs}
   let selected: string[]
   try {
-    if (options.resolveDomains) {
+    if (options.chooseDomains) {
       await withPoller(domainPoller, () => waitForReady(ctx, appIdentity, waitOptions))
       const covered = matchDomains(names, (await platform.domain.list(appIdentity)).map(d => d.hostname))
-      selected = covered.length > 0 ? await options.resolveDomains(covered) : []
+      selected = covered.length > 0 ? await options.chooseDomains(covered) : []
     } else {
       if (requested.length > 0) {
         await withPoller(domainPoller, () => Promise.all(requested.map(domain => waitForReady(ctx, appIdentity, {...waitOptions, domain}))))

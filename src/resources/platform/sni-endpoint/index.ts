@@ -1,12 +1,27 @@
-import type {CreateAndAssociateOptions, SniCertificate} from './create-and-associate.js'
+import type {SniEndpoint} from '@heroku/types/3.sdk'
+
 import type {
-  ResolveAndDeleteOptions, ResolveAndUpdateOptions, ResolveSniEndpointOptions, SniEndpointSelector,
-} from './resolve.js'
+  SniEndpointDeleteByAppOptions,
+  SniEndpointInfoByAppOptions,
+  SniEndpointSelector,
+  SniEndpointUpdateByAppOptions,
+  SniEndpointWithDomainHostnames,
+} from './by-app.js'
+import type {CreateAndAssociateOptions, SniCertificate} from './create-and-associate.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
+import {deleteByApp, infoByApp, updateByApp} from './by-app.js'
 import {createAndAssociate} from './create-and-associate.js'
-import {resolveAndDelete, resolveAndUpdate, resolveSniEndpoint} from './resolve.js'
 
+export {
+  SniEndpointAmbiguousError,
+  type SniEndpointDeleteByAppOptions,
+  type SniEndpointInfoByAppOptions,
+  SniEndpointNotFoundError,
+  type SniEndpointSelector,
+  type SniEndpointUpdateByAppOptions,
+  type SniEndpointWithDomainHostnames,
+} from './by-app.js'
 export {
   CertificateDomainsMismatchError,
   CertificateDomainsRequiredError,
@@ -18,26 +33,28 @@ export {
   type SniCertificate,
   SniEndpointAssociationError,
 } from './create-and-associate.js'
-export {
-  type ResolveAndDeleteOptions,
-  type ResolveAndUpdateOptions,
-  type ResolveSniEndpointOptions,
-  SniEndpointAmbiguousError,
-  SniEndpointNotFoundError,
-  type SniEndpointSelector,
-} from './resolve.js'
+
+/** `infoByApp`'s signature, without the resource context. */
+type InfoByApp = {
+  (
+    appIdentity: string,
+    selector: SniEndpointSelector | undefined,
+    options: SniEndpointInfoByAppOptions & {includeDomainHostnames: true},
+  ): Promise<SniEndpointWithDomainHostnames>
+  (appIdentity: string, selector?: SniEndpointSelector, options?: SniEndpointInfoByAppOptions): Promise<SniEndpoint>
+}
 
 export const sniEndpointExtensions = extendResource('platform', 'sniEndpoint', ctx => ({
   createAndAssociate: (appIdentity: string, certificate: SniCertificate, options?: CreateAndAssociateOptions) =>
     createAndAssociate(ctx, appIdentity, certificate, options),
-  resolve: (appIdentity: string, selector?: SniEndpointSelector, options?: ResolveSniEndpointOptions) =>
-    resolveSniEndpoint(ctx, appIdentity, selector, options),
-  resolveAndDelete: (appIdentity: string, selector: SniEndpointSelector, options?: ResolveAndDeleteOptions) =>
-    resolveAndDelete(ctx, appIdentity, selector, options),
-  resolveAndUpdate: (
+  deleteByApp: (appIdentity: string, selector: SniEndpointSelector, options?: SniEndpointDeleteByAppOptions) =>
+    deleteByApp(ctx, appIdentity, selector, options),
+  infoByApp: ((appIdentity: string, selector?: SniEndpointSelector, options?: SniEndpointInfoByAppOptions) =>
+    infoByApp(ctx, appIdentity, selector, options)) as InfoByApp,
+  updateByApp: (
     appIdentity: string,
     selector: SniEndpointSelector,
     certificate: SniCertificate,
-    options?: ResolveAndUpdateOptions,
-  ) => resolveAndUpdate(ctx, appIdentity, selector, certificate, options),
+    options?: SniEndpointUpdateByAppOptions,
+  ) => updateByApp(ctx, appIdentity, selector, certificate, options),
 }))
