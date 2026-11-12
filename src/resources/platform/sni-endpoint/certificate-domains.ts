@@ -92,18 +92,23 @@ const PEM_CERTIFICATE = /-----BEGIN CERTIFICATE-----([\d\s+/=A-Za-z]*)-----END C
 const OID_COMMON_NAME = '2.5.4.3'
 const OID_SUBJECT_ALT_NAME = '2.5.29.17'
 const TAG_CLASS_CONTEXT = 3
-// Generous for a certificate; asn1js's defaults allow far more.
+// Generous for a certificate, which is a few KB; asn1js's defaults allow far more.
+const MAX_CERTIFICATE_BYTES = 1024 * 1024
+const MAX_CERTIFICATE_BASE64_LENGTH = Math.ceil(MAX_CERTIFICATE_BYTES / 3) * 4
 const PARSE_LIMITS = {
-  maxContentLength: 1024 * 1024, maxDepth: 32, maxNodes: 10_000, parseEmbedded: false,
+  maxContentLength: MAX_CERTIFICATE_BYTES, maxDepth: 32, maxNodes: 10_000, parseEmbedded: false,
 }
 
 /** The DER bytes of the first `CERTIFICATE` block in a PEM string. */
 function leafCertificateDer(certificateChain: string): Uint8Array {
   const match = PEM_CERTIFICATE.exec(certificateChain)
   if (!match) throw new Error('No PEM CERTIFICATE block.')
+  const base64 = match[1].replaceAll(/\s/g, '')
+  // Checked before decoding, so an oversized block is never decoded into memory.
+  if (base64.length > MAX_CERTIFICATE_BASE64_LENGTH) throw new Error(`Certificate is larger than ${MAX_CERTIFICATE_BYTES} bytes.`)
   // atob is the base64 decoder available in both browsers and Node (Buffer is Node-only).
   // eslint-disable-next-line no-restricted-globals
-  return Uint8Array.from(atob(match[1].replaceAll(/\s/g, '')), char => char.codePointAt(0) ?? 0)
+  return Uint8Array.from(atob(base64), char => char.codePointAt(0) ?? 0)
 }
 
 /**

@@ -53,6 +53,31 @@ describe('certificateNames', () => {
     expect((error as Error).cause).toBeInstanceOf(Error)
   })
 
+  it('rejects an oversized certificate block before decoding it', async () => {
+    const atob = vi.spyOn(globalThis, 'atob')
+    const base64 = 'A'.repeat((Math.ceil(1024 * 1024 / 3) * 4) + 4)
+    try {
+      const error = await certificateNames(`-----BEGIN CERTIFICATE-----\n${base64}\n-----END CERTIFICATE-----`).catch((error_: unknown) => error_)
+
+      expect(error).toBeInstanceOf(CertificateParseError)
+      expect((error as Error).cause).toMatchObject({message: 'Certificate is larger than 1048576 bytes.'})
+      expect(atob).not.toHaveBeenCalled()
+    } finally {
+      atob.mockRestore()
+    }
+  })
+
+  it('still decodes a block at the size limit', async () => {
+    const atob = vi.spyOn(globalThis, 'atob')
+    const base64 = 'A'.repeat(Math.ceil(1024 * 1024 / 3) * 4)
+    try {
+      await certificateNames(`-----BEGIN CERTIFICATE-----\n${base64}\n-----END CERTIFICATE-----`).catch(() => {})
+      expect(atob).toHaveBeenCalledOnce()
+    } finally {
+      atob.mockRestore()
+    }
+  })
+
   it('loads asn1js on first call, not on import', async () => {
     vi.resetModules()
     const loaded = vi.fn()
