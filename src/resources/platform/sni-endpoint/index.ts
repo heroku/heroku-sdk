@@ -1,27 +1,18 @@
 import type {SniEndpoint} from '@heroku/types/3.sdk'
 
+import type {CreateAndAssociateOptions, SniCertificate} from './create-and-associate.js'
 import type {
   SniEndpointDeleteByAppOptions,
   SniEndpointInfoByAppOptions,
   SniEndpointSelector,
   SniEndpointUpdateByAppOptions,
   SniEndpointWithDomainHostnames,
-} from './by-app.js'
-import type {CreateAndAssociateOptions, SniCertificate} from './create-and-associate.js'
+} from './resolve.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
-import {deleteByApp, infoByApp, updateByApp} from './by-app.js'
 import {createAndAssociate} from './create-and-associate.js'
+import {deleteByApp, infoByApp, updateByApp} from './resolve.js'
 
-export {
-  SniEndpointAmbiguousError,
-  type SniEndpointDeleteByAppOptions,
-  type SniEndpointInfoByAppOptions,
-  SniEndpointNotFoundError,
-  type SniEndpointSelector,
-  type SniEndpointUpdateByAppOptions,
-  type SniEndpointWithDomainHostnames,
-} from './by-app.js'
 export {
   CertificateDomainsMismatchError,
   CertificateDomainsRequiredError,
@@ -33,6 +24,15 @@ export {
   type SniCertificate,
   SniEndpointAssociationError,
 } from './create-and-associate.js'
+export {
+  SniEndpointAmbiguousError,
+  type SniEndpointDeleteByAppOptions,
+  type SniEndpointInfoByAppOptions,
+  SniEndpointNotFoundError,
+  type SniEndpointSelector,
+  type SniEndpointUpdateByAppOptions,
+  type SniEndpointWithDomainHostnames,
+} from './resolve.js'
 
 /** `infoByApp`'s signature, without the resource context. */
 type InfoByApp = {

@@ -14,11 +14,11 @@ export type SniEndpointSelector
   | {hostname?: never; name: string}
   | {hostname?: never; name?: never}
 
-type SelectOptions = {
+type ResolveOptions = {
   signal?: AbortSignal
 }
 
-export type SniEndpointInfoByAppOptions = SelectOptions & {
+export type SniEndpointInfoByAppOptions = ResolveOptions & {
   /**
    * Also fetch the hostname of each domain the endpoint is associated with, returned as
    * `domain_hostnames` in the same order as `domains` (which holds domain ids).
@@ -64,18 +64,18 @@ export class SniEndpointAmbiguousError extends Error {
 }
 
 /**
- * Select one of an app's SNI endpoints for `infoByApp`, `deleteByApp` and `updateByApp`,
+ * Resolve one of an app's SNI endpoints for `infoByApp`, `deleteByApp` and `updateByApp`,
  * which document the rules and errors. Not exported from the SDK.
  *
  *   - `name`: fetched directly with `sniEndpoint.info`.
  *   - `hostname`: the app domain's `sni_endpoint`, then that endpoint.
  *   - neither: the app's only endpoint.
  */
-async function selectSniEndpoint(
+async function resolveSniEndpoint(
   ctx: Pick<ResourceCtx, 'platform'>,
   appIdentity: string,
   selector: SniEndpointSelector,
-  options: SelectOptions,
+  options: ResolveOptions,
 ): Promise<SniEndpoint> {
   options.signal?.throwIfAborted()
   const {hostname, name} = selector
@@ -152,7 +152,7 @@ export async function infoByApp(
   selector: SniEndpointSelector = {},
   options: SniEndpointInfoByAppOptions = {},
 ): Promise<SniEndpoint | SniEndpointWithDomainHostnames> {
-  const sniEndpoint = await selectSniEndpoint(ctx, appIdentity, selector, options)
+  const sniEndpoint = await resolveSniEndpoint(ctx, appIdentity, selector, options)
   if (!options.includeDomainHostnames) return sniEndpoint
 
   const platform = withSignal(ctx.platform, options.signal)
@@ -161,7 +161,7 @@ export async function infoByApp(
   return {...sniEndpoint, domain_hostnames: domains.map(domain => domain.hostname)}
 }
 
-export type SniEndpointDeleteByAppOptions = SelectOptions & {
+export type SniEndpointDeleteByAppOptions = ResolveOptions & {
   /**
    * Runs once the endpoint is selected, before it's deleted. Callers can confirm here;
    * a throw (or abort) prevents the delete.
@@ -179,13 +179,13 @@ export async function deleteByApp(
   selector: SniEndpointSelector,
   options: SniEndpointDeleteByAppOptions = {},
 ): Promise<SniEndpoint> {
-  const sniEndpoint = await selectSniEndpoint(ctx, appIdentity, selector, options)
+  const sniEndpoint = await resolveSniEndpoint(ctx, appIdentity, selector, options)
   await options.beforeDelete?.({sniEndpoint})
   options.signal?.throwIfAborted()
   return withSignal(ctx.platform, options.signal).sniEndpoint.delete(appIdentity, sniEndpoint.id)
 }
 
-export type SniEndpointUpdateByAppOptions = SelectOptions & {
+export type SniEndpointUpdateByAppOptions = ResolveOptions & {
   /**
    * Runs once the endpoint is selected, before it's updated. Callers can confirm here;
    * a throw (or abort) prevents the update.
@@ -205,7 +205,7 @@ export async function updateByApp(
   certificate: SniCertificate,
   options: SniEndpointUpdateByAppOptions = {},
 ): Promise<SniEndpoint> {
-  const sniEndpoint = await selectSniEndpoint(ctx, appIdentity, selector, options)
+  const sniEndpoint = await resolveSniEndpoint(ctx, appIdentity, selector, options)
   await options.beforeUpdate?.({sniEndpoint})
   options.signal?.throwIfAborted()
   return withSignal(ctx.platform, options.signal).sniEndpoint.update(appIdentity, sniEndpoint.id, {

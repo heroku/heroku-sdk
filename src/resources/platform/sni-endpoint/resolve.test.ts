@@ -8,7 +8,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import {buildDomain, buildSniEndpoint} from '../domain/test-utils.js'
 import {
   deleteByApp, infoByApp, SniEndpointAmbiguousError, SniEndpointNotFoundError, updateByApp,
-} from './by-app.js'
+} from './resolve.js'
 
 /** A `domain.info` stub that returns `<id>.example.com` for each domain id. */
 const domainInfo = () => vi.fn(async (_app: string, id: string) => buildDomain({hostname: `${id}.example.com`, id}))
