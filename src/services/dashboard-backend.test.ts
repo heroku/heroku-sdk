@@ -19,47 +19,39 @@ vi.mock('@heroku/types/dashboard-backend/routes', () => ({
 }))
 
 describe('createDashboardBackendClient', () => {
-  const oldUrl = process.env.HEROKU_PARTICLEBOARD_URL
-
   afterEach(() => {
-    if (oldUrl === undefined) delete process.env.HEROKU_PARTICLEBOARD_URL
-    else process.env.HEROKU_PARTICLEBOARD_URL = oldUrl
+    vi.unstubAllEnvs()
     constructorSpy.mockClear()
   })
 
-  it("defaults to service 'particleboard' without overriding its configured base URL", async () => {
-    delete process.env.HEROKU_PARTICLEBOARD_URL
+  it("uses heroku-fetch's 'particleboard' service for the host and Accept default", async () => {
     const {createDashboardBackendClient} = await import('./dashboard-backend.js')
 
     createDashboardBackendClient({token: 'test-token'})
 
-    expect(constructorSpy).toHaveBeenCalledWith({
-      service: 'particleboard',
-      token: 'test-token',
+    expect(constructorSpy).toHaveBeenCalledExactlyOnceWith({service: 'particleboard', token: 'test-token'})
+  })
+
+  it('leaves HEROKU_PARTICLEBOARD_URL to heroku-fetch', async () => {
+    vi.stubEnv('HEROKU_PARTICLEBOARD_URL', 'https://particleboard.herokai.com')
+    const {createDashboardBackendClient} = await import('./dashboard-backend.js')
+
+    createDashboardBackendClient({token: 'test-token'})
+
+    expect(constructorSpy).toHaveBeenCalledExactlyOnceWith({service: 'particleboard', token: 'test-token'})
+  })
+
+  it('lets caller-supplied baseUrl, service and headers win', async () => {
+    const {createDashboardBackendClient} = await import('./dashboard-backend.js')
+    const headers = {Accept: 'application/vnd.heroku+json; version=4'}
+
+    createDashboardBackendClient({
+      baseUrl: 'https://example.test', headers, service: 'platform', token: 't',
     })
-  })
 
-  it('honors HEROKU_PARTICLEBOARD_URL as a base-URL override', async () => {
-    process.env.HEROKU_PARTICLEBOARD_URL = 'https://particleboard.herokai.com'
-    const {createDashboardBackendClient} = await import('./dashboard-backend.js')
-
-    createDashboardBackendClient({token: 'test-token'})
-
-    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://particleboard.herokai.com',
-    }))
-  })
-
-  it('lets caller-supplied baseUrl and service override the defaults', async () => {
-    process.env.HEROKU_PARTICLEBOARD_URL = 'https://particleboard.herokai.com'
-    const {createDashboardBackendClient} = await import('./dashboard-backend.js')
-
-    createDashboardBackendClient({baseUrl: 'https://example.test', service: 'platform', token: 'test-token'})
-
-    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://example.test',
-      service: 'platform',
-    }))
+    expect(constructorSpy).toHaveBeenCalledExactlyOnceWith({
+      baseUrl: 'https://example.test', headers, service: 'platform', token: 't',
+    })
   })
 
   it('passes token and headers through unchanged', async () => {

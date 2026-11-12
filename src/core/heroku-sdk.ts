@@ -63,7 +63,7 @@ function partitionByService(extensions: readonly ResourceExtension[]): Map<Servi
  * The options a custom-host client (`service: 'custom'`) inherits from the
  * SDK's resolved bundle: identity and cancellation only. Every
  * Heroku-credential-domain option — auth (`token`, `reauthorize`, `twoFactor`),
- * routing (`headers`, `region`, `defaultAccept`), and consumer
+ * routing (`headers`, `defaultAccept`), and consumer
  * `hooks`/`onResponseMetadata` — is intentionally dropped so it never reaches a
  * third-party origin (logplex, busl, exec-manager): sending the bearer token or
  * a consumer `Authorization` header cross-origin would leak credentials, and

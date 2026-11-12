@@ -6,17 +6,14 @@ import * as routes from '@heroku/types/repositories/routes'
 import type {RoutesClientExtras} from '../core/create-client.js'
 
 import {createClient} from '../core/create-client.js'
-import {readEnv} from '../core/env.js'
 
 export type RepositoriesClient = HerokuClient & RoutesClientExtras<HerokuClient>
 
-const DEFAULT_REPOSITORIES_BASE_URL = 'https://kolkrabbi.heroku.com'
-
+/**
+ * heroku-fetch's `repositories` service supplies the kolkrabbi host
+ * (`HEROKU_REPOSITORIES_HOST`, else `https://kolkrabbi.heroku.com`) and sends no
+ * Accept default. Caller options, including `baseUrl` and `service`, win.
+ */
 export function createRepositoriesClient(options: HerokuApiClientOptions = {}): RepositoriesClient {
-  const baseUrl = readEnv('HEROKU_REPOSITORIES_HOST') ?? DEFAULT_REPOSITORIES_BASE_URL
-  return createClient<HerokuClient>(routes, {
-    baseUrl,
-    service: 'custom',
-    ...options,
-  })
+  return createClient<HerokuClient>(routes, {service: 'repositories', ...options})
 }

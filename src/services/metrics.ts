@@ -6,29 +6,14 @@ import * as routes from '@heroku/types/metrics/routes'
 import type {RoutesClientExtras} from '../core/create-client.js'
 
 import {createClient} from '../core/create-client.js'
-import {readEnv} from '../core/env.js'
 
 export type MetricsClient = HerokuClient & RoutesClientExtras<HerokuClient>
 
-const DEFAULT_METRICS_BASE_URL = 'https://api.metrics.heroku.com'
-
+/**
+ * heroku-fetch's `metrics` service supplies the host (`HEROKU_METRICS_HOST`, else
+ * `https://api.metrics.heroku.com`) and the Heroku v3 Accept default. Caller
+ * options, including `baseUrl`, `service` and `headers`, win.
+ */
 export function createMetricsClient(options: HerokuApiClientOptions = {}): MetricsClient {
-  const baseUrl = readEnv('HEROKU_METRICS_HOST') ?? DEFAULT_METRICS_BASE_URL
-  // Metrics is a distinct host that heroku-fetch does not model as a first-class
-  // service, so we use `service: 'custom'` with an explicit base URL. Auth (bearer
-  // token) is resolved by heroku-fetch exactly as for platform/data — same
-  // HEROKU_API_KEY / explicit-token source, shared across services on one SDK instance.
-  //
-  // Unlike platform/data, `service: 'custom'` sends no default Accept header, so we
-  // set `application/vnd.heroku+json; version=3` explicitly to match what meetas
-  // expects — the same versioned vendor type platform/data get automatically via
-  // heroku-fetch's `defaultAccept`. A caller can still override it via `headers`:
-  // `...options` first, then an explicit `headers` key whose `...options.headers`
-  // spread lands AFTER the literal Accept, so caller headers win for any key they set.
-  return createClient<HerokuClient>(routes, {
-    baseUrl,
-    service: 'custom',
-    ...options,
-    headers: {Accept: 'application/vnd.heroku+json; version=3', ...options.headers},
-  })
+  return createClient<HerokuClient>(routes, {service: 'metrics', ...options})
 }

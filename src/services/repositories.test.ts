@@ -19,50 +19,38 @@ vi.mock('@heroku/types/repositories/routes', () => ({
 }))
 
 describe('createRepositoriesClient', () => {
-  const OLD_ENV = process.env.HEROKU_REPOSITORIES_HOST
   afterEach(() => {
-    if (OLD_ENV === undefined) delete process.env.HEROKU_REPOSITORIES_HOST
-    else process.env.HEROKU_REPOSITORIES_HOST = OLD_ENV
+    vi.unstubAllEnvs()
     constructorSpy.mockClear()
   })
 
-  it("defaults to service 'custom' and the kolkrabbi base URL", async () => {
-    delete process.env.HEROKU_REPOSITORIES_HOST
-    constructorSpy.mockClear()
+  it("uses heroku-fetch's 'repositories' service for the host and Accept default", async () => {
     const {createRepositoriesClient} = await import('./repositories.js')
 
     createRepositoriesClient({token: 'test-token'})
 
-    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://kolkrabbi.heroku.com',
-      service: 'custom',
-      token: 'test-token',
-    }))
+    expect(constructorSpy).toHaveBeenCalledExactlyOnceWith({service: 'repositories', token: 'test-token'})
   })
 
-  it('honors HEROKU_REPOSITORIES_HOST as a base-URL override', async () => {
-    process.env.HEROKU_REPOSITORIES_HOST = 'https://kolkrabbi.herokai.com'
-    constructorSpy.mockClear()
-    vi.resetModules()
+  it('leaves HEROKU_REPOSITORIES_HOST to heroku-fetch', async () => {
+    vi.stubEnv('HEROKU_REPOSITORIES_HOST', 'https://kolkrabbi.herokai.com')
     const {createRepositoriesClient} = await import('./repositories.js')
 
     createRepositoriesClient({token: 'test-token'})
 
-    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://kolkrabbi.herokai.com',
-    }))
+    expect(constructorSpy).toHaveBeenCalledExactlyOnceWith({service: 'repositories', token: 'test-token'})
   })
 
-  it('lets user-supplied baseUrl/service override the defaults', async () => {
-    constructorSpy.mockClear()
-    vi.resetModules()
+  it('lets caller-supplied baseUrl, service and headers win', async () => {
     const {createRepositoriesClient} = await import('./repositories.js')
+    const headers = {Accept: 'application/vnd.heroku+json; version=4'}
 
-    createRepositoriesClient({baseUrl: 'https://example.test', service: 'platform', token: 'test-token'})
+    createRepositoriesClient({
+      baseUrl: 'https://example.test', headers, service: 'platform', token: 't',
+    })
 
-    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://example.test',
-      service: 'platform',
-    }))
+    expect(constructorSpy).toHaveBeenCalledExactlyOnceWith({
+      baseUrl: 'https://example.test', headers, service: 'platform', token: 't',
+    })
   })
 })
