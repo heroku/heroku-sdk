@@ -9,11 +9,6 @@ import {createClient} from '../core/create-client.js'
 
 export type NotificationsClient = HerokuClient & RoutesClientExtras<HerokuClient>
 
-/**
- * heroku-fetch's `notifications` service supplies the telex host
- * (`HEROKU_NOTIFICATIONS_HOST`, else `https://telex.heroku.com`) and sends no Accept
- * default. Caller options, including `baseUrl` and `service`, win.
- */
 export function createNotificationsClient(options: HerokuApiClientOptions = {}): NotificationsClient {
   return createClient<HerokuClient>(routes, {service: 'notifications', ...options})
 }
