@@ -181,6 +181,7 @@
   "dependencies": {
     "@heroku/heroku-fetch": "^0.3.0",
     "@heroku/types": "^5.4.1",
+    "asn1js": "^4.0.0",
     "debug": "^4.4.0"
   }
 }
