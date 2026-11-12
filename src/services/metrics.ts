@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import type {HerokuApiClientOptions} from '@heroku/heroku-fetch'
 import type {HerokuClient} from '@heroku/types/metrics'
 
@@ -7,13 +6,14 @@ import * as routes from '@heroku/types/metrics/routes'
 import type {RoutesClientExtras} from '../core/create-client.js'
 
 import {createClient} from '../core/create-client.js'
+import {readEnv} from '../core/env.js'
 
 export type MetricsClient = HerokuClient & RoutesClientExtras<HerokuClient>
 
 const DEFAULT_METRICS_BASE_URL = 'https://api.metrics.heroku.com'
 
 export function createMetricsClient(options: HerokuApiClientOptions = {}): MetricsClient {
-  const baseUrl = process.env.HEROKU_METRICS_HOST ?? DEFAULT_METRICS_BASE_URL
+  const baseUrl = readEnv('HEROKU_METRICS_HOST') ?? DEFAULT_METRICS_BASE_URL
   // Metrics is a distinct host that heroku-fetch does not model as a first-class
   // service, so we use `service: 'custom'` with an explicit base URL. Auth (bearer
   // token) is resolved by heroku-fetch exactly as for platform/data — same

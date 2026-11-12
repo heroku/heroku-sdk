@@ -6,6 +6,7 @@ import createDebug from 'debug'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedAddOnAttachment} from '../../platform/add-on-attachment/resolve.js'
 
+import {readEnv} from '../../../core/env.js'
 import {CredentialInfo as NonAdvancedCredentialInfo} from '../postgres-database/credentials.js'
 
 const debug = createDebug('heroku:sdk:resources:postgres-database')
@@ -73,7 +74,7 @@ export function isAdvancedCredential(credential: AdvancedCredentialInfo | NonAdv
 }
 
 export const getPostgresServiceName = () =>
-  process.env.HEROKU_POSTGRESQL_ADDON_NAME || process.env.HEROKU_DATA_SERVICE || 'heroku-postgresql'
+  readEnv('HEROKU_POSTGRESQL_ADDON_NAME') || readEnv('HEROKU_DATA_SERVICE') || 'heroku-postgresql'
 
 export const isPostgresAddon = (addon: PostgresAddonLike) =>
   addon.plan?.name?.split(':', 2)[0] === getPostgresServiceName()

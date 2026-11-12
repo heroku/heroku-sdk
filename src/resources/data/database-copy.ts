@@ -7,6 +7,7 @@ import type {CredentialInfo} from './postgres-database/credentials.js'
 import type {WaitForTransferOptions} from './transfer/wait-for-transfer.js'
 
 import {basicAuthorization} from '../../core/basic-authorization.js'
+import {readEnv} from '../../core/env.js'
 import {extendResource, makeCtxClient} from '../../core/extend-resource.js'
 import {combineSignals, withSignal} from '../../core/with-signal.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
@@ -574,7 +575,7 @@ async function resolveCopyEndpoint(
   if (/^postgres:\/\//.test(identity)) {
     const url = new URL(identity)
     const databaseName = url.pathname.slice(1)
-    const port = url.port || process.env.PGPORT || (url.hostname && '5432')
+    const port = url.port || readEnv('PGPORT') || (url.hostname && '5432')
     const host = `${url.hostname}:${port}`
 
     return {

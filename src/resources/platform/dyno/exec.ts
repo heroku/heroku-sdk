@@ -9,6 +9,7 @@ import {NotFoundError} from '@heroku/heroku-fetch'
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {basicAuthorization} from '../../../core/basic-authorization.js'
+import {readEnv} from '../../../core/env.js'
 import {makeCustomHostClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
@@ -316,7 +317,7 @@ function resolveExecEndpoint(
     }
   }
 
-  const url = new URL(process.env.HEROKU_EXEC_URL ?? DEFAULT_EXEC_HOST)
+  const url = new URL(readEnv('HEROKU_EXEC_URL') ?? DEFAULT_EXEC_HOST)
   return {
     apiPath: EXEC_API_PATH_CURRENT,
     authorization: basicAuthorization(appIdentity, apiKey),
