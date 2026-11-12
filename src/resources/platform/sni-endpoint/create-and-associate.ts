@@ -134,7 +134,7 @@ export async function createAndAssociate(
   }
 
   const platform = withSignal(ctx.platform, signal)
-  const names = certificateNames(certificate.certificateChain)
+  const names = await certificateNames(certificate.certificateChain)
 
   let requested: Domain[] = []
   if (options.domains) {

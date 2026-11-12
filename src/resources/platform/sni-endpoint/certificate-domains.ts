@@ -1,5 +1,5 @@
 /* eslint-disable camelcase */
-import {X509Certificate} from 'node:crypto'
+import type * as Asn1 from 'asn1js'
 
 /** Thrown before upload when the certificate chain isn't a readable PEM certificate. */
 export class CertificateParseError extends Error {
@@ -68,39 +68,111 @@ export class CertificateDomainsRequiredError extends Error {
  * Lowercased. `createAndAssociate` matches app domains against these, before and after
  * upload; once uploaded, the API's `ssl_cert.cert_domains` is authoritative.
  *
+ * Parsed with `asn1js`, which runs in Node and in browsers. It's loaded on first call,
+ * so importing the SDK doesn't load it.
+ *
  * @throws `CertificateParseError` if the chain isn't a parseable PEM certificate.
  */
-export function certificateNames(certificateChain: string): string[] {
-  let certificate: X509Certificate
+export async function certificateNames(certificateChain: string): Promise<string[]> {
+  const asn1 = await loadAsn1js()
   try {
-    certificate = new X509Certificate(certificateChain)
+    return readCertificateNames(asn1, leafCertificateDer(certificateChain)).map(name => name.toLowerCase())
   } catch (error) {
     throw new CertificateParseError(error)
   }
+}
 
-  const dnsNames = parseSubjectAltName(certificate.subjectAltName ?? '')
-  if (dnsNames.length > 0) return dnsNames.map(name => name.toLowerCase())
+let asn1js: Promise<typeof Asn1> | undefined
+function loadAsn1js(): Promise<typeof Asn1> {
+  asn1js ??= import('asn1js')
+  return asn1js
+}
 
-  const commonName = certificate.subject.split('\n').find(line => line.startsWith('CN='))
-  return commonName ? [unquote(commonName.slice('CN='.length)).toLowerCase()] : []
+const PEM_CERTIFICATE = /-----BEGIN CERTIFICATE-----([\d\s+/=A-Za-z]*)-----END CERTIFICATE-----/
+const OID_COMMON_NAME = '2.5.4.3'
+const OID_SUBJECT_ALT_NAME = '2.5.29.17'
+const TAG_CLASS_CONTEXT = 3
+// Generous for a certificate; asn1js's defaults allow far more.
+const PARSE_LIMITS = {
+  maxContentLength: 1024 * 1024, maxDepth: 32, maxNodes: 10_000, parseEmbedded: false,
+}
+
+/** The DER bytes of the first `CERTIFICATE` block in a PEM string. */
+function leafCertificateDer(certificateChain: string): Uint8Array {
+  const match = PEM_CERTIFICATE.exec(certificateChain)
+  if (!match) throw new Error('No PEM CERTIFICATE block.')
+  // atob is the base64 decoder available in both browsers and Node (Buffer is Node-only).
+  // eslint-disable-next-line no-restricted-globals
+  return Uint8Array.from(atob(match[1].replaceAll(/\s/g, '')), char => char.codePointAt(0) ?? 0)
 }
 
 /**
- * The DNS entries of a Node `X509Certificate.subjectAltName` string. Node separates
- * entries with `, ` and JSON-quotes values containing special characters (so a quoted
- * value can itself contain `, `); this splits only outside quotes.
+ * The SAN DNS names, or else the first subject CN, of a DER certificate:
+ *
+ *   Certificate    ::= SEQUENCE { tbsCertificate, signatureAlgorithm, signature }
+ *   TBSCertificate ::= SEQUENCE { [0] version OPTIONAL, serialNumber, signature, issuer,
+ *                                 validity, subject, subjectPublicKeyInfo, ..., [3] extensions OPTIONAL }
  */
-export function parseSubjectAltName(subjectAltName: string): string[] {
-  const entries = subjectAltName.match(/(?:[^",]|"(?:[^"\\]|\\.)*")+/g) ?? []
-  return entries
-    .map(entry => entry.trim())
-    .filter(entry => entry.startsWith('DNS:'))
-    .map(entry => unquote(entry.slice('DNS:'.length)))
+function readCertificateNames(asn1: typeof Asn1, der: Uint8Array): string[] {
+  const [tbsCertificate] = children(asn1.Sequence, decode(asn1, der))
+  const fields = children(asn1.Sequence, tbsCertificate)
+  const subject = fields[(isContextTag(fields[0], 0) ? 1 : 0) + 4]
+  const extensions = fields.find(field => isContextTag(field, 3))
+
+  const dnsNames = extensions ? subjectAltNameDnsNames(asn1, extensions) : []
+  if (dnsNames.length > 0) return dnsNames
+  const commonName = subjectCommonName(asn1, subject)
+  return commonName === undefined ? [] : [commonName]
 }
 
-// Node JSON-quotes subjectAltName and subject values that contain special characters.
-function unquote(value: string): string {
-  return value.startsWith('"') ? JSON.parse(value) as string : value
+/** `dNSName` entries ([2] IA5String) of the subjectAltName extension's GeneralNames. */
+function subjectAltNameDnsNames(asn1: typeof Asn1, extensionsField: Asn1.BaseBlock): string[] {
+  const [extensions] = children(asn1.Constructed, extensionsField)
+  for (const extension of children(asn1.Sequence, extensions)) {
+    const [extensionId, ...rest] = children(asn1.Sequence, extension)
+    if (!(extensionId instanceof asn1.ObjectIdentifier) || extensionId.getValue() !== OID_SUBJECT_ALT_NAME) continue
+    const extensionValue = rest.at(-1)
+    if (!(extensionValue instanceof asn1.OctetString)) throw new Error('Malformed subjectAltName extension.')
+    return children(asn1.Sequence, decode(asn1, extensionValue.valueBlock.valueHexView))
+      .filter(name => isContextTag(name, 2) && !name.idBlock.isConstructed)
+      .map(name => String.fromCodePoint(...(name.valueBlock as unknown as {valueHexView: Uint8Array}).valueHexView))
+  }
+
+  return []
+}
+
+/** The first `commonName` attribute in a Name (SEQUENCE OF SET OF {type, value}). */
+function subjectCommonName(asn1: typeof Asn1, subject: Asn1.BaseBlock | undefined): string | undefined {
+  for (const relativeName of children(asn1.Sequence, subject)) {
+    for (const attribute of children(asn1.Set, relativeName)) {
+      const [type, value] = children(asn1.Sequence, attribute)
+      if (type instanceof asn1.ObjectIdentifier && type.getValue() === OID_COMMON_NAME && value instanceof asn1.BaseStringBlock) {
+        return value.getValue()
+      }
+    }
+  }
+
+  return undefined
+}
+
+/** Decode exactly one DER value from `bytes`, within `PARSE_LIMITS`. */
+function decode(asn1: typeof Asn1, bytes: Uint8Array): Asn1.BaseBlock {
+  const {offset, result} = asn1.fromBER(bytes, PARSE_LIMITS)
+  if (offset === -1 || offset !== bytes.byteLength || result.error) {
+    throw new Error(`Malformed DER${result.error ? `: ${result.error}` : ''}.`)
+  }
+
+  return result as Asn1.BaseBlock
+}
+
+/** The children of a constructed `block` of type `type`; throws for anything else. */
+function children(type: typeof Asn1.Constructed, block: Asn1.BaseBlock | undefined): Asn1.BaseBlock[] {
+  if (!(block instanceof type)) throw new Error(`Expected ${type.NAME}.`)
+  return block.valueBlock.value
+}
+
+function isContextTag(block: Asn1.BaseBlock | undefined, tagNumber: number): boolean {
+  return block?.idBlock.tagClass === TAG_CLASS_CONTEXT && block.idBlock.tagNumber === tagNumber
 }
 
 /**

@@ -1,8 +1,11 @@
+import {X509Certificate} from 'node:crypto'
 import {readFileSync} from 'node:fs'
-import {describe, expect, it} from 'vitest'
+import {
+  describe, expect, it, vi,
+} from 'vitest'
 
 import {
-  certificateNameCovers, certificateNames, CertificateParseError, matchDomains, parseSubjectAltName,
+  certificateNameCovers, certificateNames, CertificateParseError, matchDomains,
 } from './certificate-domains.js'
 
 // Fake, expired, self-signed fixtures (see the comment at the top of each file).
@@ -12,25 +15,34 @@ const sanCert = readFileSync(new URL('fixtures/san.pem', import.meta.url), 'utf8
 const cnOnlyCert = readFileSync(new URL('fixtures/cn-only.pem', import.meta.url), 'utf8')
 
 describe('certificateNames', () => {
-  it('reads the subjectAltName DNS entries', () => {
-    expect(certificateNames(sanCert)).toEqual(['www.example.com', '*.api.example.com'])
+  it('reads the subjectAltName DNS entries', async () => {
+    expect(await certificateNames(sanCert)).toEqual(['www.example.com', '*.api.example.com'])
   })
 
-  it('falls back to the subject CN when there is no subjectAltName', () => {
-    expect(certificateNames(cnOnlyCert)).toEqual(['example.org'])
+  it('falls back to the subject CN when there is no subjectAltName', async () => {
+    expect(await certificateNames(cnOnlyCert)).toEqual(['example.org'])
   })
 
-  it('reads the first certificate of a chain', () => {
-    expect(certificateNames(sanCert + cnOnlyCert)).toEqual(['www.example.com', '*.api.example.com'])
+  it('reads the first certificate of a chain', async () => {
+    expect(await certificateNames(sanCert + cnOnlyCert)).toEqual(['www.example.com', '*.api.example.com'])
   })
 
-  it('throws CertificateParseError for something that is not a PEM certificate', () => {
-    let error: unknown
-    try {
-      certificateNames('not a certificate')
-    } catch (error_) {
-      error = error_
-    }
+  it.each([['san.pem', sanCert], ['cn-only.pem', cnOnlyCert]])('agrees with node:crypto on %s', async (_, pem) => {
+    const certificate = new X509Certificate(pem)
+    const dnsNames = (certificate.subjectAltName ?? '').split(', ').filter(entry => entry.startsWith('DNS:')).map(entry => entry.slice(4))
+    const commonName = certificate.subject.split('\n').find(line => line.startsWith('CN='))?.slice(3)
+    expect(await certificateNames(pem)).toEqual(dnsNames.length > 0 ? dnsNames : [commonName])
+  })
+
+  it.each([
+    ['not PEM', 'not a certificate'],
+    ['an empty PEM block', '-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----'],
+    ['PEM armor around non-DER bytes', `-----BEGIN CERTIFICATE-----\n${Buffer.from('hello, world').toString('base64')}\n-----END CERTIFICATE-----`],
+    ['a truncated certificate', sanCert.replace(/-----END CERTIFICATE-----[\s\S]*/, '').slice(0, -200) + '\n-----END CERTIFICATE-----'],
+    ['DER that is not a certificate', `-----BEGIN CERTIFICATE-----\n${Buffer.from([0x02, 0x01, 0x05]).toString('base64')}\n-----END CERTIFICATE-----`],
+    ['a private key', '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----'],
+  ])('throws CertificateParseError for %s', async (_, pem) => {
+    const error = await certificateNames(pem).catch((error_: unknown) => error_)
 
     expect(error).toBeInstanceOf(CertificateParseError)
     expect(error).toMatchObject({
@@ -40,19 +52,29 @@ describe('certificateNames', () => {
     })
     expect((error as Error).cause).toBeInstanceOf(Error)
   })
-})
 
-describe('parseSubjectAltName', () => {
-  it('keeps DNS entries only', () => {
-    expect(parseSubjectAltName('DNS:www.example.com, IP Address:127.0.0.1, DNS:*.example.com')).toEqual(['www.example.com', '*.example.com'])
-  })
+  it('loads asn1js on first call, not on import', async () => {
+    vi.resetModules()
+    const loaded = vi.fn()
+    vi.doMock('asn1js', async importOriginal => {
+      loaded()
+      return importOriginal()
+    })
 
-  it('doesn\'t split a quoted value at its comma', () => {
-    expect(parseSubjectAltName('DNS:"a.example.com, DNS:b.example.com", DNS:c.example.com')).toEqual(['a.example.com, DNS:b.example.com', 'c.example.com'])
-  })
+    try {
+      const module = await import('./certificate-domains.js')
+      // Let any import the module started on load settle.
+      await new Promise(resolve => {
+        setTimeout(resolve, 10)
+      })
+      expect(loaded).not.toHaveBeenCalled()
 
-  it('returns [] for an empty string', () => {
-    expect(parseSubjectAltName('')).toEqual([])
+      expect(await module.certificateNames(sanCert)).toEqual(['www.example.com', '*.api.example.com'])
+      expect(loaded).toHaveBeenCalledOnce()
+    } finally {
+      vi.doUnmock('asn1js')
+      vi.resetModules()
+    }
   })
 })
 
