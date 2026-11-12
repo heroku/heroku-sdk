@@ -16,11 +16,21 @@ vi.mock('@heroku/heroku-fetch', () => ({
     constructor(options: unknown) {
       clientConstructorSpy(options)
       // The same constructor is used for every service; spies are
-      // distinguished by the service field and custom-service base URL.
-      const {baseUrl, service} = (options as {baseUrl?: string; service?: string})
+      // distinguished by the service field.
+      const {service} = (options as {service?: string})
       switch (service) {
         case 'data': {
           dataConstructorSpy(options)
+          break
+        }
+
+        case 'metrics': {
+          metricsConstructorSpy(options)
+          break
+        }
+
+        case 'notifications': {
+          notificationsConstructorSpy(options)
           break
         }
 
@@ -39,10 +49,9 @@ vi.mock('@heroku/heroku-fetch', () => ({
           break
         }
 
-        default: {
-          if (service === 'custom' && baseUrl?.includes('metrics')) metricsConstructorSpy(options)
-          if (service === 'custom' && baseUrl?.includes('kolkrabbi')) repositoriesConstructorSpy(options)
-          if (service === 'custom' && baseUrl?.includes('telex')) notificationsConstructorSpy(options)
+        case 'repositories': {
+          repositoriesConstructorSpy(options)
+          break
         }
       }
     }
@@ -292,8 +301,7 @@ describe('HerokuSDK', () => {
 
     expect(metricsConstructorSpy).toHaveBeenCalledTimes(1)
     expect(metricsConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://api.metrics.heroku.com',
-      service: 'custom',
+      service: 'metrics',
       token: 'abc',
     }))
     expect(platformConstructorSpy).not.toHaveBeenCalled()
@@ -329,8 +337,7 @@ describe('HerokuSDK', () => {
 
     expect(notificationsConstructorSpy).toHaveBeenCalledTimes(1)
     expect(notificationsConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://telex.heroku.com',
-      service: 'custom',
+      service: 'notifications',
       token: 'abc',
     }))
     expect(platformConstructorSpy).not.toHaveBeenCalled()
@@ -366,8 +373,7 @@ describe('HerokuSDK', () => {
 
     expect(repositoriesConstructorSpy).toHaveBeenCalledTimes(1)
     expect(repositoriesConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://kolkrabbi.heroku.com',
-      service: 'custom',
+      service: 'repositories',
       token: 'abc',
     }))
     expect(platformConstructorSpy).not.toHaveBeenCalled()
@@ -432,7 +438,6 @@ describe('HerokuSDK', () => {
       token: 'abc',
     }))
     expect(repositoriesConstructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://kolkrabbi.heroku.com',
       headers: {'X-Common': 'common'},
       token: 'abc',
     }))
@@ -710,9 +715,9 @@ describe('HerokuSDK', () => {
     expect(clientConstructorSpy.mock.calls).toEqual([
       [expect.objectContaining({service: 'particleboard'})],
       [expect.objectContaining({service: 'data'})],
-      [expect.objectContaining({service: 'custom'})],
+      [expect.objectContaining({service: 'metrics'})],
       [expect.objectContaining({service: 'platform'})],
-      [expect.objectContaining({service: 'custom'})],
+      [expect.objectContaining({service: 'repositories'})],
       [expect.objectContaining({service: 'platform'})],
     ])
   })

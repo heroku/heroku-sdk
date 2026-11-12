@@ -6,6 +6,8 @@ import type {ResolvedPgDatabaseWithAttachment} from './internal/resolve-pg-datab
 import type {CredentialInfo} from './postgres-database/credentials.js'
 import type {WaitForTransferOptions} from './transfer/wait-for-transfer.js'
 
+import {basicAuthorization} from '../../core/basic-authorization.js'
+import {readEnv} from '../../core/env.js'
 import {extendResource, makeCtxClient} from '../../core/extend-resource.js'
 import {combineSignals, withSignal} from '../../core/with-signal.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
@@ -130,8 +132,8 @@ export async function copyDatabase(
     literalValues: [],
   }
   if (credentialToken !== undefined) {
-    const basicAuthorization = `Basic ${Buffer.from(`:${credentialToken}`).toString('base64')}`
-    secrets.literalValues.push(credentialToken, encodeURIComponent(credentialToken), basicAuthorization, basicAuthorization.slice('Basic '.length))
+    const authorization = basicAuthorization('', credentialToken)
+    secrets.literalValues.push(credentialToken, encodeURIComponent(credentialToken), authorization, authorization.slice('Basic '.length))
   }
 
   throwIfAborted(signal, secrets)
@@ -557,7 +559,7 @@ async function listCredentialsWithToken(
   signal?: AbortSignal,
 ): Promise<CredentialInfo[]> {
   const client = makeCtxClient(ctx, 'data', {
-    headers: {Authorization: `Basic ${Buffer.from(`:${credentialToken}`).toString('base64')}`},
+    headers: {Authorization: basicAuthorization('', credentialToken)},
     token() {},
   })
   const response = await client.get(`/postgres/v0/databases/${encodeURIComponent(addonName)}/credentials`, {signal})
@@ -573,7 +575,7 @@ async function resolveCopyEndpoint(
   if (/^postgres:\/\//.test(identity)) {
     const url = new URL(identity)
     const databaseName = url.pathname.slice(1)
-    const port = url.port || process.env.PGPORT || (url.hostname && '5432')
+    const port = url.port || readEnv('PGPORT') || (url.hostname && '5432')
     const host = `${url.hostname}:${port}`
 
     return {

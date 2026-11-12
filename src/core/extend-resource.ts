@@ -80,7 +80,7 @@ export function makeCtxClient(
  * busl, exec-manager). Inherits only the SDK's identity and cancellation from
  * the platform option bundle; forces `service: 'custom'`, the given `baseUrl`,
  * and an empty `token`, and drops every auth/routing option (`reauthorize`,
- * `headers`, `hooks`, `twoFactor`, `region`, …) so none crosses to the
+ * `headers`, `hooks`, `twoFactor`, …) so none crosses to the
  * third-party origin. `overrides` the call site explicitly sets still apply —
  * use them for a per-host header or timeout, not to smuggle inherited auth.
  */

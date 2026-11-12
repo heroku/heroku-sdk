@@ -8,6 +8,8 @@ import {NotFoundError} from '@heroku/heroku-fetch'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
+import {basicAuthorization} from '../../../core/basic-authorization.js'
+import {readEnv} from '../../../core/env.js'
 import {makeCustomHostClient} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 import {wait} from '../../../utils/wait.js'
@@ -310,15 +312,15 @@ function resolveExecEndpoint(
     // credentials with reserved characters (e.g. `p%40ss`) authenticate.
     return {
       apiPath: EXEC_API_PATH_LEGACY,
-      authorization: toBasicAuth(decodeURIComponent(url.username), decodeURIComponent(url.password)),
+      authorization: basicAuthorization(decodeURIComponent(url.username), decodeURIComponent(url.password)),
       baseUrl: `${url.protocol}//${url.host}`,
     }
   }
 
-  const url = new URL(process.env.HEROKU_EXEC_URL ?? DEFAULT_EXEC_HOST)
+  const url = new URL(readEnv('HEROKU_EXEC_URL') ?? DEFAULT_EXEC_HOST)
   return {
     apiPath: EXEC_API_PATH_CURRENT,
-    authorization: toBasicAuth(appIdentity, apiKey),
+    authorization: basicAuthorization(appIdentity, apiKey),
     baseUrl: `${url.protocol}//${url.host}`,
   }
 }
@@ -334,10 +336,6 @@ function newExecClient(
   // can't drive a spurious `heroku login`. The caller's `clientOptions` still
   // apply on top.
   return makeCustomHostClient(ctx, baseUrl, clientOptions)
-}
-
-function toBasicAuth(username: string, password: string): string {
-  return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
 }
 
 /**

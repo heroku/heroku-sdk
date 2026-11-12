@@ -19,50 +19,38 @@ vi.mock('@heroku/types/notifications/routes', () => ({
 }))
 
 describe('createNotificationsClient', () => {
-  const OLD_ENV = process.env.HEROKU_NOTIFICATIONS_HOST
   afterEach(() => {
-    if (OLD_ENV === undefined) delete process.env.HEROKU_NOTIFICATIONS_HOST
-    else process.env.HEROKU_NOTIFICATIONS_HOST = OLD_ENV
+    vi.unstubAllEnvs()
     constructorSpy.mockClear()
   })
 
-  it("defaults to service 'custom' and the telex base URL", async () => {
-    delete process.env.HEROKU_NOTIFICATIONS_HOST
-    constructorSpy.mockClear()
+  it("uses heroku-fetch's 'notifications' service for the host and Accept default", async () => {
     const {createNotificationsClient} = await import('./notifications.js')
 
     createNotificationsClient({token: 'test-token'})
 
-    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://telex.heroku.com',
-      service: 'custom',
-      token: 'test-token',
-    }))
+    expect(constructorSpy).toHaveBeenCalledExactlyOnceWith({service: 'notifications', token: 'test-token'})
   })
 
-  it('honors HEROKU_NOTIFICATIONS_HOST as a base-URL override', async () => {
-    process.env.HEROKU_NOTIFICATIONS_HOST = 'https://telex.herokai.com'
-    constructorSpy.mockClear()
-    vi.resetModules()
+  it('leaves HEROKU_NOTIFICATIONS_HOST to heroku-fetch', async () => {
+    vi.stubEnv('HEROKU_NOTIFICATIONS_HOST', 'https://telex.herokai.com')
     const {createNotificationsClient} = await import('./notifications.js')
 
     createNotificationsClient({token: 'test-token'})
 
-    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://telex.herokai.com',
-    }))
+    expect(constructorSpy).toHaveBeenCalledExactlyOnceWith({service: 'notifications', token: 'test-token'})
   })
 
-  it('lets user-supplied baseUrl/service override the defaults', async () => {
-    constructorSpy.mockClear()
-    vi.resetModules()
+  it('lets caller-supplied baseUrl, service and headers win', async () => {
     const {createNotificationsClient} = await import('./notifications.js')
+    const headers = {Accept: 'application/vnd.heroku+json; version=4'}
 
-    createNotificationsClient({baseUrl: 'https://example.test', service: 'platform', token: 'test-token'})
+    createNotificationsClient({
+      baseUrl: 'https://example.test', headers, service: 'platform', token: 't',
+    })
 
-    expect(constructorSpy).toHaveBeenCalledWith(expect.objectContaining({
-      baseUrl: 'https://example.test',
-      service: 'platform',
-    }))
+    expect(constructorSpy).toHaveBeenCalledExactlyOnceWith({
+      baseUrl: 'https://example.test', headers, service: 'platform', token: 't',
+    })
   })
 })
