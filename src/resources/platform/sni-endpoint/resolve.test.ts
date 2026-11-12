@@ -52,6 +52,9 @@ describe('resolveSniEndpoint', () => {
     expect(error).toBeInstanceOf(SniEndpointAmbiguousError)
     expect(error.message).toBe('my-app has 2 SSL certificates (tokyo-1234, akita-5678); select one by name.')
     expect(error.matches).toEqual([tokyo, akita])
+    expect(error.body).toEqual({
+      id: 'multiple_matches', matches: [{id: 'e1', name: 'tokyo-1234'}, {id: 'e2', name: 'akita-5678'}], message: error.message,
+    })
   })
 
   it('fetches an endpoint by name', async () => {
@@ -68,6 +71,13 @@ describe('resolveSniEndpoint', () => {
 
     await expect(resolveSniEndpoint(ctx, 'my-app', {name: 'nope'}))
       .rejects.toThrow(new SniEndpointNotFoundError('my-app', {name: 'nope'}, 'Couldn\'t find an SSL certificate named nope on my-app.'))
+  })
+
+  it('rethrows a 404 for the app itself unchanged', async () => {
+    const appNotFound = Object.assign(new Error('Couldn\'t find that app.'), {resource: 'app', statusCode: 404})
+    const {ctx} = buildCtx({sniInfo: vi.fn().mockRejectedValue(appNotFound)})
+
+    await expect(resolveSniEndpoint(ctx, 'my-app', {name: 'tokyo-1234'})).rejects.toBe(appNotFound)
   })
 
   it('rethrows errors other than 404 unchanged', async () => {
@@ -94,6 +104,22 @@ describe('resolveSniEndpoint', () => {
       .rejects.toThrow('other.example.com isn\'t a domain on my-app.')
   })
 
+  it('throws SniEndpointNotFoundError when the hostname\'s endpoint is gone', async () => {
+    const domainInfo = vi.fn().mockResolvedValue(buildDomain({hostname: 'www.example.com', sni_endpoint: {id: 'e1', name: 'tokyo-1234'}}))
+    const {ctx} = buildCtx({domainInfo, sniInfo: vi.fn().mockRejectedValue(notFound())})
+
+    const error = await resolveSniEndpoint(ctx, 'my-app', {hostname: 'www.example.com'}).catch(error_ => error_)
+    expect(error).toBeInstanceOf(SniEndpointNotFoundError)
+    expect(error.message).toBe('Couldn\'t find the SSL certificate associated with www.example.com on my-app.')
+  })
+
+  it('rethrows a 404 for the app itself unchanged on the hostname path', async () => {
+    const appNotFound = Object.assign(new Error('Couldn\'t find that app.'), {resource: 'app', statusCode: 404})
+    const {ctx} = buildCtx({domainInfo: vi.fn().mockRejectedValue(appNotFound)})
+
+    await expect(resolveSniEndpoint(ctx, 'my-app', {hostname: 'www.example.com'})).rejects.toBe(appNotFound)
+  })
+
   it('throws SniEndpointNotFoundError for a hostname without an endpoint', async () => {
     const {ctx} = buildCtx({domainInfo: vi.fn().mockResolvedValue(buildDomain({hostname: 'www.example.com', sni_endpoint: null}))})
 
@@ -105,7 +131,28 @@ describe('resolveSniEndpoint', () => {
   it('rejects a name and a hostname together, before any request', async () => {
     const {ctx, platform} = buildCtx()
 
-    await expect(resolveSniEndpoint(ctx, 'my-app', {hostname: 'www.example.com', name: 'tokyo-1234'})).rejects.toThrow(TypeError)
+    await expect(resolveSniEndpoint(ctx, 'my-app', {hostname: 'www.example.com', name: 'tokyo-1234'} as never)).rejects.toThrow(TypeError)
+    expect(platform.sniEndpoint.list).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [{name: ''}, 'An SSL certificate name can\'t be empty.'],
+    [{hostname: ''}, 'An SSL certificate hostname can\'t be empty.'],
+  ])('rejects an empty selector value %o, before any request', async (selector, message) => {
+    const {ctx, platform} = buildCtx({sniList: vi.fn().mockResolvedValue([tokyo])})
+
+    await expect(resolveSniEndpoint(ctx, 'my-app', selector)).rejects.toThrow(new TypeError(message))
+    expect(platform.sniEndpoint.list).not.toHaveBeenCalled()
+    expect(platform.sniEndpoint.info).not.toHaveBeenCalled()
+    expect(platform.domain.info).not.toHaveBeenCalled()
+  })
+
+  it('stops before any request when the signal is already aborted', async () => {
+    const {ctx, platform} = buildCtx({sniList: vi.fn().mockResolvedValue([tokyo])})
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(resolveSniEndpoint(ctx, 'my-app', {}, {signal: controller.signal})).rejects.toMatchObject({name: 'AbortError'})
     expect(platform.sniEndpoint.list).not.toHaveBeenCalled()
   })
 
@@ -134,7 +181,7 @@ describe('resolveAndDelete', () => {
     const {ctx} = buildCtx({sniDelete, sniList: vi.fn().mockResolvedValue([tokyo])})
 
     await expect(resolveAndDelete(ctx, 'my-app', {}, {beforeDelete})).resolves.toBe(tokyo)
-    expect(beforeDelete).toHaveBeenCalledExactlyOnceWith(tokyo)
+    expect(beforeDelete).toHaveBeenCalledExactlyOnceWith({sniEndpoint: tokyo})
     expect(sniDelete).toHaveBeenCalledExactlyOnceWith('my-app', 'e1')
     expect(calls).toEqual(['beforeDelete', 'delete'])
   })
@@ -146,11 +193,21 @@ describe('resolveAndDelete', () => {
     await expect(resolveAndDelete(ctx, 'my-app', {}, {beforeDelete: () => Promise.reject(new Error('Not confirmed'))})).rejects.toThrow('Not confirmed')
     expect(sniDelete).not.toHaveBeenCalled()
   })
+
+  it('doesn\'t delete when the signal is aborted during beforeDelete', async () => {
+    const controller = new AbortController()
+    const sniDelete = vi.fn()
+    const {ctx} = buildCtx({sniDelete, sniList: vi.fn().mockResolvedValue([tokyo])})
+
+    const error = await resolveAndDelete(ctx, 'my-app', {}, {beforeDelete: () => controller.abort(), signal: controller.signal}).catch(error_ => error_)
+    expect(error.name).toBe('AbortError')
+    expect(sniDelete).not.toHaveBeenCalled()
+  })
 })
 
 describe('resolveAndUpdate', () => {
   const tokyo = buildSniEndpoint({id: 'e1', name: 'tokyo-1234'})
-  const certificate = {certificate_chain: 'CERT_CHAIN', private_key: 'PRIVATE_KEY'}
+  const certificate = {certificateChain: 'CERT_CHAIN', privateKey: 'PRIVATE_KEY'}
 
   it('calls beforeUpdate with the resolved endpoint, then updates it', async () => {
     const beforeUpdate = vi.fn()
@@ -158,8 +215,8 @@ describe('resolveAndUpdate', () => {
     const {ctx} = buildCtx({sniInfo: vi.fn().mockResolvedValue(tokyo), sniUpdate})
 
     await expect(resolveAndUpdate(ctx, 'my-app', {name: 'tokyo-1234'}, certificate, {beforeUpdate})).resolves.toBe(tokyo)
-    expect(beforeUpdate).toHaveBeenCalledExactlyOnceWith(tokyo)
-    expect(sniUpdate).toHaveBeenCalledExactlyOnceWith('my-app', 'e1', certificate)
+    expect(beforeUpdate).toHaveBeenCalledExactlyOnceWith({sniEndpoint: tokyo})
+    expect(sniUpdate).toHaveBeenCalledExactlyOnceWith('my-app', 'e1', {certificate_chain: 'CERT_CHAIN', private_key: 'PRIVATE_KEY'})
   })
 
   it('doesn\'t update when beforeUpdate throws', async () => {
@@ -171,6 +228,19 @@ describe('resolveAndUpdate', () => {
         throw new Error('Not confirmed')
       },
     })).rejects.toThrow('Not confirmed')
+    expect(sniUpdate).not.toHaveBeenCalled()
+  })
+
+  it('doesn\'t update when the signal is aborted during beforeUpdate', async () => {
+    const controller = new AbortController()
+    const sniUpdate = vi.fn()
+    const {ctx} = buildCtx({sniInfo: vi.fn().mockResolvedValue(tokyo), sniUpdate})
+
+    const error = await resolveAndUpdate(ctx, 'my-app', {name: 'tokyo-1234'}, certificate, {
+      beforeUpdate: () => controller.abort(),
+      signal: controller.signal,
+    }).catch(error_ => error_)
+    expect(error.name).toBe('AbortError')
     expect(sniUpdate).not.toHaveBeenCalled()
   })
 })

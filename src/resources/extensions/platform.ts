@@ -75,13 +75,14 @@ export {type ResolveRepoNameOptions, reviewAppConfigExtensions} from '../platfor
 export {privateToShield, shieldToPrivate} from '../platform/shield.js'
 export {
   CertificateDomainsMismatchError,
+  CertificateDomainsRequiredError,
+  CertificateParseError,
   createAndAssociate,
   type CreateAndAssociateOptions,
-  matchCertificateDomains,
-  type MatchCertificateDomainsOptions,
   type ResolveAndDeleteOptions,
   type ResolveAndUpdateOptions,
   type ResolveSniEndpointOptions,
+  type SniCertificate,
   SniEndpointAmbiguousError,
   SniEndpointAssociationError,
   sniEndpointExtensions,
