@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.14.0...sdk-v0.14.1) (2026-11-13)
+
+
+### Features
+
+* add before-hooks to credential destroy/repair extensions ([#201](https://github.com/heroku/heroku-sdk/issues/201)) ([c53c9e4](https://github.com/heroku/heroku-sdk/commit/c53c9e4ed2f87753594a307460ae6abbb13a4a48))
+
 ## [0.14.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.13.2...sdk-v0.14.0) (2026-11-12)
 
 
