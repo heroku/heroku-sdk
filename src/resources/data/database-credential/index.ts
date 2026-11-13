@@ -9,7 +9,7 @@ import type {
 
 import {extendResource} from '../../../core/extend-resource.js'
 import {create} from './create.js'
-import {destroy} from './destroy.js'
+import {destroy, type DestroyDatabaseCredentialOptions} from './destroy.js'
 import {getUrl} from './get-url.js'
 import {list} from './list.js'
 import {rotate} from './rotate.js'
@@ -20,7 +20,9 @@ export type DatabaseCredentialOptions = {
 }
 
 export {create, type CreateDatabaseCredentialResult} from './create.js'
-export {destroy, type DestroyDatabaseCredentialResult} from './destroy.js'
+export {
+  destroy, type DestroyDatabaseCredentialOptions, type DestroyDatabaseCredentialResult,
+} from './destroy.js'
 export {
   type CredentialConnectionInfo, type GetDatabaseCredentialUrlResult, getUrl,
 } from './get-url.js'
@@ -62,7 +64,7 @@ export const databaseCredentialExtensions = extendResource('data', 'databaseCred
     destroy: (
       addonIdentity: string,
       credName: string,
-      options?: DatabaseCredentialOptions,
+      options?: DestroyDatabaseCredentialOptions,
     ) => destroy(ctx, addonIdentity, credName, options),
     getUrl: (
       addonIdentity: string,

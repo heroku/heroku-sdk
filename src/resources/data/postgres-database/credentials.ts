@@ -88,6 +88,14 @@ export async function listCredentials(
   return {addon, credentials}
 }
 
+export type RepairDefaultOptions = PostgresDatabaseCredentialOptions & {
+  /**
+   * Fires before the repair request, allowing the caller to perform any
+   * necessary pre-repair checks or UI rendering.
+   */
+  beforeRepair?: (preview: {addon: ResolvedPgDatabase}) => Promise<void> | void
+}
+
 export type RepairDefaultResult = {
   addon: ResolvedPgDatabase
   result: PostgresDatabaseRepairDefaultResult
@@ -100,9 +108,9 @@ export type RepairDefaultResult = {
 export async function repairDefault(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
-  options: PostgresDatabaseCredentialOptions = {},
+  options: RepairDefaultOptions = {},
 ): Promise<RepairDefaultResult> {
-  const {addonIdentity, signal} = options
+  const {addonIdentity, beforeRepair, signal} = options
   signal?.throwIfAborted()
   const addon = await resolvePgDatabase(ctx, appIdentity, {input: addonIdentity, signal})
 
@@ -110,9 +118,20 @@ export async function repairDefault(
     throw new Error("You can't perform this operation on Essential-tier databases.")
   }
 
+  await beforeRepair?.({addon})
+  signal?.throwIfAborted()
+
   const data = withSignal(ctx.data, signal)
   const result = await data.postgresDatabase.repairDefault(addon.id)
   return {addon, result}
+}
+
+export type DeleteCredentialOptions = PostgresDatabaseCredentialOptions & {
+  /**
+   * Fires before the delete request, allowing the caller to perform any
+   * necessary pre-delete checks or UI rendering.
+   */
+  beforeDelete?: (preview: {addon: ResolvedPgDatabase}) => Promise<void> | void
 }
 
 export type DeleteCredentialResult = {
@@ -130,9 +149,9 @@ export async function deleteCredential(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   appIdentity: string,
   credName: string,
-  options: PostgresDatabaseCredentialOptions = {},
+  options: DeleteCredentialOptions = {},
 ): Promise<DeleteCredentialResult> {
-  const {addonIdentity, signal} = options
+  const {addonIdentity, beforeDelete, signal} = options
   signal?.throwIfAborted()
 
   if (credName === 'default') {
@@ -153,6 +172,9 @@ export async function deleteCredential(
   if (attachedAppNames.length > 0) {
     throw new Error(`Credential ${credName} must be detached from the app${attachedAppNames.length > 1 ? 's' : ''} ${attachedAppNames.join(', ')} before destroying.`)
   }
+
+  await beforeDelete?.({addon})
+  signal?.throwIfAborted()
 
   const data = withSignal(ctx.data, signal)
   const result = await data.postgresDatabase.deleteCredential(addon.id, credName)
