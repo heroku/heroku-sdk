@@ -22,10 +22,12 @@ import {resolveAddonScopedThenGlobal} from '../internal/resolve-addon-scoped.js'
 import {
   createCredentials,
   deleteCredential,
+  type DeleteCredentialOptions,
   getUrl,
   listCredentials,
   type PostgresDatabaseCredentialOptions,
   repairDefault,
+  type RepairDefaultOptions,
   type RotateAllCredentialsResult,
   rotateCredential,
   type RotateCredentialOptions,
@@ -421,7 +423,7 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
     deleteCredential: (
       appIdentity: string,
       credName: string,
-      options?: PostgresDatabaseCredentialOptions,
+      options?: DeleteCredentialOptions,
     ) => deleteCredential(ctx, appIdentity, credName, options),
     destroy: (
       addonIdentity: string,
@@ -446,7 +448,7 @@ export const postgresDatabaseExtensions = extendResource('data', 'postgresDataba
     ) => listLegacyByApp(ctx, appIdentity, options),
     repairDefault: (
       appIdentity: string,
-      options?: PostgresDatabaseCredentialOptions,
+      options?: RepairDefaultOptions,
     ) => repairDefault(ctx, appIdentity, options),
     rotateCredential: rotateCredentialOverload,
   }

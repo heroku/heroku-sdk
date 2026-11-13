@@ -12,6 +12,14 @@ import {
   getPostgresServiceName, isAdvancedDatabase, isEssentialDatabase, isLegacyEssentialDatabase,
 } from '../internal/postgres-utils.js'
 
+export type DestroyDatabaseCredentialOptions = DatabaseCredentialOptions & {
+  /**
+   * Fires before the destroy request, allowing the caller to perform any
+   * necessary pre-destroy checks or UI rendering.
+   */
+  beforeDestroy?: (preview: {addon: ResolvedAddOn}) => Promise<void> | void
+}
+
 export type DestroyDatabaseCredentialResult = {
   addon: ResolvedAddOn
   result: PostgresDatabaseDeleteCredentialResult | void
@@ -29,9 +37,9 @@ export async function destroy(
   ctx: Pick<ResourceCtx, 'data' | 'platform'>,
   addonIdentity: string,
   credName: string,
-  options: DatabaseCredentialOptions = {},
+  options: DestroyDatabaseCredentialOptions = {},
 ): Promise<DestroyDatabaseCredentialResult> {
-  const {appIdentity, signal} = options
+  const {appIdentity, beforeDestroy, signal} = options
   signal?.throwIfAborted()
   // Bind the signal so the resolve and destroy requests abort in flight.
   const platform = withSignal(ctx.platform, signal)
@@ -69,6 +77,9 @@ export async function destroy(
   if (credAttachmentApps.length > 0) {
     throw new Error(`You must detach the credential ${credName} from the app${credAttachmentApps.length > 1 ? 's' : ''} ${credAttachmentApps.join(', ')} before destroying it.`)
   }
+
+  await beforeDestroy?.({addon})
+  signal?.throwIfAborted()
 
   const result = await (isAdvancedTier
     ? data.postgresCredential.delete(addon.id, credName)
