@@ -183,6 +183,43 @@ describe('postgres-database credentials', () => {
 
       await expect(repairDefault(ctx, 'app-1', {addonIdentity: 'DATABASE_URL', signal: controller.signal})).rejects.toThrow()
     })
+
+    it('runs beforeRepair with the resolved addon before repairing', async () => {
+      const resolutionByAttachment = resolvedAttachmentMock(standardAddon)
+      const repairDefaultMock = vi.fn().mockResolvedValue({message: 'repaired'})
+      const ctx = buildCtx({repairDefault: repairDefaultMock, resolutionByAttachment})
+      const beforeRepair = vi.fn()
+
+      await repairDefault(ctx, 'app-1', {addonIdentity: 'DATABASE_URL', beforeRepair})
+
+      expect(beforeRepair).toHaveBeenCalledWith({addon: standardAddon})
+      expect(beforeRepair).toHaveBeenCalledBefore(repairDefaultMock)
+    })
+
+    it('throws before repairing when beforeRepair throws', async () => {
+      const resolutionByAttachment = resolvedAttachmentMock(standardAddon)
+      const repairDefaultMock = vi.fn()
+      const ctx = buildCtx({repairDefault: repairDefaultMock, resolutionByAttachment})
+      const beforeRepair = vi.fn().mockRejectedValue(new Error('user declined'))
+
+      await expect(repairDefault(ctx, 'app-1', {addonIdentity: 'DATABASE_URL', beforeRepair}))
+        .rejects.toThrow('user declined')
+      expect(repairDefaultMock).not.toHaveBeenCalled()
+    })
+
+    it('throws after beforeRepair if the signal is aborted', async () => {
+      const resolutionByAttachment = resolvedAttachmentMock(standardAddon)
+      const repairDefaultMock = vi.fn()
+      const ctx = buildCtx({repairDefault: repairDefaultMock, resolutionByAttachment})
+      const controller = new AbortController()
+      const beforeRepair = vi.fn(() => {
+        controller.abort()
+      })
+
+      await expect(repairDefault(ctx, 'app-1', {addonIdentity: 'DATABASE_URL', beforeRepair, signal: controller.signal}))
+        .rejects.toThrow()
+      expect(repairDefaultMock).not.toHaveBeenCalled()
+    })
   })
 
   describe('getUrl', () => {
@@ -334,6 +371,46 @@ describe('postgres-database credentials', () => {
       controller.abort()
 
       await expect(deleteCredential(ctx, 'app-1', 'reporting', {addonIdentity: 'DATABASE_URL', signal: controller.signal})).rejects.toThrow()
+    })
+
+    it('runs beforeDelete with the resolved addon before deleting', async () => {
+      const resolutionByAttachment = resolvedAttachmentMock(standardAddon)
+      const deleteCredentialMock = vi.fn().mockResolvedValue({message: 'deleted'})
+      const listByAddOn = vi.fn().mockResolvedValue([])
+      const ctx = buildCtx({deleteCredential: deleteCredentialMock, listByAddOn, resolutionByAttachment})
+      const beforeDelete = vi.fn()
+
+      await deleteCredential(ctx, 'app-1', 'reporting', {addonIdentity: 'DATABASE_URL', beforeDelete})
+
+      expect(beforeDelete).toHaveBeenCalledWith({addon: standardAddon})
+      expect(beforeDelete).toHaveBeenCalledBefore(deleteCredentialMock)
+    })
+
+    it('throws before deleting when beforeDelete throws', async () => {
+      const resolutionByAttachment = resolvedAttachmentMock(standardAddon)
+      const deleteCredentialMock = vi.fn()
+      const listByAddOn = vi.fn().mockResolvedValue([])
+      const ctx = buildCtx({deleteCredential: deleteCredentialMock, listByAddOn, resolutionByAttachment})
+      const beforeDelete = vi.fn().mockRejectedValue(new Error('user declined'))
+
+      await expect(deleteCredential(ctx, 'app-1', 'reporting', {addonIdentity: 'DATABASE_URL', beforeDelete}))
+        .rejects.toThrow('user declined')
+      expect(deleteCredentialMock).not.toHaveBeenCalled()
+    })
+
+    it('throws after beforeDelete if the signal is aborted', async () => {
+      const resolutionByAttachment = resolvedAttachmentMock(standardAddon)
+      const deleteCredentialMock = vi.fn()
+      const listByAddOn = vi.fn().mockResolvedValue([])
+      const ctx = buildCtx({deleteCredential: deleteCredentialMock, listByAddOn, resolutionByAttachment})
+      const controller = new AbortController()
+      const beforeDelete = vi.fn(() => {
+        controller.abort()
+      })
+
+      await expect(deleteCredential(ctx, 'app-1', 'reporting', {addonIdentity: 'DATABASE_URL', beforeDelete, signal: controller.signal}))
+        .rejects.toThrow()
+      expect(deleteCredentialMock).not.toHaveBeenCalled()
     })
   })
 

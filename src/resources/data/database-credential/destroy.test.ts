@@ -218,4 +218,51 @@ describe('database credential destroy', () => {
 
     await expect(destroy(ctx, 'postgres-curved-12345', 'reporting', {signal: controller.signal})).rejects.toThrow()
   })
+
+  it('runs beforeDestroy with the resolved addon before destroying', async () => {
+    const addonMock = buildAddon({planName: 'heroku-postgresql:advanced-0'})
+    const postgresCredentialDelete = vi.fn()
+    const ctx = buildCtx({
+      postgresCredentialDelete,
+      postgresCredentialList: vi.fn().mockResolvedValue({
+        items: [{name: 'owner', type: 'owner'}, {name: 'reporting', type: 'additional'}],
+      }),
+      resolution: vi.fn().mockResolvedValue([addonMock]),
+    })
+    const beforeDestroy = vi.fn()
+
+    await destroy(ctx, 'postgres-curved-12345', 'reporting', {beforeDestroy})
+
+    expect(beforeDestroy).toHaveBeenCalledWith({addon: addonMock})
+    expect(beforeDestroy).toHaveBeenCalledBefore(postgresCredentialDelete)
+  })
+
+  it('throws before destroying when beforeDestroy throws', async () => {
+    const deleteCredential = vi.fn()
+    const ctx = buildCtx({
+      deleteCredential,
+      resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:standard-0'})]),
+    })
+    const beforeDestroy = vi.fn().mockRejectedValue(new Error('user declined'))
+
+    await expect(destroy(ctx, 'postgres-curved-12345', 'reporting', {beforeDestroy}))
+      .rejects.toThrow('user declined')
+    expect(deleteCredential).not.toHaveBeenCalled()
+  })
+
+  it('throws after beforeDestroy if the signal is aborted', async () => {
+    const deleteCredential = vi.fn()
+    const ctx = buildCtx({
+      deleteCredential,
+      resolution: vi.fn().mockResolvedValue([buildAddon({planName: 'heroku-postgresql:standard-0'})]),
+    })
+    const controller = new AbortController()
+    const beforeDestroy = vi.fn(() => {
+      controller.abort()
+    })
+
+    await expect(destroy(ctx, 'postgres-curved-12345', 'reporting', {beforeDestroy, signal: controller.signal}))
+      .rejects.toThrow()
+    expect(deleteCredential).not.toHaveBeenCalled()
+  })
 })
