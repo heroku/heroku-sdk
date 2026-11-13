@@ -166,7 +166,7 @@
     "dist"
   ],
   "devDependencies": {
-    "@heroku-cli/test-utils": "^1.0.3",
+    "@heroku-cli/test-utils": "^2.0.0",
     "@types/debug": "^4.1.12",
     "@types/node": "^26.5.1",
     "@vitest/coverage-v8": "^5.0.5",
