@@ -49,27 +49,39 @@ type CopySecrets = {
  * Progress callbacks are non-blocking: synchronous failures and async
  * rejections observed by transfer completion are reported, while pending
  * hooks cannot delay polling. Later rejections are handled but excluded from
- * the returned warning snapshot. `beforeCopy` is awaited. Credential lookup
- * finishes (or times out) after `beforeCopy` and before transfer creation.
- * This ordering is deliberate: `beforeCopy` is the destructive-operation
- * confirmation point, and the advisory credential count is unavailable there
- * so it cannot change what the caller confirms.
+ * the returned warning snapshot. Callback order is `beforeCopy`, credential
+ * lookup, `onCredentialsChecked`, then `copyPoller.onStart`; transfer creation
+ * follows, then polling and its callbacks. `beforeCopy` is awaited. Credential
+ * lookup finishes (or times out) after `beforeCopy`; `onCredentialsChecked`
+ * then runs before transfer creation, within the lookup's remaining timeout
+ * budget. This ordering intentionally differs from the legacy `pg:copy` flow:
+ * `beforeCopy` is the destructive-operation confirmation point, and the
+ * advisory credential count is unavailable there so it cannot change what the
+ * caller confirms.
  */
 export type DatabaseCopyOptions = WaitForTransferOptions & {
   /**
    * Runs after resolving and validating both endpoints, before credential
    * lookup and transfer creation. This is the destructive confirmation point;
    * the advisory credential count is intentionally unavailable and cannot
-   * affect the confirmation.
+   * affect the confirmation. The credential callback runs after this hook.
    */
   beforeCopy?: (preview: {source: DatabaseCopyEndpoint; target: DatabaseCopyEndpoint}) => Promise<void> | void
   /** Progress hooks around transfer creation. */
   copyPoller?: Poller<{source: DatabaseCopyEndpoint; target: DatabaseCopyEndpoint}>
-  /** Maximum combined time for advisory source credential lookup and callback. Must be positive; capped at 60 seconds. Defaults to 10 seconds. */
+  /**
+   * Maximum combined time for advisory source credential lookup and callback.
+   * Must be positive; capped at 60 seconds. Defaults to 10 seconds. If lookup
+   * exhausts the deadline, its callback is invoked without waiting.
+   */
   credentialLookupTimeoutMs?: number
   /** Legacy pg:copy token for Basic-auth source credential lookup only. */
   credentialToken?: string
-  /** Runs after source credential lookup settles or times out, before transfer creation; shares its bounded timeout budget. */
+  /**
+   * Runs after source credential lookup settles or times out, before transfer
+   * creation; shares the remaining timeout budget. If lookup consumes it, the
+   * callback is invoked but not awaited.
+   */
   onCredentialsChecked?: (result: Pick<DatabaseCopyResult, 'credentialCount' | 'hasAdditionalCredentials'> & {warning?: string}) => Promise<void> | void
   /**
    * Called after each transfer poll. Async work is observed for rejection but
@@ -120,10 +132,10 @@ export class DatabaseCopyTransferError extends Error {
  * resolver's identities (attachment/config-var names, attachment UUIDs, and
  * globally unique add-on names, optionally qualified as `app::identity`), but at least
  * one endpoint must resolve to a Heroku Postgres attachment. The SDK's data
- * service host is determined by `heroku-fetch` configuration, including its
- * `HEROKU_DATA_HOST` and `HEROKU_POSTGRESQL_HOST` environment variables and
- * default host. An explicit `clientOptionsByService.data.baseUrl` can also
- * configure the data client. Credential lookup uses the data client's normal
+ * service host follows the `heroku-fetch` 0.4.0 `data` service configuration,
+ * including its environment overrides and default host. An explicit
+ * `clientOptionsByService.data.baseUrl` can also configure the data client.
+ * Credential lookup uses the data client's normal
  * Bearer-token auth unless `credentialToken` is provided. That optional token
  * is used only for the legacy Basic-auth credential lookup; transfer and
  * polling requests always use the normal data client.
@@ -222,10 +234,13 @@ export async function copyDatabase(
   let credentialLookupTimedOut = false
 
   try {
-    const result = await requestWithTimeout(
-      requestSignal => getCredentialCount(combineSignals(signal, requestSignal)),
-      {signal, timeoutMs: lookupTimeoutMs, timeoutValue: CREDENTIAL_LOOKUP_TIMED_OUT},
-    )
+    const lookupBudgetMs = Math.max(0, credentialDeadline - Date.now())
+    const result = lookupBudgetMs > 0
+      ? await requestWithTimeout(
+        requestSignal => getCredentialCount(combineSignals(signal, requestSignal)),
+        {signal, timeoutMs: lookupBudgetMs, timeoutValue: CREDENTIAL_LOOKUP_TIMED_OUT},
+      )
+      : CREDENTIAL_LOOKUP_TIMED_OUT
     if (result === CREDENTIAL_LOOKUP_TIMED_OUT) {
       credentialLookupTimedOut = true
     } else if ('error' in result) {
@@ -245,27 +260,29 @@ export async function copyDatabase(
   }
 
   const callbackBudgetMs = Math.max(0, credentialDeadline - Date.now())
-  if (callbackBudgetMs > 0) {
-    try {
-      const callbackResult = await requestWithTimeout(
-        async () => onCredentialsChecked?.({
-          credentialCount,
-          hasAdditionalCredentials: (credentialCount ?? 0) > 1,
-          ...(credentialWarning ? {warning: credentialWarning} : {}),
-        }),
-        {signal, timeoutMs: callbackBudgetMs, timeoutValue: CREDENTIAL_LOOKUP_TIMED_OUT},
-      )
-      if (callbackResult === CREDENTIAL_LOOKUP_TIMED_OUT) {
-        recordAncillaryError('credential callback', new Error(`credential callback timed out after ${callbackBudgetMs}ms`))
+  if (!signal?.aborted && onCredentialsChecked) {
+    if (callbackBudgetMs > 0) {
+      try {
+        const callbackResult = await requestWithTimeout(
+          async () => onCredentialsChecked({
+            credentialCount,
+            hasAdditionalCredentials: (credentialCount ?? 0) > 1,
+            ...(credentialWarning ? {warning: credentialWarning} : {}),
+          }),
+          {signal, timeoutMs: callbackBudgetMs, timeoutValue: CREDENTIAL_LOOKUP_TIMED_OUT},
+        )
+        if (callbackResult === CREDENTIAL_LOOKUP_TIMED_OUT) {
+          recordAncillaryError('credential callback', new Error(`credential callback timed out after ${callbackBudgetMs}ms`))
+        }
+      } catch (error) {
+        throwIfAborted(signal, secrets)
+        recordAncillaryError('credential callback', error)
       }
-    } catch (error) {
-      throwIfAborted(signal, secrets)
-      recordAncillaryError('credential callback', error)
+    } else {
+      // Notify after a lookup consumes the full deadline, but do not wait or
+      // extend the single total budget for a callback that cannot be awaited.
+      notifyCredentialsChecked()
     }
-  } else if (!signal?.aborted) {
-    // Notify after a lookup consumes the full deadline, but do not wait or
-    // extend the single total budget for a callback that cannot be awaited.
-    notifyCredentialsChecked()
   }
 
   throwIfAborted(signal, secrets)
