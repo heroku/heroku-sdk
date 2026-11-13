@@ -73,7 +73,23 @@ export {pipelineExtensions} from '../platform/pipeline/index.js'
 export {pipelinePromotionExtensions} from '../platform/pipeline/promotion.js'
 export {type ResolveRepoNameOptions, reviewAppConfigExtensions} from '../platform/review-app-config/index.js'
 export {privateToShield, shieldToPrivate} from '../platform/shield.js'
-export {createAndAssociate, type CreateAndAssociateOptions, sniEndpointExtensions} from '../platform/sni-endpoint/index.js'
+export {
+  CertificateDomainsMismatchError,
+  CertificateDomainsRequiredError,
+  CertificateParseError,
+  createAndAssociate,
+  type CreateAndAssociateOptions,
+  type SniCertificate,
+  SniEndpointAmbiguousError,
+  SniEndpointAssociationError,
+  type SniEndpointDeleteByAppOptions,
+  sniEndpointExtensions,
+  type SniEndpointInfoByAppOptions,
+  SniEndpointNotFoundError,
+  type SniEndpointSelector,
+  type SniEndpointUpdateByAppOptions,
+  type SniEndpointWithDomainHostnames,
+} from '../platform/sni-endpoint/index.js'
 export {
   spaceExtensions,
   SpaceNotAllocatedError,

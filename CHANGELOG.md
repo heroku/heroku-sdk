@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.14.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.13.2...sdk-v0.14.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** add SNI endpoint resolvers and pre-upload domain checks ([#197](https://github.com/heroku/heroku-sdk/issues/197))
+
+### Features
+
+* **platform:** add SNI endpoint resolvers and pre-upload domain checks ([#197](https://github.com/heroku/heroku-sdk/issues/197)) ([98ec870](https://github.com/heroku/heroku-sdk/commit/98ec87028233c98b4b5c26f5fec964584b4decf8))
+
+
+### Bug Fixes
+
+* make Basic auth headers and env reads browser-safe; use heroku-fetch service hosts ([#198](https://github.com/heroku/heroku-sdk/issues/198)) ([7e6c2e0](https://github.com/heroku/heroku-sdk/commit/7e6c2e0a1ecc14bfd86b1b4b16ea03e04da2c71a))
+
 ## [0.13.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.13.1...sdk-v0.13.2) (2026-11-11)
 
 
