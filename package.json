@@ -1,6 +1,6 @@
 {
   "name": "@heroku/sdk",
-  "version": "0.13.2",
+  "version": "0.14.0",
   "description": "Heroku SDK",
   "author": "Heroku",
   "type": "module",
@@ -181,6 +181,7 @@
   "dependencies": {
     "@heroku/heroku-fetch": "^0.3.0",
     "@heroku/types": "^5.4.1",
+    "asn1js": "^4.0.0",
     "debug": "^4.4.0"
   }
 }
