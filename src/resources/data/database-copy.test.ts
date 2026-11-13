@@ -1,4 +1,5 @@
 /* eslint-disable camelcase */
+import {HerokuApiClient} from '@heroku/heroku-fetch'
 import {
   afterEach, describe, expect, it, vi,
 } from 'vitest'
@@ -101,6 +102,8 @@ describe('database copy resource', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
   })
 
   it('redacts known endpoint URLs from abort reasons after beforeCopy without creating a transfer', async () => {
@@ -607,6 +610,30 @@ describe('database copy resource', () => {
     expect(result.hasAdditionalCredentials).toBe(true)
   })
 
+  it('completes destructive confirmation before the advisory credential count lookup', async () => {
+    const order: string[] = []
+    const credentials = vi.fn().mockImplementation(async () => {
+      order.push('credentials')
+      return [{user: 'default'}, {user: 'extra'}]
+    })
+    const beforeCopy = vi.fn(preview => {
+      order.push('confirmation')
+      expect(preview).not.toHaveProperty('credentialCount')
+      expect(preview).not.toHaveProperty('hasAdditionalCredentials')
+    })
+    const transferCreate = vi.fn().mockImplementation(async () => {
+      order.push('create')
+      return {uuid: 'transfer-1'}
+    })
+    const ctx = buildCtx({credentials, transferCreate})
+
+    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {beforeCopy})
+
+    expect(order).toEqual(['confirmation', 'credentials', 'create'])
+    expect(result.credentialCount).toBe(2)
+    expect(result.hasAdditionalCredentials).toBe(true)
+  })
+
   it('uses Basic auth only for the optional legacy credential lookup', async () => {
     const order: string[] = []
     const credentials = vi.fn().mockResolvedValue([{user: 'default'}])
@@ -638,6 +665,7 @@ describe('database copy resource', () => {
     expect(makeClient).toHaveBeenCalledOnce()
     expect(makeClient).toHaveBeenCalledWith('data', {
       headers: {Authorization: `Basic ${Buffer.from(`:${token}`).toString('base64')}`},
+      service: 'data',
       token: expect.any(Function),
     })
     const clientOptions = makeClient.mock.calls[0][1] as {token: () => unknown}
@@ -649,6 +677,46 @@ describe('database copy resource', () => {
     expect(infoByApp).toHaveBeenCalledOnce()
     expect(order).toEqual(['credentials', 'create', 'poll'])
     expect(result.credentialCount).toBe(2)
+  })
+
+  it('sends the Basic-auth credential lookup to the default data-service host without environment overrides', async () => {
+    vi.stubEnv('HEROKU_DATA_HOST', '')
+    vi.stubEnv('HEROKU_POSTGRESQL_HOST', '')
+    const requests: Request[] = []
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      requests.push(request)
+      return new Response(JSON.stringify([{user: 'default'}]), {headers: {'content-type': 'application/json'}})
+    }))
+    const makeClient = vi.fn((_inheritFrom: string, overrides: ConstructorParameters<typeof HerokuApiClient>[0]) => new HerokuApiClient(overrides))
+    const ctx = buildCtx({makeClient})
+    const token = 'basic-auth-credential-secret'
+
+    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {credentialToken: token})
+
+    expect(makeClient).toHaveBeenCalledWith('data', expect.objectContaining({service: 'data'}))
+    expect(requests).toHaveLength(1)
+    expect(requests[0].url).toBe('https://api.data.heroku.com/postgres/v0/databases/postgres-1/credentials')
+    expect(requests[0].headers.get('authorization')).toBe(`Basic ${Buffer.from(`:${token}`).toString('base64')}`)
+    expect(result.credentialCount).toBe(1)
+    expect(JSON.stringify(result)).not.toContain(token)
+  })
+
+  it('rejects an untrusted data-service host before fetching with Basic auth', async () => {
+    vi.stubEnv('HEROKU_DATA_HOST', 'https://attacker.example')
+    vi.stubEnv('HEROKU_POSTGRESQL_HOST', '')
+    const fetchMock = vi.fn<typeof globalThis.fetch>()
+    vi.stubGlobal('fetch', fetchMock)
+    const makeClient = vi.fn((_inheritFrom: string, overrides: ConstructorParameters<typeof HerokuApiClient>[0]) => new HerokuApiClient(overrides))
+    const ctx = buildCtx({makeClient})
+    const token = 'basic-auth-credential-secret'
+
+    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {credentialToken: token})
+
+    expect(makeClient).toHaveBeenCalledWith('data', expect.objectContaining({service: 'data'}))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.warnings).toContain('source credential lookup failed: HEROKU_DATA_HOST must use a heroku.com, herokai.com, herokuspace.com, or herokudev.com host')
+    expect(JSON.stringify(result)).not.toContain(token)
   })
 
   it('encodes add-on names in the optional credential lookup path', async () => {
@@ -790,11 +858,20 @@ describe('database copy resource', () => {
 
   it('times out a slow credential lookup before transfer creation and ignores its late result', async () => {
     let settleCredentials!: (credentials: Array<{user: string}>) => void
+    let lookupSignal: AbortSignal | undefined
     const credentials = vi.fn(() => new Promise<Array<{user: string}>>(resolve => {
       settleCredentials = resolve
     }))
     const transferCreate = vi.fn().mockResolvedValue({uuid: 'transfer-1'})
-    const ctx = buildCtx({credentials, transferCreate})
+    const ctx = buildCtx({
+      credentials,
+      onRequest(request, signal) {
+        if (request === 'credentials') lookupSignal = signal
+      },
+      transferCreate,
+    })
+    const {configVar} = ctx.platform as never as {configVar: {infoForApp: ReturnType<typeof vi.fn>}}
+    configVar.infoForApp.mockResolvedValue({DATABASE_URL: 'postgres://source.example/db'})
     const onCredentialsChecked = vi.fn()
 
     const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
@@ -804,6 +881,8 @@ describe('database copy resource', () => {
     const warningSnapshot = [...result.warnings]
 
     expect(credentials).toHaveBeenCalledOnce()
+    expect(lookupSignal?.aborted).toBe(true)
+    expect(lookupSignal?.reason).toMatchObject({name: 'AbortError'})
     expect(onCredentialsChecked).toHaveBeenCalledWith({
       credentialCount: undefined,
       hasAdditionalCredentials: false,
@@ -824,6 +903,134 @@ describe('database copy resource', () => {
     expect(result.warnings.join('; ')).not.toContain('secret-late-credential')
   })
 
+  it('shares one timeout budget between credential lookup and its callback', async () => {
+    vi.useFakeTimers()
+    let lookupSignal: AbortSignal | undefined
+    let startCredentialLookup!: () => void
+    const credentialLookupStarted = new Promise<void>(resolve => {
+      startCredentialLookup = resolve
+    })
+    const credentials = vi.fn(() => new Promise<Array<{user: string}>>(resolve => {
+      setTimeout(() => resolve([{user: 'default'}]), 8)
+    }))
+    const ctx = buildCtx({
+      credentials,
+      onRequest(request, signal) {
+        if (request === 'credentials') {
+          lookupSignal = signal
+          startCredentialLookup()
+        }
+      },
+    })
+    const callbackStarted = vi.fn()
+    const onCredentialsChecked = vi.fn(() => {
+      callbackStarted()
+      return neverSettles()
+    })
+    const pendingCopy = copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      credentialLookupTimeoutMs: 10,
+      onCredentialsChecked,
+    })
+
+    await credentialLookupStarted
+    expect(credentials).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(8)
+    expect(callbackStarted).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(2)
+    const result = await pendingCopy
+
+    expect(lookupSignal?.aborted).toBe(false)
+    expect(result.warnings).toContain('credential callback failed: credential callback timed out after 2ms')
+    expect((ctx.data as never as {transfer: {create: ReturnType<typeof vi.fn>}}).transfer.create).toHaveBeenCalledOnce()
+  })
+
+  it('caps the combined credential lookup and callback timeout at 60 seconds', async () => {
+    vi.useFakeTimers()
+    let lookupSignal: AbortSignal | undefined
+    let startCredentialLookup!: () => void
+    const credentialLookupStarted = new Promise<void>(resolve => {
+      startCredentialLookup = resolve
+    })
+    const credentials = vi.fn(() => new Promise<Array<{user: string}>>(() => {}))
+    const ctx = buildCtx({
+      credentials,
+      onRequest(request, signal) {
+        if (request === 'credentials') {
+          lookupSignal = signal
+          startCredentialLookup()
+        }
+      },
+    })
+    const pendingCopy = copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      credentialLookupTimeoutMs: 60_001,
+    })
+
+    await credentialLookupStarted
+    expect(credentials).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(60_000)
+    const result = await pendingCopy
+
+    expect(lookupSignal?.aborted).toBe(true)
+    expect(result.warnings).toContain('source credential lookup failed: credential lookup timed out after 60000ms')
+  })
+
+  it('aborts a timed-out Basic-auth credential lookup and sanitizes its timeout warning', async () => {
+    const token = 'token-path-private-secret'
+    let lookupSignal: AbortSignal | undefined
+    const credentialGet = vi.fn((_path: string, options: {signal: AbortSignal}) => {
+      lookupSignal = options.signal
+      return new Promise(() => {})
+    })
+    const ctx = buildCtx({makeClient: vi.fn().mockReturnValue({get: credentialGet})})
+    const {configVar} = ctx.platform as never as {configVar: {infoForApp: ReturnType<typeof vi.fn>}}
+    configVar.infoForApp.mockResolvedValue({DATABASE_URL: 'postgres://source-user:source-secret@source.example/db'})
+
+    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      credentialLookupTimeoutMs: 5,
+      credentialToken: token,
+    })
+
+    expect(credentialGet).toHaveBeenCalledOnce()
+    expect(lookupSignal?.aborted).toBe(true)
+    expect(lookupSignal?.reason).toMatchObject({name: 'AbortError'})
+    expect(result.warnings).toContain('source credential lookup failed: credential lookup timed out after 5ms')
+    expect(JSON.stringify(result)).not.toMatch(/token-path-private-secret|source-user|source-secret/)
+  })
+
+  it('aborts a pending Basic-auth lookup with the caller reason and creates no transfer', async () => {
+    const controller = new AbortController()
+    const token = 'token-path-private-secret'
+    const reason = new Error(`cancel ${token} postgres://source-user:source-secret@source.example/db`)
+    let lookupSignal: AbortSignal | undefined
+    let startLookup!: () => void
+    const lookupStarted = new Promise<void>(resolve => {
+      startLookup = resolve
+    })
+    const credentialGet = vi.fn((_path: string, options: {signal: AbortSignal}) => {
+      lookupSignal = options.signal
+      startLookup()
+      return new Promise(() => {})
+    })
+    const transferCreate = vi.fn().mockResolvedValue({uuid: 'transfer-1'})
+    const ctx = buildCtx({makeClient: vi.fn().mockReturnValue({get: credentialGet}), transferCreate})
+    const {configVar} = ctx.platform as never as {configVar: {infoForApp: ReturnType<typeof vi.fn>}}
+    configVar.infoForApp.mockResolvedValue({DATABASE_URL: 'postgres://source-user:source-secret@source.example/db'})
+    const pendingCopy = copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      credentialToken: token,
+      signal: controller.signal,
+    }).catch((error: unknown) => error)
+
+    await lookupStarted
+    controller.abort(reason)
+    const error = await pendingCopy
+
+    expect(error).toMatchObject({message: 'cancel REDACTED postgres://[REDACTED]', name: 'Error'})
+    expect(JSON.stringify(error)).not.toMatch(/token-path-private-secret|source-user|source-secret/)
+    expect(lookupSignal?.aborted).toBe(true)
+    expect(lookupSignal?.reason).toBe(reason)
+    expect(transferCreate).not.toHaveBeenCalled()
+  })
+
   it('awaits the pre-transfer credential callback within its timeout', async () => {
     const transferCreate = vi.fn().mockResolvedValue({uuid: 'transfer-1'})
     const ctx = buildCtx({credentials: vi.fn().mockResolvedValue([{user: 'default'}]), transferCreate})
@@ -835,8 +1042,36 @@ describe('database copy resource', () => {
 
     expect(onCredentialsChecked).toHaveBeenCalledOnce()
     expect(onCredentialsChecked.mock.invocationCallOrder[0]).toBeLessThan(transferCreate.mock.invocationCallOrder[0])
-    expect(result.warnings).toContain('credential callback failed: credential callback timed out after 5ms')
+    expect(result.warnings.join('; ')).toMatch(/credential callback failed: credential callback timed out after \d+ms/)
     expect(transferCreate).toHaveBeenCalledOnce()
+  })
+
+  it('preserves the caller abort reason and does not create a transfer when the credential callback is pending', async () => {
+    const controller = new AbortController()
+    const reason = new Error('cancel while checking credentials')
+    let callbackStarted!: () => void
+    const started = new Promise<void>(resolve => {
+      callbackStarted = resolve
+    })
+    const ctx = buildCtx()
+    const onCredentialsChecked = vi.fn(() => {
+      callbackStarted()
+      return neverSettles()
+    })
+    const pendingCopy = copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      onCredentialsChecked,
+      signal: controller.signal,
+    }).catch((error: unknown) => error)
+
+    await started
+    controller.abort(reason)
+    const error = await pendingCopy
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBe(reason)
+    expect(error).toMatchObject({message: reason.message, name: 'Error'})
+    expect(onCredentialsChecked).toHaveBeenCalledOnce()
+    expect((ctx.data as never as {transfer: {create: ReturnType<typeof vi.fn>}}).transfer.create).not.toHaveBeenCalled()
   })
 
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('rejects invalid credential lookup timeout %s', async credentialLookupTimeoutMs => {

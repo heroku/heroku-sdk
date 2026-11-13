@@ -33,9 +33,29 @@ sdk.data.database.promoteForApp('example-app', 'DATABASE_URL', {
 sdk.data.database.unfollowForApp('example-app', 'DATABASE_URL', {
   beforeUnfollow({following, origin}) {
     const originName: string = origin.type === 'config_var' ? origin.name : origin.hostname
+    if (origin.type === 'config_var') {
+      const {rawName}: {rawName: string} = origin
+      const displayName: string = origin.name
+      void rawName
+      void displayName
+    } else {
+      const {defaultPort, port}: {defaultPort: string; port: string} = origin
+      void port
+      void defaultPort
+    }
+
     const leaderUrl: string = following
     void originName
     void leaderUrl
+  },
+})
+
+sdk.data.database.unfollowForApp('example-app', 'DATABASE_URL', {
+  beforeUnfollow({origin}) {
+    if (origin.type === 'url') {
+      const explicitPort: string = origin.port
+      void explicitPort
+    }
   },
 })
 
@@ -76,3 +96,11 @@ sdk.data.database.waitForReadyForApp('example-app', 'DATABASE_URL', {
     void status
   },
 })
+
+// Composite commands use explicit app-scoped names; former aliases are absent.
+// @ts-expect-error The former promote extension alias was removed.
+sdk.data.database.promote('example-app', 'DATABASE_URL')
+// @ts-expect-error The former copy extension alias was removed.
+sdk.data.database.copy('example-app', 'DATABASE_URL', 'postgres://external.example/db')
+// @ts-expect-error The former waitForReady extension alias was removed.
+sdk.data.database.waitForReady('example-app', 'DATABASE_URL')

@@ -294,10 +294,13 @@ describe('databaseSettings resource', () => {
   describe('extension', () => {
     afterEach(() => {
       vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
     })
 
     it('wires data.databaseSettings through the SDK clients to the settings endpoints', async () => {
       const requests: string[] = []
+      vi.stubEnv('HEROKU_DATA_HOST', '')
+      vi.stubEnv('HEROKU_POSTGRESQL_HOST', '')
       vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>(async (input, init) => {
         const request = input instanceof Request ? input : new Request(input, init)
         requests.push(`${request.method} ${request.url}`)

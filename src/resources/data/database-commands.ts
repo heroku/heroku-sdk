@@ -53,7 +53,11 @@ export class DatabaseAlreadyPromotedError extends Error {
 }
 
 export class DatabaseReleasePhaseError extends Error {
-  constructor(public readonly appIdentity: string) {
+  constructor(
+    public readonly appIdentity: string,
+    public readonly attachRelease?: Release,
+    public readonly detachRelease?: Release,
+  ) {
     super(`Unable to check release phase for ${appIdentity}. Check your Attach DATABASE release for failures.`)
     this.name = 'DatabaseReleasePhaseError'
   }
@@ -181,12 +185,11 @@ export type UnfollowDatabaseOrigin
     defaultPort: string
     hostname: string
     pathname: string
-    pgPort?: string
     port: string
     protocol: string
     type: 'url'
   }
-  | {name: string; type: 'config_var';}
+  | {name: string; rawName: string; type: 'config_var';}
 
 export type UnfollowDatabaseOptions = {
   /** Runs after resolving follower/origin details and before the unfollow request. */
@@ -371,7 +374,14 @@ export async function promoteDatabase(
     }
 
     if (checkingReleasePhase) {
-      result.releasePhase = {...result.releasePhase, status: 'unknown'}
+      const discoveredAttach = error instanceof DatabaseReleasePhaseError ? error.attachRelease : undefined
+      const discoveredDetach = error instanceof DatabaseReleasePhaseError ? error.detachRelease : undefined
+      result.releasePhase = {
+        ...result.releasePhase,
+        ...(discoveredAttach ? {attach: discoveredAttach} : {}),
+        ...(discoveredDetach ? {detach: discoveredDetach} : {}),
+        status: 'unknown',
+      }
       emitProgress(onProgress, {
         attach: result.releasePhase.attach,
         detach: result.releasePhase.detach,
@@ -475,7 +485,7 @@ async function waitForDatabasePromotionRelease(
   const attachId = attachRelease?.id
   const detachId = detachRelease?.id
 
-  if (!attachId || !detachId) throw new DatabaseReleasePhaseError(appIdentity)
+  if (!attachId || !detachId) throw new DatabaseReleasePhaseError(appIdentity, attachRelease, detachRelease)
 
   const deadline = Date.now() + options.timeoutMs
   const pendingAttach = {...attachRelease!, status: 'pending'} as Release
@@ -588,20 +598,18 @@ function databaseOriginFromUrl(uri: string, configVars: ConfigVar): UnfollowData
   let name = names.pop()
   while (names.length > 0 && name === 'DATABASE_URL') name = names.pop()
   if (name) {
-    return {name, type: 'config_var'}
+    return {name: name.replace(/_URL$/, ''), rawName: name, type: 'config_var'}
   }
 
   const connection = new URL(uri)
   const defaultPortValue = defaultPort(connection.protocol)
-  const port = connection.port || defaultPortValue
   return {
     defaultPort: defaultPortValue,
     hostname: connection.hostname,
     pathname: connection.pathname,
-    port,
+    port: connection.port,
     protocol: connection.protocol,
     type: 'url',
-    ...(configVars.PGPORT === undefined ? {} : {pgPort: configVars.PGPORT}),
   }
 }
 
@@ -616,13 +624,17 @@ function emitProgress(
   event: PromoteDatabaseProgressEvent,
 ): void {
   try {
-    const result = onProgress?.(event)
+    const result = onProgress?.(cloneProgressEvent(event))
     if (result && typeof (result as PromiseLike<void>).then === 'function') {
       Promise.resolve(result).catch(() => {})
     }
   } catch {
     // Progress is observational; a broken observer must not alter remote mutation outcome.
   }
+}
+
+function cloneProgressEvent(event: PromoteDatabaseProgressEvent): PromoteDatabaseProgressEvent {
+  return structuredClone(event)
 }
 
 function urlsMatch(candidate: string, value: string): boolean {
