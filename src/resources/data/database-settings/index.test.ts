@@ -303,7 +303,7 @@ describe('databaseSettings resource', () => {
         requests.push(`${request.method} ${request.url}`)
 
         if (request.url === 'https://api.heroku.com/actions/addon-attachments/resolve') return json([pgAttachment()])
-        if (request.url === 'https://postgres-api.heroku.com/postgres/v0/databases/addon-1/config') return json(SETTINGS)
+        if (request.url === 'https://api.data.heroku.com/postgres/v0/databases/addon-1/config') return json(SETTINGS)
         throw new Error(`Unexpected network request: ${request.method} ${request.url}`)
       }))
       const sdk = new HerokuSDK({clientOptions: {token: 'test-token'}, extensions: [databaseSettingsExtensions]})
@@ -314,11 +314,11 @@ describe('databaseSettings resource', () => {
 
       expect(requests).toEqual([
         'POST https://api.heroku.com/actions/addon-attachments/resolve',
-        'GET https://postgres-api.heroku.com/postgres/v0/databases/addon-1/config',
+        'GET https://api.data.heroku.com/postgres/v0/databases/addon-1/config',
         'POST https://api.heroku.com/actions/addon-attachments/resolve',
-        'GET https://postgres-api.heroku.com/postgres/v0/databases/addon-1/config',
+        'GET https://api.data.heroku.com/postgres/v0/databases/addon-1/config',
         'POST https://api.heroku.com/actions/addon-attachments/resolve',
-        'PATCH https://postgres-api.heroku.com/postgres/v0/databases/addon-1/config',
+        'PATCH https://api.data.heroku.com/postgres/v0/databases/addon-1/config',
       ])
     })
   })

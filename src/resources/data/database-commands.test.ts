@@ -365,6 +365,89 @@ describe('database command extensions', () => {
     expect(result.poolerAttachment).toEqual({...pooler, addon: resolvedAttachment.addon})
   })
 
+  it('emits typed progress around attachment, pooler, and release-phase work', async () => {
+    const current = {
+      ...resolvedAttachment,
+      addon: {...resolvedAttachment.addon, id: 'old-id', name: 'old-postgres'},
+      name: 'DATABASE',
+    }
+    const pooler = {
+      ...current, name: 'DATABASE_CONNECTION_POOL', namespace: 'connection-pooling:default',
+    }
+    const attachmentCreate = vi.fn()
+      .mockResolvedValueOnce({...current, id: 'backup-id', name: 'RED'})
+      .mockResolvedValueOnce({...resolvedAttachment, id: 'promoted-id'})
+      .mockResolvedValueOnce({...pooler, addon: resolvedAttachment.addon})
+    const releaseInfo = vi.fn()
+      .mockResolvedValueOnce({id: 'attach-release', status: 'pending'})
+      .mockResolvedValueOnce({id: 'attach-release', status: 'succeeded'})
+      .mockResolvedValueOnce({id: 'detach-release', status: 'succeeded'})
+    const onProgress = vi.fn()
+    const ctx = buildCtx({
+      attachmentCreate,
+      attachmentsByApp: vi.fn().mockResolvedValue([current, pooler]),
+      formationList: vi.fn().mockResolvedValue([{type: 'release'}]),
+      releaseInfo,
+      releaseList: vi.fn().mockResolvedValue([
+        {description: 'Attach DATABASE', id: 'attach-release'},
+        {description: 'Detach DATABASE', id: 'detach-release'},
+      ]),
+    })
+
+    const result = await promoteDatabase(ctx, 'test-app', undefined, {
+      force: true,
+      onProgress,
+      releasePhasePollIntervalMs: 1,
+    })
+
+    expect(result.releasePhase?.status).toBe('succeeded')
+    expect(onProgress.mock.calls.map(([event]) => `${event.type}:${event.stage}:${event.status ?? '-'}`)).toEqual([
+      'attachment:backup:started',
+      'attachment:backup:succeeded',
+      'attachment:promotion:started',
+      'attachment:promotion:succeeded',
+      'pooler-reattachment:reattachment:started',
+      'pooler-reattachment:reattachment:succeeded',
+      'database:resolved:-',
+      'release-phase:started:started',
+      'release-phase:poll:pending',
+      'release-phase:poll:succeeded',
+      'release-phase:completed:succeeded',
+    ])
+  })
+
+  it('ignores progress callback failures without changing completed promotion outcome', async () => {
+    const failure = new Error('progress observer failed')
+    const attachment = {...resolvedAttachment, id: 'promoted-id'}
+    const attachmentCreate = vi.fn().mockResolvedValue(attachment)
+    const onProgress = vi.fn(() => Promise.reject(failure))
+
+    const result = await promoteDatabase(buildCtx({attachmentCreate}), 'test-app', undefined, {
+      force: true,
+      onProgress,
+    })
+
+    expect(result.attachment).toEqual(attachment)
+    expect(result.mutationStatus.attachment).toEqual({attempted: true, status: 'created'})
+    expect(attachmentCreate).toHaveBeenCalledOnce()
+    expect(onProgress).toHaveBeenCalled()
+  })
+
+  it('does not wait for a stalled progress observer before mutating', async () => {
+    const attachment = {...resolvedAttachment, id: 'promoted-id'}
+    const attachmentCreate = vi.fn().mockResolvedValue(attachment)
+    const onProgress = vi.fn(() => new Promise<void>(() => {}))
+
+    const result = await promoteDatabase(buildCtx({attachmentCreate}), 'test-app', undefined, {
+      force: true,
+      onProgress,
+    })
+
+    expect(result.attachment).toEqual(attachment)
+    expect(attachmentCreate).toHaveBeenCalledOnce()
+    expect(onProgress).toHaveBeenCalled()
+  })
+
   it('does not create a duplicate alias for current DATABASE when same database has an alias', async () => {
     const oldAddon = {...resolvedAttachment.addon, id: 'old-database-id', name: 'old-postgres'}
     const current = {...resolvedAttachment, addon: oldAddon, name: 'DATABASE'}
@@ -1053,11 +1136,30 @@ describe('database command extensions', () => {
       addon: resolvedAttachment.addon,
       appIdentity: 'test-app',
       following: 'postgres://host:5432/db',
-      origin: 'LEADER',
+      origin: {name: 'LEADER_URL', type: 'config_var'},
     }))
     expect(databaseUnfollow).toHaveBeenCalledExactlyOnceWith('database-id')
-    expect(result.origin).toBe('LEADER')
+    expect(result.origin).toEqual({name: 'LEADER_URL', type: 'config_var'})
     expect(result.result).toEqual({message: 'unfollowed'})
+  })
+
+  it('returns structured URL origin details including PGPORT and the default port', async () => {
+    const ctx = buildCtx({
+      configVars: vi.fn().mockResolvedValue({PGPORT: '6432'}),
+      databaseInfo: vi.fn().mockResolvedValue({following: 'postgres://db.example.com/mydb'}),
+    })
+
+    const result = await unfollowDatabase(ctx, 'test-app')
+
+    expect(result.origin).toEqual({
+      defaultPort: '5432',
+      hostname: 'db.example.com',
+      pathname: '/mydb',
+      pgPort: '6432',
+      port: '5432',
+      protocol: 'postgres:',
+      type: 'url',
+    })
   })
 
   it('rejects unfollow for non-followers and honors callback failure/cancellation', async () => {
@@ -1166,7 +1268,8 @@ describe('database command extensions', () => {
       resolutionByAttachment,
     })
     const methods = databaseCommandExtensions.factory(ctx)
-    expect(Object.keys(methods)).toEqual(['promote', 'resetForApp', 'unfollowForApp'])
+    expect(Object.keys(methods)).toEqual(['promoteForApp', 'resetForApp', 'unfollowForApp'])
+    expect(methods.promoteForApp).toBeTypeOf('function')
 
     await methods.resetForApp('test-app', 'DB_URL', {extensions: ['Postgis']})
     expect(ctx.data.database.reset).toHaveBeenCalledExactlyOnceWith('database-id', {extensions: ['postgis']})

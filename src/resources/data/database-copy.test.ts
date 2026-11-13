@@ -92,7 +92,7 @@ function buildSdkDataClient(ctx: ResourceCtx) {
   })
 
   return mergeExtensions(makeRoutes(), [databaseCopyExtensions, transferExtensions], ctx) as {
-    database: {copy: typeof copyDatabase}
+    database: {copyForApp: typeof copyDatabase}
     withOptions: (options: {signal?: AbortSignal}) => ReturnType<typeof buildSdkDataClient>
   }
 }
@@ -131,6 +131,7 @@ describe('database copy resource', () => {
     expect(JSON.stringify(error)).not.toMatch(/source-user|source-secret|source-token|target-user|target-secret|target\+token/)
     expect(JSON.stringify(error)).toContain('postgres://user%40name:p%40ss%2Fword@other.example/db?token=tok%2Ben')
     expect(beforeCopy).toHaveBeenCalledOnce()
+    expect((ctx.data as never as {postgresDatabase: {listCredentials: ReturnType<typeof vi.fn>}}).postgresDatabase.listCredentials).not.toHaveBeenCalled()
     expect((ctx.data as never as {transfer: {create: ReturnType<typeof vi.fn>}}).transfer.create).not.toHaveBeenCalled()
   })
 
@@ -180,8 +181,12 @@ describe('database copy resource', () => {
     const ctx = buildCtx({infoByApp, makeClient})
     const {configVar} = ctx.platform as never as {configVar: {infoForApp: ReturnType<typeof vi.fn>}}
     configVar.infoForApp.mockResolvedValue({DATABASE_URL: sourceUrl})
+    const onCredentialsChecked = vi.fn()
 
-    const pendingCopy = copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {credentialToken: token})
+    const pendingCopy = copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      credentialToken: token,
+      onCredentialsChecked,
+    })
     await vi.waitFor(() => expect(credentialGet).toHaveBeenCalledOnce())
     finishTransfer({finished_at: 'now', succeeded: true, uuid: 'transfer-1'})
     const result = await pendingCopy
@@ -196,6 +201,13 @@ describe('database copy resource', () => {
     expect(warning).not.toContain(basicAuthorization)
     expect(warning).not.toContain(Buffer.from(`:${token}`).toString('base64'))
     expect(warning).toContain(unrelatedUrl)
+    expect(onCredentialsChecked).toHaveBeenCalledWith(expect.objectContaining({
+      credentialCount: undefined,
+      hasAdditionalCredentials: false,
+      warning: expect.stringContaining('lookup failed for postgres://[REDACTED]'),
+    }))
+    expect(JSON.stringify(onCredentialsChecked.mock.calls)).not.toContain(token)
+    expect(onCredentialsChecked.mock.invocationCallOrder[0]).toBeLessThan((ctx.data as never as {transfer: {create: ReturnType<typeof vi.fn>}}).transfer.create.mock.invocationCallOrder[0])
   })
 
   it('resolves raw URLs and a Heroku config-var identity, creates the typed transfer, and waits', async () => {
@@ -347,7 +359,7 @@ describe('database copy resource', () => {
       .catch((error_: unknown) => error_)
 
     expect(beforeCopy).toHaveBeenCalledWith(expect.objectContaining({
-      target: expect.objectContaining({confirm: 'db.example.com', name: 'database mydb on db.example.com:5432'}),
+      target: expect.objectContaining({confirm: 'mydb', name: 'database mydb on db.example.com:5432'}),
     }))
     expect(error).toBeInstanceOf(TransferFailedError)
     expect((error as TransferFailedError).transfer).toMatchObject({
@@ -545,6 +557,24 @@ describe('database copy resource', () => {
     expect(result).toEqual(expect.objectContaining({credentialCount: undefined, hasAdditionalCredentials: false}))
   })
 
+  it('does not emit a credential callback or lookup when beforeCopy rejects', async () => {
+    const credentials = vi.fn()
+    const onCredentialsChecked = vi.fn()
+    const beforeCopy = vi.fn(() => {
+      throw new Error('confirmation declined')
+    })
+    const ctx = buildCtx({credentials})
+
+    await expect(copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      beforeCopy,
+      onCredentialsChecked,
+    })).rejects.toThrow('confirmation declined')
+
+    expect(credentials).not.toHaveBeenCalled()
+    expect(onCredentialsChecked).not.toHaveBeenCalled()
+    expect((ctx.data as never as {transfer: {create: ReturnType<typeof vi.fn>}}).transfer.create).not.toHaveBeenCalled()
+  })
+
   it('retrieves classic source credential count before polling and exposes warning fact when count exceeds one', async () => {
     const order: string[] = []
     const credentials = vi.fn().mockResolvedValue([{user: 'default'}, {user: 'extra'}])
@@ -562,11 +592,16 @@ describe('database copy resource', () => {
     })
     const ctx = buildCtx({credentials, infoByApp, transferCreate})
     const onCredentialsChecked = vi.fn()
+    const beforeCopy = vi.fn(() => {
+      order.push('beforeCopy')
+    })
 
-    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {onCredentialsChecked})
+    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {beforeCopy, onCredentialsChecked})
 
     expect(credentials).toHaveBeenCalledWith('addon-1')
-    expect(order).toEqual(['create', 'credentials', 'poll'])
+    expect(credentials).toHaveBeenCalledOnce()
+    expect(order).toEqual(['beforeCopy', 'credentials', 'create', 'poll'])
+    expect(onCredentialsChecked.mock.invocationCallOrder[0]).toBeLessThan(transferCreate.mock.invocationCallOrder[0])
     expect(onCredentialsChecked).toHaveBeenCalledWith({credentialCount: 2, hasAdditionalCredentials: true})
     expect(result.credentialCount).toBe(2)
     expect(result.hasAdditionalCredentials).toBe(true)
@@ -612,7 +647,7 @@ describe('database copy resource', () => {
     expect(credentials).not.toHaveBeenCalled()
     expect(transferCreate).toHaveBeenCalledOnce()
     expect(infoByApp).toHaveBeenCalledOnce()
-    expect(order).toEqual(['create', 'credentials', 'poll'])
+    expect(order).toEqual(['credentials', 'create', 'poll'])
     expect(result.credentialCount).toBe(2)
   })
 
@@ -723,18 +758,94 @@ describe('database copy resource', () => {
     const infoByApp = vi.fn().mockResolvedValue({finished_at: 'now', succeeded: true, uuid: 'transfer-1'})
     const credentials = vi.fn().mockRejectedValue(new Error(`credential service unavailable for ${sourceUrl}`))
     const waitPoller = {onStart: vi.fn(), onStop: vi.fn()}
-    const ctx = buildCtx({credentials, infoByApp})
+    const order: string[] = []
+    credentials.mockImplementation(async () => {
+      order.push('credentials')
+      throw new Error(`credential service unavailable for ${sourceUrl}`)
+    })
+    const transferCreate = vi.fn().mockImplementation(async () => {
+      order.push('create')
+      return {uuid: 'transfer-1'}
+    })
+    const ctx = buildCtx({credentials, infoByApp, transferCreate})
     const {configVar} = ctx.platform as never as {configVar: {infoForApp: ReturnType<typeof vi.fn>}}
     configVar.infoForApp.mockResolvedValue({DATABASE_URL: sourceUrl})
+    const onCredentialsChecked = vi.fn()
 
-    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {waitPoller})
+    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {onCredentialsChecked, waitPoller})
 
     expect(result.transfer).toEqual({finished_at: 'now', succeeded: true, uuid: 'transfer-1'})
     expect(result.warnings).toContain('source credential lookup failed: credential service unavailable for postgres://[REDACTED]')
     expect(result.warnings.join('; ')).not.toContain('source-secret')
+    expect(onCredentialsChecked).toHaveBeenCalledWith({
+      credentialCount: undefined,
+      hasAdditionalCredentials: false,
+      warning: 'source credential lookup failed: credential service unavailable for postgres://[REDACTED]',
+    })
+    expect(order).toEqual(['credentials', 'create'])
     expect(infoByApp).toHaveBeenCalledOnce()
     expect(waitPoller.onStart).toHaveBeenCalledOnce()
     expect(waitPoller.onStop).toHaveBeenCalledOnce()
+  })
+
+  it('times out a slow credential lookup before transfer creation and ignores its late result', async () => {
+    let settleCredentials!: (credentials: Array<{user: string}>) => void
+    const credentials = vi.fn(() => new Promise<Array<{user: string}>>(resolve => {
+      settleCredentials = resolve
+    }))
+    const transferCreate = vi.fn().mockResolvedValue({uuid: 'transfer-1'})
+    const ctx = buildCtx({credentials, transferCreate})
+    const onCredentialsChecked = vi.fn()
+
+    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      credentialLookupTimeoutMs: 5,
+      onCredentialsChecked,
+    })
+    const warningSnapshot = [...result.warnings]
+
+    expect(credentials).toHaveBeenCalledOnce()
+    expect(onCredentialsChecked).toHaveBeenCalledWith({
+      credentialCount: undefined,
+      hasAdditionalCredentials: false,
+      warning: 'source credential lookup failed: credential lookup timed out after 5ms',
+    })
+    expect(onCredentialsChecked.mock.invocationCallOrder[0]).toBeLessThan(transferCreate.mock.invocationCallOrder[0])
+    expect(result.warnings).toContain('source credential lookup failed: credential lookup timed out after 5ms')
+    expect(result.hasAdditionalCredentials).toBe(false)
+    expect(transferCreate).toHaveBeenCalledOnce()
+    expect(credentials.mock.invocationCallOrder[0]).toBeLessThan(transferCreate.mock.invocationCallOrder[0])
+
+    settleCredentials([{user: 'default'}, {user: 'secret-late-credential'}])
+    await new Promise<void>(resolve => {
+      setTimeout(() => resolve(), 0)
+    })
+
+    expect(result.warnings).toEqual(warningSnapshot)
+    expect(result.warnings.join('; ')).not.toContain('secret-late-credential')
+  })
+
+  it('awaits the pre-transfer credential callback within its timeout', async () => {
+    const transferCreate = vi.fn().mockResolvedValue({uuid: 'transfer-1'})
+    const ctx = buildCtx({credentials: vi.fn().mockResolvedValue([{user: 'default'}]), transferCreate})
+    const onCredentialsChecked = vi.fn(() => new Promise<void>(() => {}))
+    const result = await copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      credentialLookupTimeoutMs: 5,
+      onCredentialsChecked,
+    })
+
+    expect(onCredentialsChecked).toHaveBeenCalledOnce()
+    expect(onCredentialsChecked.mock.invocationCallOrder[0]).toBeLessThan(transferCreate.mock.invocationCallOrder[0])
+    expect(result.warnings).toContain('credential callback failed: credential callback timed out after 5ms')
+    expect(transferCreate).toHaveBeenCalledOnce()
+  })
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('rejects invalid credential lookup timeout %s', async credentialLookupTimeoutMs => {
+    const ctx = buildCtx()
+
+    await expect(copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      credentialLookupTimeoutMs,
+    })).rejects.toBeInstanceOf(RangeError)
+    expect((ctx.data as never as {transfer: {create: ReturnType<typeof vi.fn>}}).transfer.create).not.toHaveBeenCalled()
   })
 
   it('returns wait-hook and poll-callback failures as warnings after successful transfer', async () => {
@@ -829,11 +940,11 @@ describe('database copy resource', () => {
   it('surfaces the created transfer ID on post-create abort without running wait-poller stop', async () => {
     const controller = new AbortController()
     const sourceUrl = 'postgres://source-user:source-secret@source.example/db?token=source-token'
-    const infoByApp = vi.fn().mockResolvedValue({finished_at: undefined, succeeded: false, uuid: 'transfer-1'})
-    const credentials = vi.fn().mockImplementation(() => {
+    const infoByApp = vi.fn(() => {
       queueMicrotask(() => controller.abort(new Error(`canceled ${sourceUrl}`)))
-      return Promise.reject(new Error('credential request canceled'))
+      return new Promise(() => {})
     })
+    const credentials = vi.fn().mockResolvedValue([{user: 'default'}])
     const waitPoller = {onStart: vi.fn(), onStop: vi.fn()}
     const ctx = buildCtx({credentials, infoByApp})
     const {configVar} = ctx.platform as never as {configVar: {infoForApp: ReturnType<typeof vi.fn>}}
@@ -875,12 +986,12 @@ describe('database copy resource', () => {
     const controller = new AbortController()
     const abortUrl = 'postgres://user:secret@host/db?sslmode=require'
     const abortReason = {details: {endpoint: abortUrl}}
-    const infoByApp = vi.fn(() => new Promise<never>(() => {}))
-    const transferCancel = vi.fn()
-    const credentials = vi.fn().mockImplementation(() => {
+    const infoByApp = vi.fn(() => {
       queueMicrotask(() => controller.abort(abortReason))
-      return Promise.reject(new Error('credential request canceled'))
+      return new Promise<never>(() => {})
     })
+    const transferCancel = vi.fn()
+    const credentials = vi.fn().mockResolvedValue([{user: 'default'}])
     const ctx = buildCtx({credentials, infoByApp})
     const {transfer: transferApi} = ctx.data as never as {transfer: Record<string, unknown>}
     transferApi.cancel = transferCancel
@@ -939,7 +1050,7 @@ describe('database copy resource', () => {
       },
     })
     const pending = buildSdkDataClient(ctx).withOptions({signal: controller.signal})
-      .database.copy('app-1', 'postgres://source.example/db', 'DATABASE_URL', {timeoutMs: 1000})
+      .database.copyForApp('app-1', 'postgres://source.example/db', 'DATABASE_URL', {timeoutMs: 1000})
       .then(value => ({value}), error_ => ({error_}))
 
     await vi.waitFor(() => expect(infoByApp).toHaveBeenCalledOnce())
@@ -1014,7 +1125,7 @@ describe('database copy resource', () => {
       throw new Error(`could not display ${sourceUrl} -> ${targetUrl}`)
     })
     const pending = buildSdkDataClient(ctx).withOptions({signal: controller.signal})
-      .database.copy('app-1', sourceUrl, 'DATABASE_URL', {
+      .database.copyForApp('app-1', sourceUrl, 'DATABASE_URL', {
         intervalMs: 3,
         onPoll,
         timeoutMs: 50,
@@ -1036,60 +1147,40 @@ describe('database copy resource', () => {
     expect(controller.signal.aborted).toBe(false)
   })
 
-  it('returns a completed transfer without waiting for never-settling credential lookup', async () => {
-    let finishTransfer!: (transfer: {finished_at: string; succeeded: boolean; uuid: string}) => void
-    const transferOutcome = new Promise<{finished_at: string; succeeded: boolean; uuid: string}>(resolve => {
-      finishTransfer = resolve
-    })
-    let settleCredentialLookup!: (credentials: Array<{user: string}>) => void
-    let credentialLookupSettled = false
-    const credentialOutcome = new Promise<Array<{user: string}>>(resolve => {
-      settleCredentialLookup = resolve
-    })
-    const credentials = vi.fn(() => credentialOutcome.then(result => {
-      credentialLookupSettled = true
-      return result
-    }))
-    const infoByApp = vi.fn(() => transferOutcome)
+  it('aborts a pending credential lookup without creating a transfer', async () => {
+    const controller = new AbortController()
+    const credentials = vi.fn(() => new Promise<Array<{user: string}>>(() => {}))
+    const transferCreate = vi.fn().mockResolvedValue({uuid: 'transfer-1'})
+    const onCredentialsChecked = vi.fn()
+    let lookupSignal: AbortSignal | undefined
     let startCredentialLookup!: () => void
     const credentialLookupStarted = new Promise<void>(resolve => {
       startCredentialLookup = resolve
     })
-    let startTransferPoll!: () => void
-    const transferPollStarted = new Promise<void>(resolve => {
-      startTransferPoll = resolve
-    })
-    const requestSignals: {credentials?: AbortSignal; 'transfer-poll'?: AbortSignal} = {}
     const ctx = buildCtx({
       credentials,
-      infoByApp,
       onRequest(request, signal) {
-        if (signal) requestSignals[request] = signal
-        if (request === 'credentials') startCredentialLookup()
-        else startTransferPoll()
+        if (request === 'credentials') {
+          lookupSignal = signal
+          startCredentialLookup()
+        }
       },
+      transferCreate,
     })
 
-    const pendingCopy = copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {timeoutMs: 100})
-    await Promise.all([credentialLookupStarted, transferPollStarted])
+    const pendingCopy = copyDatabase(ctx, 'app-1', 'DATABASE_URL', 'postgres://target.example/db', {
+      onCredentialsChecked,
+      signal: controller.signal,
+    }).catch((error: unknown) => error)
+    await credentialLookupStarted
+    controller.abort(new Error('cancel before transfer'))
 
-    expect(credentials).toHaveBeenCalledOnce()
-    expect(infoByApp).toHaveBeenCalledOnce()
-    expect(credentialLookupSettled).toBe(false)
-    expect(requestSignals.credentials).toBeInstanceOf(AbortSignal)
-    expect(requestSignals['transfer-poll']).toBeInstanceOf(AbortSignal)
-    expect(requestSignals.credentials).not.toBe(requestSignals['transfer-poll'])
-
-    finishTransfer({finished_at: 'now', succeeded: true, uuid: 'transfer-1'})
-    const result = await pendingCopy
-
-    expect(result.transfer).toMatchObject({succeeded: true})
-    expect(result.credentialCount).toBeUndefined()
-    expect(infoByApp).toHaveBeenCalledOnce()
-    expect(credentialLookupSettled).toBe(false)
-    expect(requestSignals.credentials?.aborted).toBe(true)
-    expect(requestSignals['transfer-poll']?.aborted).toBe(false)
-    settleCredentialLookup([{user: 'default'}])
+    const error = await pendingCopy
+    expect(error).toMatchObject({name: 'Error'})
+    expect(controller.signal.aborted).toBe(true)
+    expect(lookupSignal?.aborted).toBe(true)
+    expect(transferCreate).not.toHaveBeenCalled()
+    expect(onCredentialsChecked).not.toHaveBeenCalled()
   })
 
   it('returns async wait-start and poll callback failures settled with the transfer outcome', async () => {
@@ -1164,9 +1255,25 @@ describe('database copy resource', () => {
     expect(PublicDatabaseCopyTransferError).toBe(DatabaseCopyTransferError)
   })
 
+  it('uses a raw endpoint database pathname for confirmation, falling back to its hostname', async () => {
+    const ctx = buildCtx()
+    const beforeCopy = vi.fn()
+
+    await copyDatabase(ctx, 'app-1', 'postgres://db.example.com:5432/my%20database', 'DATABASE_URL', {beforeCopy})
+    expect(beforeCopy).toHaveBeenCalledWith(expect.objectContaining({
+      source: expect.objectContaining({confirm: 'my%20database'}),
+    }))
+
+    const emptyPathBeforeCopy = vi.fn()
+    await copyDatabase(ctx, 'app-1', 'postgres://db.example.com:5432', 'DATABASE_URL', {beforeCopy: emptyPathBeforeCopy})
+    expect(emptyPathBeforeCopy).toHaveBeenCalledWith(expect.objectContaining({
+      source: expect.objectContaining({confirm: 'db.example.com'}),
+    }))
+  })
+
   it('declares the data.database copy extension', () => {
     expect(databaseCopyExtensions.service).toBe('data')
     expect(databaseCopyExtensions.resource).toBe('database')
-    expect(Object.keys(databaseCopyExtensions.factory({} as ResourceCtx))).toEqual(['copy'])
+    expect(Object.keys(databaseCopyExtensions.factory({} as ResourceCtx))).toEqual(['copyForApp'])
   })
 })

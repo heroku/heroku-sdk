@@ -10,7 +10,7 @@ const sdk = new HerokuSDK({
   extensions: [databaseCommandExtensions, databaseCopyExtensions, legacyDatabaseWaitExtensions] as const,
 })
 
-sdk.data.database.waitForReady('example-app', 'DATABASE_URL', {
+sdk.data.database.waitForReadyForApp('example-app', 'DATABASE_URL', {
   onPoll({addon, status}) {
     const databaseName: string = addon.name
     const waiting: boolean | undefined = status['waiting?']
@@ -19,7 +19,7 @@ sdk.data.database.waitForReady('example-app', 'DATABASE_URL', {
   },
 })
 
-sdk.data.database.promote('example-app', 'DATABASE_URL', {
+sdk.data.database.promoteForApp('example-app', 'DATABASE_URL', {
   beforePromote({addon, existingAlias}) {
     const databaseName: string = addon.name
     const aliasName: string | undefined = existingAlias?.name
@@ -32,7 +32,7 @@ sdk.data.database.promote('example-app', 'DATABASE_URL', {
 // composites use `ForApp` because they resolve the raw app/database identity.
 sdk.data.database.unfollowForApp('example-app', 'DATABASE_URL', {
   beforeUnfollow({following, origin}) {
-    const originName: string = origin
+    const originName: string = origin.type === 'config_var' ? origin.name : origin.hostname
     const leaderUrl: string = following
     void originName
     void leaderUrl
@@ -52,7 +52,7 @@ sdk.data.database.unfollow('example-app', 'DATABASE_URL')
 // @ts-expect-error The generated reset route accepts a database ID, not app/database inputs.
 sdk.data.database.reset('example-app', 'DATABASE_URL')
 
-const copyResult = await sdk.data.database.copy('example-app', 'DATABASE_URL', 'postgres://external.example/db', {
+const copyResult = await sdk.data.database.copyForApp('example-app', 'DATABASE_URL', 'postgres://external.example/db', {
   onCredentialsChecked({credentialCount, hasAdditionalCredentials}) {
     const count: number | undefined = credentialCount
     const shouldWarn: boolean = hasAdditionalCredentials
@@ -63,7 +63,14 @@ const copyResult = await sdk.data.database.copy('example-app', 'DATABASE_URL', '
 const copyWarnings: string[] = copyResult.warnings
 void copyWarnings
 
-sdk.data.database.waitForReady('example-app', 'DATABASE_URL', {
+sdk.data.database.promoteForApp('example-app', 'DATABASE_URL', {
+  onProgress(event) {
+    const eventType: string = event.type
+    void eventType
+  },
+})
+
+sdk.data.database.waitForReadyForApp('example-app', 'DATABASE_URL', {
   // @ts-expect-error Legacy wait callbacks receive the database and status together.
   onPoll(status: string) {
     void status

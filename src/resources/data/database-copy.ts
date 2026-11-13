@@ -10,8 +10,13 @@ import {basicAuthorization} from '../../core/basic-authorization.js'
 import {readEnv} from '../../core/env.js'
 import {extendResource, makeCtxClient} from '../../core/extend-resource.js'
 import {combineSignals, withSignal} from '../../core/with-signal.js'
+import {requestWithTimeout} from '../../utils/request-with-timeout.js'
 import {resolvePgDatabase} from './internal/resolve-pg-database.js'
 import {TransferFailedError, TransferTimeoutError, waitForTransfer} from './transfer/wait-for-transfer.js'
+
+const DEFAULT_CREDENTIAL_LOOKUP_TIMEOUT_MS = 10_000
+const MAX_CREDENTIAL_LOOKUP_TIMEOUT_MS = 60_000
+const CREDENTIAL_LOOKUP_TIMED_OUT = {timedOut: true} as const
 
 export type DatabaseCopyEndpoint = {
   /** Confirmation value and readable endpoint name used by the CLI. */
@@ -44,17 +49,20 @@ type CopySecrets = {
  * Progress callbacks are non-blocking: synchronous failures and async
  * rejections observed by transfer completion are reported, while pending
  * hooks cannot delay polling. Later rejections are handled but excluded from
- * the returned warning snapshot. `beforeCopy` is awaited.
+ * the returned warning snapshot. `beforeCopy` is awaited. Credential lookup
+ * finishes (or times out) after `beforeCopy` and before transfer creation.
  */
 export type DatabaseCopyOptions = WaitForTransferOptions & {
   /** Runs after resolving and validating both endpoints, before transfer creation. */
   beforeCopy?: (preview: {source: DatabaseCopyEndpoint; target: DatabaseCopyEndpoint}) => Promise<void> | void
   /** Progress hooks around transfer creation. */
   copyPoller?: Poller<{source: DatabaseCopyEndpoint; target: DatabaseCopyEndpoint}>
+  /** Maximum time to wait for the advisory source credential lookup. Must be positive; capped at 60 seconds. Defaults to 10 seconds. */
+  credentialLookupTimeoutMs?: number
   /** Legacy pg:copy token for Basic-auth source credential lookup only. */
   credentialToken?: string
-  /** Runs after source credential lookup settles, alongside transfer polling. */
-  onCredentialsChecked?: (result: Pick<DatabaseCopyResult, 'credentialCount' | 'hasAdditionalCredentials'>) => Promise<void> | void
+  /** Runs after source credential lookup settles or times out, before transfer creation; awaited up to the credential lookup timeout. */
+  onCredentialsChecked?: (result: Pick<DatabaseCopyResult, 'credentialCount' | 'hasAdditionalCredentials'> & {warning?: string}) => Promise<void> | void
   /**
    * Called after each transfer poll. Async work is observed for rejection but
    * never awaited, so a slow progress callback cannot delay timeout or abort.
@@ -73,7 +81,7 @@ export type DatabaseCopyResult = {
   target: DatabaseCopyEndpoint
   transfer: TransferInfoByAppResult
   /**
-   * Non-fatal credential lookup and progress callback failures observed by
+   * Non-fatal credential lookup and progress callback failures observed before
    * transfer completion. Later async rejections are handled but excluded; this
    * snapshot is not mutated after return.
    */
@@ -104,14 +112,17 @@ export class DatabaseCopyTransferError extends Error {
  * resolver's identities (attachment/config-var names, attachment UUIDs, and
  * globally unique add-on names, optionally qualified as `app::identity`), but at least
  * one endpoint must resolve to a Heroku Postgres attachment. The SDK's data
- * service defaults to `https://postgres-api.heroku.com`; consumers matching
- * the CLI's `HEROKU_DATA_HOST`/`HEROKU_POSTGRESQL_HOST` routing should set
- * `clientOptionsByService.data.baseUrl` to the CLI host (by default
- * `https://api.data.heroku.com`). Credential lookup uses the data client's
- * normal Bearer-token auth unless `credentialToken` is provided. That optional
- * token is used only for the legacy Basic-auth credential lookup; transfer and
- * polling requests always use the normal data client. Do not point an
- * authenticated client at an untrusted host.
+ * service defaults to `https://api.data.heroku.com` to preserve CLI routing
+ * when neither environment variable is set. The SDK validates
+ * `HEROKU_DATA_HOST` first, then `HEROKU_POSTGRESQL_HOST`; the first non-empty
+ * value wins. An explicit
+ * `clientOptionsByService.data.baseUrl` overrides environment routing. Data
+ * service host validation applies to environment-derived values; explicit base
+ * URLs are the caller's responsibility and must be trusted HTTPS hosts because
+ * requests carry Heroku credentials. Credential lookup uses the data client's normal Bearer-token auth unless
+ * `credentialToken` is provided. That optional token is used only for the
+ * legacy Basic-auth credential lookup; transfer and polling requests always
+ * use the normal data client.
  */
 // eslint-disable-next-line complexity, max-params
 export async function copyDatabase(
@@ -121,7 +132,21 @@ export async function copyDatabase(
   targetIdentity: string,
   options: DatabaseCopyOptions = {},
 ): Promise<DatabaseCopyResult> {
-  const {beforeCopy, copyPoller, credentialToken, onCredentialsChecked, signal: callerSignal, waitPoller, ...waitOptions} = options
+  const {
+    beforeCopy,
+    copyPoller,
+    credentialLookupTimeoutMs = DEFAULT_CREDENTIAL_LOOKUP_TIMEOUT_MS,
+    credentialToken,
+    onCredentialsChecked,
+    signal: callerSignal,
+    waitPoller,
+    ...waitOptions
+  } = options
+  if (!Number.isFinite(credentialLookupTimeoutMs) || credentialLookupTimeoutMs <= 0) {
+    throw new RangeError('credentialLookupTimeoutMs must be a finite positive number')
+  }
+
+  const lookupTimeoutMs = Math.min(credentialLookupTimeoutMs, MAX_CREDENTIAL_LOOKUP_TIMEOUT_MS)
   const signal = combineSignals(ctx.operationSignal, callerSignal)
 
   let source: ResolvedCopyEndpoint | undefined
@@ -179,6 +204,43 @@ export async function copyDatabase(
   }
 
   throwIfAborted(signal, secrets)
+  const ancillaryErrors: {error: Error; stage: string}[] = []
+  const warnings: string[] = []
+  const recordAncillaryError = (stage: string, error: unknown) => {
+    const sanitized = safeError(error, secrets)
+    ancillaryErrors.push({error: sanitized, stage})
+    warnings.push(`${stage} failed: ${sanitized.message}`)
+  }
+
+  const credentialResult = await getCredentialCount()
+  throwIfAborted(signal, secrets)
+  let credentialCount: number | undefined
+  let credentialWarning: string | undefined
+  if ('error' in credentialResult) {
+    recordAncillaryError('source credential lookup', credentialResult.error)
+    credentialWarning = warnings.at(-1)
+  } else {
+    credentialCount = credentialResult.count
+  }
+
+  try {
+    const callbackResult = await requestWithTimeout(
+      async () => onCredentialsChecked?.({
+        credentialCount,
+        hasAdditionalCredentials: (credentialCount ?? 0) > 1,
+        ...(credentialWarning ? {warning: credentialWarning} : {}),
+      }),
+      {signal, timeoutMs: lookupTimeoutMs, timeoutValue: CREDENTIAL_LOOKUP_TIMED_OUT},
+    )
+    if (callbackResult === CREDENTIAL_LOOKUP_TIMED_OUT) {
+      recordAncillaryError('credential callback', new Error(`credential callback timed out after ${lookupTimeoutMs}ms`))
+    }
+  } catch (error) {
+    recordAncillaryError('credential callback', error)
+  }
+
+  throwIfAborted(signal, secrets)
+
   const copyStartErrors: unknown[] = []
   let recordCopyStartError = (error: unknown): void => {
     copyStartErrors.push(error)
@@ -220,21 +282,14 @@ export async function copyDatabase(
   secrets.databaseUrls.push(resolvedSource.url, resolvedTarget.url)
 
   const safeCreated = sanitizeTransfer(created, secrets)
-  const ancillaryErrors: {error: Error; stage: string}[] = []
-  const warnings: string[] = []
-  const recordAncillaryError = (stage: string, error: unknown) => {
-    const sanitized = safeError(error, secrets)
-    ancillaryErrors.push({error: sanitized, stage})
-    warnings.push(`${stage} failed: ${sanitized.message}`)
-  }
 
   recordCopyStartError = (error: unknown): void => recordAncillaryError('copy progress callback', error)
 
   for (const error of copyStartErrors.splice(0)) recordCopyStartError(error)
 
-  // Begin observing the remote transfer before optional credential lookup or
-  // caller callbacks can fail. Their errors are reported only after polling
-  // reaches an outcome, so they cannot leave a created transfer unobserved.
+  // Begin observing the remote transfer before progress callbacks can fail.
+  // Their errors are reported only after polling reaches an outcome, so they
+  // cannot leave a created transfer unobserved.
   runAncillaryCallback(() => waitPoller?.onStart?.(safeCreated as TransferCreateResult), error => recordAncillaryError('wait progress callback', error))
   const waitOutcome = waitForTransfer(ctx, herokuDatabase.addon.app.name || appIdentity, transferId, {
     ...waitOptions,
@@ -263,41 +318,7 @@ export async function copyDatabase(
 
   runAncillaryCallback(() => copyPoller?.onStop?.(progress), error => recordAncillaryError('copy progress callback', error))
 
-  let credentialCount: number | undefined
-  let credentialLookupNeeded = true
-  let credentialLookupSettled = false
-  const credentialController = new AbortController()
-  const abortCredentialLookup = () => credentialController.abort(signal?.reason)
-  if (signal?.aborted) abortCredentialLookup()
-  else signal?.addEventListener('abort', abortCredentialLookup, {once: true})
-
-  const credentialData = withSignal(ctx.data, combineSignals(signal, credentialController.signal))
-
-  getCredentialCount().then(result => {
-    credentialLookupSettled = true
-    if (credentialLookupNeeded) {
-      if ('error' in result) recordAncillaryError('source credential lookup', result.error)
-      else {
-        credentialCount = result.count
-        runAncillaryCallback(
-          () => onCredentialsChecked?.({credentialCount, hasAdditionalCredentials: (credentialCount ?? 0) > 1}),
-          error => recordAncillaryError('credential callback', error),
-        )
-      }
-    }
-  }).catch(error => {
-    credentialLookupSettled = true
-    if (credentialLookupNeeded) recordAncillaryError('source credential lookup', error)
-  })
-
   const outcome = await waitOutcome
-
-  if (!credentialLookupSettled) {
-    credentialLookupNeeded = false
-    if (!credentialController.signal.aborted) credentialController.abort()
-  }
-
-  signal?.removeEventListener('abort', abortCredentialLookup)
 
   if ('error' in outcome) {
     if (signal?.aborted) {
@@ -355,15 +376,24 @@ export async function copyDatabase(
   async function getCredentialCount(): Promise<{count: number | undefined} | {error: unknown}> {
     try {
       if (!resolvedSource.database) return {count: undefined}
-      const credentialList = credentialToken === undefined
-        ? await credentialData.postgresDatabase.listCredentials(resolvedSource.database.addon.id) as unknown as CredentialInfo[]
-        : await listCredentialsWithToken(
-          ctx,
-          resolvedSource.database.addon.name,
-          credentialToken,
-          combineSignals(signal, credentialController.signal),
-        )
-      return {count: credentialList.length}
+      const lookup = await requestWithTimeout(
+        async requestSignal => {
+          const lookupSignal = combineSignals(signal, requestSignal)
+          if (credentialToken !== undefined) {
+            return listCredentialsWithToken(ctx, resolvedSource.database!.addon.name, credentialToken, lookupSignal)
+          }
+
+          return withSignal(ctx.data, lookupSignal).postgresDatabase
+            .listCredentials(resolvedSource.database!.addon.id) as unknown as Promise<CredentialInfo[]>
+        },
+        {signal, timeoutMs: lookupTimeoutMs, timeoutValue: CREDENTIAL_LOOKUP_TIMED_OUT},
+      )
+
+      if ('timedOut' in lookup) {
+        return {error: new Error(`credential lookup timed out after ${lookupTimeoutMs}ms`)}
+      }
+
+      return {count: lookup.length}
     } catch (error) {
       return {error}
     }
@@ -372,7 +402,8 @@ export async function copyDatabase(
 
 function publicEndpoint(endpoint: ResolvedCopyEndpoint, secrets: CopySecrets): DatabaseCopyEndpoint {
   const {confirm: endpointConfirm, database, name, url} = endpoint
-  const confirm = database ? endpointConfirm : new URL(url).hostname
+  const rawUrl = new URL(url)
+  const confirm = database ? endpointConfirm : rawUrl.pathname.slice(1) || rawUrl.hostname
 
   return sanitizeTransfer({
     confirm,
@@ -616,7 +647,7 @@ async function resolveCopyEndpoint(
 }
 
 export const databaseCopyExtensions = extendResource('data', 'database', ctx => ({
-  copy: (
+  copyForApp: (
     appIdentity: string,
     sourceIdentity: string,
     targetIdentity: string,

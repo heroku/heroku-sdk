@@ -93,12 +93,52 @@ export type PromoteDatabaseOptions = {
   force?: boolean
   /** Runs after the current DATABASE backup alias is created, if needed. */
   onBackupAttachment?: (attachment: AddOnAttachment) => Promise<void> | void
+  /**
+   * Receives best-effort progress updates. Synchronous throws and rejected
+   * promises are ignored so an observer cannot change the promotion outcome.
+   */
+  onProgress?: (event: PromoteDatabaseProgressEvent) => Promise<void> | void
   /** Delay between release-phase status polls. Defaults to 5 seconds. */
   releasePhasePollIntervalMs?: number
   /** Maximum time to wait for release-phase completion. Defaults to 15 minutes. */
   releasePhaseTimeoutMs?: number
   signal?: AbortSignal
 }
+
+export type PromoteDatabaseProgressEvent
+  = | {
+    attach?: Release
+    detach?: Release
+    stage: 'completed' | 'poll' | 'started'
+    status: PromoteDatabaseReleasePhaseStatus
+    type: 'release-phase'
+  }
+  | {
+    attachment?: AddOnAttachment
+    stage: 'backup' | 'promotion'
+    status: 'started' | 'succeeded' | 'unknown'
+    type: 'attachment'
+  }
+  | {
+    attachment?: AddOnAttachment
+    stage: 'reattachment'
+    status: 'started' | 'succeeded' | 'unknown'
+    type: 'pooler-reattachment'
+  }
+  | {
+    database: DatabaseCommandInfo
+    stage: 'resolved'
+    type: 'database'
+  }
+
+export type PromoteDatabaseReleasePhaseStatus
+  = | 'failed'
+  | 'not_required'
+  | 'pending'
+  | 'started'
+  | 'succeeded'
+  | 'timed_out'
+  | 'unknown'
 
 export type PromoteDatabasePartialResult = {
   addon: ResolvedPgDatabase
@@ -133,8 +173,20 @@ export type UnfollowDatabasePreview = {
   attachment: AddOnAttachment
   database: DatabaseCommandInfo
   following: string
-  origin: string
+  origin: UnfollowDatabaseOrigin
 }
+
+export type UnfollowDatabaseOrigin
+  = | {
+    defaultPort: string
+    hostname: string
+    pathname: string
+    pgPort?: string
+    port: string
+    protocol: string
+    type: 'url'
+  }
+  | {name: string; type: 'config_var';}
 
 export type UnfollowDatabaseOptions = {
   /** Runs after resolving follower/origin details and before the unfollow request. */
@@ -146,7 +198,7 @@ export type UnfollowDatabaseResult = {
   addon: ResolvedPgDatabase
   database: DatabaseCommandInfo
   following: string
-  origin: string
+  origin: UnfollowDatabaseOrigin
   result: DatabaseUnfollowResponse
 }
 
@@ -175,7 +227,8 @@ export async function promoteDatabase(
   options: PromoteDatabaseOptions = {},
 ): Promise<PromoteDatabaseResult> {
   const {
-    as, beforePromote, force, onBackupAttachment, releasePhasePollIntervalMs = RELEASE_PHASE_POLL_INTERVAL_MS,
+    as, beforePromote, force, onBackupAttachment, onProgress,
+    releasePhasePollIntervalMs = RELEASE_PHASE_POLL_INTERVAL_MS,
     releasePhaseTimeoutMs = RELEASE_PHASE_TIMEOUT_MS, signal: callerSignal,
   } = options
   validateReleasePhaseTimeouts(releasePhaseTimeoutMs, releasePhasePollIntervalMs)
@@ -238,6 +291,7 @@ export async function promoteDatabase(
   try {
     if (current && !existingAlias) {
       result.mutationStatus.backupAttachment = {attempted: true, status: 'unknown'}
+      emitProgress(onProgress, {stage: 'backup', status: 'started', type: 'attachment'})
       result.backupAttachment = await platform.addOnAttachment.create({
         addon: current.addon.name,
         app: appIdentity,
@@ -245,15 +299,23 @@ export async function promoteDatabase(
         namespace: current.namespace,
       })
       result.mutationStatus.backupAttachment = {attempted: true, status: 'created'}
+      emitProgress(onProgress, {
+        attachment: result.backupAttachment, stage: 'backup', status: 'succeeded', type: 'attachment',
+      })
       await onBackupAttachment?.(result.backupAttachment)
     }
 
     result.mutationStatus.attachment = {attempted: true, status: 'unknown'}
+    emitProgress(onProgress, {stage: 'promotion', status: 'started', type: 'attachment'})
     result.attachment = await platform.addOnAttachment.create(promotionBody)
     result.mutationStatus.attachment = {attempted: true, status: 'created'}
+    emitProgress(onProgress, {
+      attachment: result.attachment, stage: 'promotion', status: 'succeeded', type: 'attachment',
+    })
 
     if (currentPooler) {
       result.mutationStatus.poolerAttachment = {attempted: true, status: 'unknown'}
+      emitProgress(onProgress, {stage: 'reattachment', status: 'started', type: 'pooler-reattachment'})
       result.poolerAttachment = await platform.addOnAttachment.create({
         addon: addon.name,
         app: appIdentity,
@@ -262,22 +324,63 @@ export async function promoteDatabase(
         namespace: POOLER_NAMESPACE,
       })
       result.mutationStatus.poolerAttachment = {attempted: true, status: 'created'}
+      emitProgress(onProgress, {
+        attachment: result.poolerAttachment, stage: 'reattachment', status: 'succeeded', type: 'pooler-reattachment',
+      })
     }
 
     result.database = await data.database.info(addon.id) as DatabaseCommandInfo
+    emitProgress(onProgress, {database: result.database, stage: 'resolved', type: 'database'})
     checkingReleasePhase = true
+    emitProgress(onProgress, {stage: 'started', status: 'started', type: 'release-phase'})
     result.releasePhase = await waitForDatabasePromotionRelease(appIdentity, platform, {
-      onProgress(releasePhase) {
+      onProgress(releasePhase, stage) {
         result.releasePhase = releasePhase
+        if (stage === 'initial') return
+
+        emitProgress(onProgress, {
+          attach: releasePhase.attach,
+          detach: releasePhase.detach,
+          stage,
+          status: normalizeReleaseProgressStatus(stage === 'poll' && releasePhase.status === 'unknown'
+            ? releasePhase.attach?.status ?? 'unknown'
+            : releasePhase.status),
+          type: 'release-phase',
+        })
       },
       pollIntervalMs: releasePhasePollIntervalMs,
       signal,
       timeoutMs: releasePhaseTimeoutMs,
     })
+    if (!result.releasePhase) {
+      emitProgress(onProgress, {stage: 'completed', status: 'not_required', type: 'release-phase'})
+    }
 
     return result as PromoteDatabaseResult
   } catch (error) {
-    if (checkingReleasePhase) result.releasePhase = {...result.releasePhase, status: 'unknown'}
+    if (result.mutationStatus.backupAttachment.status === 'unknown') {
+      emitProgress(onProgress, {stage: 'backup', status: 'unknown', type: 'attachment'})
+    }
+
+    if (result.mutationStatus.attachment.status === 'unknown') {
+      emitProgress(onProgress, {stage: 'promotion', status: 'unknown', type: 'attachment'})
+    }
+
+    if (result.mutationStatus.poolerAttachment.status === 'unknown') {
+      emitProgress(onProgress, {stage: 'reattachment', status: 'unknown', type: 'pooler-reattachment'})
+    }
+
+    if (checkingReleasePhase) {
+      result.releasePhase = {...result.releasePhase, status: 'unknown'}
+      emitProgress(onProgress, {
+        attach: result.releasePhase.attach,
+        detach: result.releasePhase.detach,
+        stage: 'completed',
+        status: 'unknown',
+        type: 'release-phase',
+      })
+    }
+
     throwPostPromotionError(result, error, signal)
   }
 }
@@ -306,7 +409,7 @@ export async function unfollowDatabase(
   if (!database.following) throw new DatabaseNotFollowerError(addon)
 
   const configVars = await platform.configVar.infoForApp(appIdentity) as ConfigVar
-  const origin = databaseNameFromUrl(database.following, configVars)
+  const origin = databaseOriginFromUrl(database.following, configVars)
   const preview = {
     addon,
     appIdentity,
@@ -349,12 +452,15 @@ export async function resetDatabase(
   return {addon, result}
 }
 
-/* eslint-disable no-await-in-loop, complexity -- release status polling is sequential and preserves legacy guards */
+/* eslint-disable no-await-in-loop -- release status polling is sequential and preserves legacy guards */
 async function waitForDatabasePromotionRelease(
   appIdentity: string,
   platform: ResourceCtx['platform'],
   options: {
-    onProgress: (releasePhase: NonNullable<PromoteDatabaseResult['releasePhase']>) => void
+    onProgress: (
+      releasePhase: NonNullable<PromoteDatabaseResult['releasePhase']>,
+      stage: 'completed' | 'initial' | 'poll',
+    ) => Promise<void> | void
     pollIntervalMs: number
     signal?: AbortSignal
     timeoutMs: number
@@ -369,20 +475,20 @@ async function waitForDatabasePromotionRelease(
   const attachId = attachRelease?.id
   const detachId = detachRelease?.id
 
-  if (attachRelease || detachRelease) {
-    options.onProgress({attach: attachRelease, detach: detachRelease, status: 'unknown'})
-  }
-
   if (!attachId || !detachId) throw new DatabaseReleasePhaseError(appIdentity)
 
   const deadline = Date.now() + options.timeoutMs
   const pendingAttach = {...attachRelease!, status: 'pending'} as Release
   let lastAttach = pendingAttach
-  options.onProgress({attach: lastAttach, status: 'unknown'})
+  await options.onProgress({attach: lastAttach, status: 'unknown'}, 'initial')
   while (true) {
     options.signal?.throwIfAborted()
     const remainingMs = deadline - Date.now()
-    if (remainingMs <= 0) return {attach: lastAttach, status: 'timed_out'}
+    if (remainingMs <= 0) {
+      const result = {attach: lastAttach, status: 'timed_out' as const}
+      await options.onProgress(result, 'completed')
+      return result
+    }
 
     const attach = await waitForReleaseInfo(
       requestSignal => withSignal(platform, requestSignal).release.info(appIdentity, attachId),
@@ -390,22 +496,31 @@ async function waitForDatabasePromotionRelease(
       options.signal,
     )
     if (attach === RELEASE_PHASE_TIMED_OUT || Date.now() >= deadline) {
-      return {attach: lastAttach, status: 'timed_out'}
+      const result = {attach: lastAttach, status: 'timed_out' as const}
+      await options.onProgress(result, 'completed')
+      return result
     }
 
     lastAttach = attach
-    options.onProgress({
+    await options.onProgress({
       attach: lastAttach,
       status: attach.status === 'succeeded' || attach.status === 'failed' ? attach.status : 'unknown',
-    })
+    }, 'poll')
     if (attach.status === 'succeeded') {
       const detach = await waitForReleaseInfo(
         requestSignal => withSignal(platform, requestSignal).release.info(appIdentity, detachId),
         deadline - Date.now(),
         options.signal,
       )
-      if (detach === RELEASE_PHASE_TIMED_OUT || Date.now() >= deadline) return {attach, status: 'succeeded'}
-      return {attach, detach, status: 'succeeded'}
+      if (detach === RELEASE_PHASE_TIMED_OUT || Date.now() >= deadline) {
+        const result = {attach, status: 'succeeded' as const}
+        await options.onProgress(result, 'completed')
+        return result
+      }
+
+      const result = {attach, detach, status: 'succeeded' as const}
+      await options.onProgress(result, 'completed')
+      return result
     }
 
     if (attach.status === 'failed') {
@@ -414,8 +529,15 @@ async function waitForDatabasePromotionRelease(
         deadline - Date.now(),
         options.signal,
       )
-      if (detach === RELEASE_PHASE_TIMED_OUT || Date.now() >= deadline) return {attach, status: 'failed'}
-      return {attach, detach, status: 'failed'}
+      if (detach === RELEASE_PHASE_TIMED_OUT || Date.now() >= deadline) {
+        const result = {attach, status: 'failed' as const}
+        await options.onProgress(result, 'completed')
+        return result
+      }
+
+      const result = {attach, detach, status: 'failed' as const}
+      await options.onProgress(result, 'completed')
+      return result
     }
 
     const pollDelayMs = Math.min(options.pollIntervalMs, deadline - Date.now())
@@ -459,16 +581,48 @@ function throwPostPromotionError(
   throw new DatabasePromotionError(result, cause)
 }
 
-function databaseNameFromUrl(uri: string, configVars: ConfigVar): string {
+function databaseOriginFromUrl(uri: string, configVars: ConfigVar): UnfollowDatabaseOrigin {
   const names = Object.keys(configVars).filter(name => urlsMatch(configVars[name], uri))
   names.sort((a, b) => Number(a === 'DATABASE_URL') - Number(b === 'DATABASE_URL'))
 
   let name = names.pop()
   while (names.length > 0 && name === 'DATABASE_URL') name = names.pop()
-  if (name) return name.replace(/_URL$/, '')
+  if (name) {
+    return {name, type: 'config_var'}
+  }
 
   const connection = new URL(uri)
-  return `${connection.hostname}:${connection.port || defaultPort(connection.protocol)}${connection.pathname}`
+  const defaultPortValue = defaultPort(connection.protocol)
+  const port = connection.port || defaultPortValue
+  return {
+    defaultPort: defaultPortValue,
+    hostname: connection.hostname,
+    pathname: connection.pathname,
+    port,
+    protocol: connection.protocol,
+    type: 'url',
+    ...(configVars.PGPORT === undefined ? {} : {pgPort: configVars.PGPORT}),
+  }
+}
+
+function normalizeReleaseProgressStatus(status: string): PromoteDatabaseReleasePhaseStatus {
+  return (status === 'succeeded' || status === 'failed' || status === 'timed_out' || status === 'pending'
+    ? status
+    : 'unknown')
+}
+
+function emitProgress(
+  onProgress: PromoteDatabaseOptions['onProgress'],
+  event: PromoteDatabaseProgressEvent,
+): void {
+  try {
+    const result = onProgress?.(event)
+    if (result && typeof (result as PromiseLike<void>).then === 'function') {
+      Promise.resolve(result).catch(() => {})
+    }
+  } catch {
+    // Progress is observational; a broken observer must not alter remote mutation outcome.
+  }
 }
 
 function urlsMatch(candidate: string, value: string): boolean {
@@ -499,7 +653,8 @@ function normalizeExtensions(extensions?: string | string[]): string[] | undefin
 }
 
 export const databaseCommandExtensions = extendResource('data', 'database', ctx => ({
-  promote: (
+  /** Canonical app-scoped name; replaces the former `promote` extension method. */
+  promoteForApp: (
     appIdentity: string,
     databaseIdentity?: string,
     options?: PromoteDatabaseOptions,
