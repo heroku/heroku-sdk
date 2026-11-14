@@ -132,7 +132,7 @@ export class DatabaseCopyTransferError extends Error {
  * resolver's identities (attachment/config-var names, attachment UUIDs, and
  * globally unique add-on names, optionally qualified as `app::identity`), but at least
  * one endpoint must resolve to a Heroku Postgres attachment. The SDK's data
- * service host follows the `heroku-fetch` 0.4.0 `data` service configuration,
+ * service host follows the `heroku-fetch` `data` service configuration,
  * including its environment overrides and default host. An explicit
  * `clientOptionsByService.data.baseUrl` can also configure the data client.
  * Credential lookup uses the data client's normal
@@ -272,7 +272,9 @@ export async function copyDatabase(
           {signal, timeoutMs: callbackBudgetMs, timeoutValue: CREDENTIAL_LOOKUP_TIMED_OUT},
         )
         if (callbackResult === CREDENTIAL_LOOKUP_TIMED_OUT) {
-          recordAncillaryError('credential callback', new Error(`credential callback timed out after ${callbackBudgetMs}ms`))
+          recordAncillaryError('credential callback', new Error(
+            `credential callback timed out within the ${lookupTimeoutMs}ms credential lookup budget`,
+          ))
         }
       } catch (error) {
         throwIfAborted(signal, secrets)

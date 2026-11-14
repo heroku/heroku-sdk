@@ -945,7 +945,9 @@ describe('database copy resource', () => {
     const result = await pendingCopy
 
     expect(lookupSignal?.aborted).toBe(false)
-    expect(result.warnings).toContain('credential callback failed: credential callback timed out after 2ms')
+    expect(result.warnings).toContain(
+      'credential callback failed: credential callback timed out within the 10ms credential lookup budget',
+    )
     expect((ctx.data as never as {transfer: {create: ReturnType<typeof vi.fn>}}).transfer.create).toHaveBeenCalledOnce()
   })
 
@@ -1050,7 +1052,9 @@ describe('database copy resource', () => {
 
     expect(onCredentialsChecked).toHaveBeenCalledOnce()
     expect(onCredentialsChecked.mock.invocationCallOrder[0]).toBeLessThan(transferCreate.mock.invocationCallOrder[0])
-    expect(result.warnings.join('; ')).toMatch(/credential callback failed: credential callback timed out after \d+ms/)
+    expect(result.warnings.join('; ')).toMatch(
+      /credential callback failed: credential callback timed out within the 5ms credential lookup budget/,
+    )
     expect(transferCreate).toHaveBeenCalledOnce()
   })
 
