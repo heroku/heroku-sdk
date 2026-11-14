@@ -272,9 +272,7 @@ export async function copyDatabase(
           {signal, timeoutMs: callbackBudgetMs, timeoutValue: CREDENTIAL_LOOKUP_TIMED_OUT},
         )
         if (callbackResult === CREDENTIAL_LOOKUP_TIMED_OUT) {
-          recordAncillaryError('credential callback', new Error(
-            `credential callback timed out within the ${lookupTimeoutMs}ms credential lookup budget`,
-          ))
+          recordAncillaryError('credential callback', new Error(`credential callback timed out within the configured ${lookupTimeoutMs}ms credential budget`))
         }
       } catch (error) {
         throwIfAborted(signal, secrets)
