@@ -61,10 +61,10 @@ function buildCtx(opts: {
 }
 
 describe('legacyDatabaseWaitExtensions', () => {
-  it('declares data.database and exposes waitForReady', () => {
+  it('declares data.database and exposes waitForReadyForApp', () => {
     expect(legacyDatabaseWaitExtensions.service).toBe('data')
     expect(legacyDatabaseWaitExtensions.resource).toBe('database')
-    expect(typeof legacyDatabaseWaitExtensions.factory({data: {} as never, platform: {} as never}).waitForReady).toBe('function')
+    expect(typeof legacyDatabaseWaitExtensions.factory({data: {} as never, platform: {} as never}).waitForReadyForApp).toBe('function')
   })
 })
 

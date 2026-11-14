@@ -134,7 +134,7 @@ function normalizeWaitInterval(waitIntervalMs?: number): number {
 }
 
 export const legacyDatabaseWaitExtensions = extendResource('data', 'database', ctx => ({
-  waitForReady: (
+  waitForReadyForApp: (
     appIdentity: string,
     addonIdentity?: string,
     options?: WaitForLegacyDatabaseReadyOptions,
