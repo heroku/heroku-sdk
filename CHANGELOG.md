@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.15.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.14.1...sdk-v0.15.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **data:** The data.database extension removes `promote`, `copy`, and `waitForReady`; use `promoteForApp`, `copyForApp`, and `waitForReadyForApp`. `unfollowForApp` changes `origin` from a string to a discriminated union describing config-var or URL origins. Raw PostgreSQL URL confirmation changes from the hostname to the URL pathname/database name, falling back to the hostname when empty. Copy credential lookup and `onCredentialsChecked` now run after `beforeCopy` confirmation; the credential count is unavailable during confirmation, and lookup/callback failures are advisory warnings.
+
+### Features
+
+* **data:** harden PostgreSQL command workflows ([9fc1526](https://github.com/heroku/heroku-sdk/commit/9fc15267cbbfc18a3b9bab03e7e599d7af106a8a))
+
 ## [0.14.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.14.0...sdk-v0.14.1) (2026-11-13)
 
 
