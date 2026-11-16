@@ -1228,7 +1228,8 @@ describe('add-on resource', () => {
 
     it('throws when the delete response has no body rather than fabricating an empty add-on', async () => {
       const {addOnDelete, ctx, infoByApp} = buildDestroyCtx()
-      addOnDelete.mockResolvedValue()
+      // eslint-disable-next-line unicorn/no-useless-undefined
+      addOnDelete.mockResolvedValue(undefined)
 
       await expect(destroyAndWait(ctx, 'my-app', 'my-postgres')).rejects.toThrow('returned no response body')
       expect(infoByApp).not.toHaveBeenCalled()

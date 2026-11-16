@@ -20,14 +20,16 @@ import {
 function buildCtx({favorites = []}: {favorites?: FavoriteListResult} = {}) {
   const list = vi.fn().mockResolvedValue(favorites)
   const create = vi.fn()
-  const remove = vi.fn().mockResolvedValue()
+  // eslint-disable-next-line unicorn/no-useless-undefined
+  const remove = vi.fn().mockResolvedValue(undefined)
   const dashboardBackend = {
     favorite: {create, delete: remove, list},
     withOptions: vi.fn(),
   }
   const scopedList = vi.fn().mockResolvedValue(favorites)
   const scopedCreate = vi.fn()
-  const scopedRemove = vi.fn().mockResolvedValue()
+  // eslint-disable-next-line unicorn/no-useless-undefined
+  const scopedRemove = vi.fn().mockResolvedValue(undefined)
   const scopedDashboardBackend = {
     favorite: {create: scopedCreate, delete: scopedRemove, list: scopedList},
     withOptions: vi.fn(),
@@ -69,7 +71,8 @@ describe('dashboard-backend favorite extensions', () => {
 
     it('accepts a no-content create response', async () => {
       const {create, ctx} = buildCtx()
-      create.mockResolvedValue()
+      // eslint-disable-next-line unicorn/no-useless-undefined
+      create.mockResolvedValue(undefined)
 
       await expect(addByAppName(ctx, 'example-app')).resolves.toBeUndefined()
     })
@@ -287,7 +290,8 @@ describe('dashboard-backend favorite extensions', () => {
   it('exposes both methods through the favorite resource extension', async () => {
     const {create, ctx, delete: deleteFavorite, list} = buildCtx()
     const methods = favoriteExtensions.factory(ctx)
-    create.mockResolvedValue()
+    // eslint-disable-next-line unicorn/no-useless-undefined
+    create.mockResolvedValue(undefined)
     list.mockResolvedValueOnce([]).mockResolvedValue([favorite('favorite-1', 'example-app')])
 
     await methods.addByAppName('example-app')

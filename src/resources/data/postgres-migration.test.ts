@@ -88,10 +88,12 @@ function buildCtx(opts: {
   const data: Record<string, unknown> = {
     postgres: {info: opts.postgresInfo ?? vi.fn()},
     postgresMigration: {
-      cancel: opts.migrationCancel ?? vi.fn().mockResolvedValue(),
+      // eslint-disable-next-line unicorn/no-useless-undefined
+      cancel: opts.migrationCancel ?? vi.fn().mockResolvedValue(undefined),
       create: opts.migrationCreate ?? vi.fn(),
       info: opts.migrationInfo ?? vi.fn(),
-      run: opts.migrationRun ?? vi.fn().mockResolvedValue(),
+      // eslint-disable-next-line unicorn/no-useless-undefined
+      run: opts.migrationRun ?? vi.fn().mockResolvedValue(undefined),
     },
   }
   data.withOptions = vi.fn(() => data)
@@ -231,7 +233,8 @@ describe('run', () => {
     const migrationInfo = vi.fn()
       .mockResolvedValueOnce(gated)
       .mockResolvedValueOnce(postAction)
-    const migrationRun = vi.fn().mockResolvedValue()
+    // eslint-disable-next-line unicorn/no-useless-undefined
+    const migrationRun = vi.fn().mockResolvedValue(undefined)
     const ctx = buildCtx({migrationInfo, migrationRun})
 
     const acted = await run(ctx, 'advanced-addon')
@@ -259,7 +262,8 @@ describe('run', () => {
   it('throws MigrationNotRunnableError (carrying the migration) without running when not ready', async () => {
     const migration = buildMigration({status: 'migrating'})
     const migrationInfo = vi.fn().mockResolvedValue(migration)
-    const migrationRun = vi.fn().mockResolvedValue()
+    // eslint-disable-next-line unicorn/no-useless-undefined
+    const migrationRun = vi.fn().mockResolvedValue(undefined)
     const ctx = buildCtx({migrationInfo, migrationRun})
 
     const error = await run(ctx, 'advanced-addon').catch((error_: unknown) => error_)
@@ -289,7 +293,8 @@ describe('cancel', () => {
     const migrationInfo = vi.fn()
       .mockResolvedValueOnce(gated)
       .mockResolvedValueOnce(postAction)
-    const migrationCancel = vi.fn().mockResolvedValue()
+    // eslint-disable-next-line unicorn/no-useless-undefined
+    const migrationCancel = vi.fn().mockResolvedValue(undefined)
     const ctx = buildCtx({migrationCancel, migrationInfo})
 
     const acted = await cancel(ctx, 'advanced-addon')
