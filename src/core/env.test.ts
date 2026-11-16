@@ -20,7 +20,8 @@ describe('readEnv', () => {
   })
 
   it('returns undefined without a process global, as in a browser', () => {
-    vi.stubGlobal('process')
+    // eslint-disable-next-line unicorn/no-useless-undefined
+    vi.stubGlobal('process', undefined)
     expect(readEnv('PATH')).toBeUndefined()
   })
 
