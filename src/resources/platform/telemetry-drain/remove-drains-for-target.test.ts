@@ -22,7 +22,7 @@ function buildCtx(stubs: {
   telemetryDrainDelete?: ReturnType<typeof vi.fn>
   telemetryDrainListByApp?: ReturnType<typeof vi.fn>
   telemetryDrainListBySpace?: ReturnType<typeof vi.fn>
-} = {}): ResourceCtx {
+} = {}): Pick<ResourceCtx, 'platform'> {
   const platform: FakePlatform = {
     telemetryDrain: {
       delete: stubs.telemetryDrainDelete ?? vi.fn().mockResolvedValue({}),
@@ -36,7 +36,6 @@ function buildCtx(stubs: {
   platform.withOptions.mockReturnValue(platform)
 
   return {
-    data: {} as never,
     platform: platform as never,
   }
 }

@@ -23,7 +23,7 @@ function buildCtx(
 ): {
   appInfo: ReturnType<typeof vi.fn>
   create: ReturnType<typeof vi.fn>
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>
   withHeaders: ReturnType<typeof vi.fn>
   withOptions: ReturnType<typeof vi.fn>
 } {
@@ -42,10 +42,7 @@ function buildCtx(
   return {
     appInfo,
     create,
-    ctx: {
-      data: {} as never,
-      platform: platform as never,
-    },
+    ctx: {platform: platform as never},
     withHeaders: platform.withHeaders,
     withOptions: platform.withOptions,
   }
@@ -624,13 +621,13 @@ describe('log-session resource', () => {
 
     it('factory exposes streamLogs()', () => {
       const {ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const methods = logSessionExtensions.factory(ctx)
+      const methods = logSessionExtensions.factory(ctx as ResourceCtx)
       expect(typeof methods.streamLogs).toBe('function')
     })
 
     it('factory exposes parseHerokuLogLine()', () => {
       const {ctx} = buildCtx(() => ({...SESSION_BASE}))
-      const methods = logSessionExtensions.factory(ctx)
+      const methods = logSessionExtensions.factory(ctx as ResourceCtx)
       expect(methods.parseHerokuLogLine('heroku[web.1]: State changed from up to down'))
         .toEqual({
           dynoName: 'web.1', from: 'up', kind: 'state-changed', source: 'heroku', to: 'down',

@@ -36,7 +36,7 @@ function buildCtx({
   return {
     accountInfo,
     basePlatform,
-    ctx: {platform: basePlatform as never} as ResourceCtx,
+    ctx: {platform: basePlatform as never} as Pick<ResourceCtx, 'platform'>,
     deleteCollaborator,
     delinquencyInfo,
     scopedPlatforms,

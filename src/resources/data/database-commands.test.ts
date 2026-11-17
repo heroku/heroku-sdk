@@ -63,7 +63,7 @@ function buildCtx(opts: {
   releaseInfo?: ReturnType<typeof vi.fn>
   releaseList?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
-} = {}): ResourceCtx {
+} = {}): Pick<ResourceCtx, 'data' | 'operationSignal' | 'platform'> {
   const data: Record<string, unknown> = {
     database: {
       info: opts.databaseInfo ?? vi.fn().mockResolvedValue({}),
@@ -98,7 +98,7 @@ function buildCtx(opts: {
   }
 }
 
-function capturePlatformRequestSignals(ctx: ResourceCtx): AbortSignal[] {
+function capturePlatformRequestSignals(ctx: Pick<ResourceCtx, 'platform'>): AbortSignal[] {
   const signals: AbortSignal[] = []
   const platform = ctx.platform as unknown as {
     withOptions: (options: {signal?: AbortSignal}) => unknown
@@ -1522,7 +1522,7 @@ describe('database command extensions', () => {
       databaseUnfollow,
       resolutionByAttachment,
     })
-    const methods = databaseCommandExtensions.factory(ctx)
+    const methods = databaseCommandExtensions.factory(ctx as ResourceCtx)
     expect(Object.keys(methods)).toEqual(['promoteForApp', 'resetForApp', 'unfollowForApp'])
     expect(methods.promoteForApp).toBeTypeOf('function')
 

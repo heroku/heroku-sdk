@@ -26,7 +26,7 @@ const createBody: PipelinePromotionCreateOpts = {
 
 function ctxFor(promotion: PipelinePromotion, listResults: PipelinePromotionTarget[][]): {
   create: ReturnType<typeof vi.fn>;
-  ctx: ResourceCtx;
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>;
   list: ReturnType<typeof vi.fn>;
   withOptions: ReturnType<typeof vi.fn>;
 } {
@@ -45,7 +45,6 @@ function ctxFor(promotion: PipelinePromotion, listResults: PipelinePromotionTarg
   return {
     create,
     ctx: {
-      data: {} as never,
       platform: platform as never,
     },
     list,
@@ -66,7 +65,7 @@ function ctxWithRelease(
   listResults: PipelinePromotionTarget[][],
   release: {output_stream_url?: null | string},
 ): {
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>
   releaseInfo: ReturnType<typeof vi.fn>
   withOptions: ReturnType<typeof vi.fn>
 } {
@@ -86,7 +85,6 @@ function ctxWithRelease(
 
   return {
     ctx: {
-      data: {} as never,
       platform: platform as never,
     },
     releaseInfo,
@@ -158,8 +156,7 @@ describe('pipeline-promotion resource', () => {
     const promotion = {id: 'promo-3'} as PipelinePromotion
     const pending: PipelinePromotionTarget[] = [{id: 't1', status: 'pending'}]
     const list = vi.fn().mockResolvedValue(pending)
-    const ctx: ResourceCtx = {
-      data: {} as never,
+    const ctx: Pick<ResourceCtx, 'makeClient' | 'platform'> = {
       platform: {
         pipelinePromotion: {create: vi.fn().mockResolvedValue(promotion)},
         pipelinePromotionTarget: {list},
@@ -182,8 +179,7 @@ describe('pipeline-promotion resource', () => {
       withOptions: vi.fn(),
     }
     platform.withOptions.mockReturnValue(platform)
-    const ctx: ResourceCtx = {
-      data: {} as never,
+    const ctx: Pick<ResourceCtx, 'makeClient' | 'platform'> = {
       platform: platform as never,
     }
 
@@ -442,8 +438,8 @@ describe('pipeline-promotion resource', () => {
   })
 
   it('pipelinePromotionExtensions factory exposes a promote method', () => {
-    const ctx: ResourceCtx = {data: {} as never, platform: {} as never}
-    const methods = pipelinePromotionExtensions.factory(ctx)
+    const {ctx} = ctxFor({} as PipelinePromotion, [])
+    const methods = pipelinePromotionExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.promote).toBe('function')
   })
 })

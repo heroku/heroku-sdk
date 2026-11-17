@@ -20,14 +20,11 @@ vi.mock('@heroku/heroku-fetch', () => ({
 
 const SOME_UUID = '01234567-89ab-cdef-0123-456789abcdef'
 
-function ctxWithInfo(info: ReturnType<typeof vi.fn>): ResourceCtx {
+function ctxWithInfo(info: ReturnType<typeof vi.fn>): Pick<ResourceCtx, 'makeClient' | 'platform'> {
   const platform: Record<string, unknown> = {pipeline: {info}}
   // Self-referential so a `.withOptions({signal})` chain resolves back to platform.
   platform.withOptions = vi.fn(() => platform)
-  return {
-    data: {} as never,
-    platform: platform as never,
-  }
+  return {platform: platform as never}
 }
 
 function mockGet(matches: Pipeline[]): ReturnType<typeof vi.fn> {
@@ -172,7 +169,7 @@ describe('pipeline resource', () => {
 
     it('factory exposes resolve()', () => {
       const ctx = ctxWithInfo(vi.fn())
-      const methods = pipelineExtensions.factory(ctx)
+      const methods = pipelineExtensions.factory(ctx as ResourceCtx)
       expect(typeof methods.resolve).toBe('function')
     })
 
@@ -180,7 +177,7 @@ describe('pipeline resource', () => {
       const pipeline = {id: SOME_UUID, name: 'my-pipeline'} as Pipeline
       const info = vi.fn().mockResolvedValue(pipeline)
       const ctx = ctxWithInfo(info)
-      const methods = pipelineExtensions.factory(ctx)
+      const methods = pipelineExtensions.factory(ctx as ResourceCtx)
 
       const result = await methods.resolve(SOME_UUID)
 

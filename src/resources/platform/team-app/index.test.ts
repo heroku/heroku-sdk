@@ -10,8 +10,8 @@ import {teamAppExtensions} from './index.js'
 
 describe('teamAppExtensions', () => {
   it('adds joinSelf to the existing teamApp namespace', () => {
-    const ctx = {platform: {} as never} as ResourceCtx
-    const methods = teamAppExtensions.factory(ctx)
+    const ctx: Pick<ResourceCtx, 'platform'> = {platform: {} as never}
+    const methods = teamAppExtensions.factory(ctx as ResourceCtx)
 
     expect(teamAppExtensions.service).toBe('platform')
     expect(teamAppExtensions.resource).toBe('teamApp')
@@ -23,8 +23,8 @@ describe('teamAppExtensions', () => {
     const created = {user: account}
     const info = vi.fn().mockResolvedValue(account)
     const create = vi.fn().mockResolvedValue(created)
-    const ctx = {platform: {account: {info}, teamAppCollaborator: {create}} as never} as ResourceCtx
-    const methods = teamAppExtensions.factory(ctx)
+    const ctx: Pick<ResourceCtx, 'platform'> = {platform: {account: {info}, teamAppCollaborator: {create}} as never}
+    const methods = teamAppExtensions.factory(ctx as ResourceCtx)
 
     const result = await methods.joinSelf('team-app')
 
@@ -41,8 +41,8 @@ describe('teamAppExtensions', () => {
       collaborator: {delete: collaboratorDelete},
       teamApp: {info: teamInfo, transferToTeam: teamTransfer},
     }
-    const ctx = {platform: routes as never} as ResourceCtx
-    const extended = mergeExtensions(routes, [teamAppExtensions, appCollaboratorExtensions], ctx) as {
+    const ctx: Pick<ResourceCtx, 'platform'> = {platform: routes as never}
+    const extended = mergeExtensions(routes, [teamAppExtensions, appCollaboratorExtensions], ctx as ResourceCtx) as {
       appCollaborator: {removeSelf: unknown}
       collaborator: {delete: typeof collaboratorDelete}
       teamApp: {info: typeof teamInfo; joinSelf: unknown; transferToTeam: typeof teamTransfer}

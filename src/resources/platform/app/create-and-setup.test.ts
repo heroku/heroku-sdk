@@ -6,8 +6,8 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {createAndSetup} from './create-and-setup.js'
 
-function ctx(platform: Record<string, unknown>): ResourceCtx {
-  return {data: {} as never, metrics: {} as never, platform: platform as never}
+function ctx(platform: Record<string, unknown>): Pick<ResourceCtx, 'platform'> {
+  return {platform: platform as never}
 }
 
 describe('createAndSetup', () => {

@@ -27,7 +27,7 @@ function buildCtx(stubs: {
   collaboratorList?: ReturnType<typeof vi.fn>
   dynoList?: ReturnType<typeof vi.fn>
   pipelineCouplingInfoByApp?: ReturnType<typeof vi.fn>
-} = {}): {ctx: ResourceCtx; platform: FakePlatform} {
+} = {}): {ctx: Pick<ResourceCtx, 'platform'>; platform: FakePlatform} {
   const platform: FakePlatform = {
     addOn: {listByApp: stubs.addOnListByApp ?? vi.fn().mockResolvedValue([])},
     app: {info: stubs.appInfo ?? vi.fn().mockResolvedValue({})},
@@ -39,7 +39,7 @@ function buildCtx(stubs: {
   platform.withOptions.mockReturnValue(platform)
 
   return {
-    ctx: {data: {} as never, platform: platform as never},
+    ctx: {platform: platform as never},
     platform,
   }
 }
@@ -170,7 +170,7 @@ describe('appExtensions.describe wiring', () => {
     const {ctx, platform} = buildCtx({
       appInfo: vi.fn().mockResolvedValue({id: 'app-1'} as App),
     })
-    const methods = appExtensions.factory(ctx)
+    const methods = appExtensions.factory(ctx as ResourceCtx)
 
     expect(typeof methods.describe).toBe('function')
     const result = await methods.describe('my-app')

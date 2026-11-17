@@ -18,7 +18,7 @@ function buildNotFound(): NotFoundError {
   return new NotFoundError(response, {id: 'not_found', resource: 'redis'})
 }
 
-function buildCtx(waitMock: WaitFn): ResourceCtx {
+function buildCtx(waitMock: WaitFn): Pick<ResourceCtx, 'data'> {
   const dataClient = {
     redis: {wait: waitMock},
     withOptions() {
@@ -27,7 +27,6 @@ function buildCtx(waitMock: WaitFn): ResourceCtx {
   }
   return {
     data: dataClient as never,
-    platform: {} as never,
   }
 }
 

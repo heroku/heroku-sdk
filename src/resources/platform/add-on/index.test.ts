@@ -48,7 +48,7 @@ function buildCtx({
   resolveResponses?: Array<AddOn[] | Error>
   updateResponse?: AddOn
 } = {}): {
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'platform'>
   listByAddOn: ReturnType<typeof vi.fn>
   listByAddOnService: ReturnType<typeof vi.fn>
   resolution: ReturnType<typeof vi.fn>
@@ -81,10 +81,7 @@ function buildCtx({
   platform.withOptions.mockReturnValue(platform)
 
   return {
-    ctx: {
-      data: {} as never,
-      platform: platform as never,
-    },
+    ctx: {platform: platform as never},
     listByAddOn,
     listByAddOnService,
     resolution,
@@ -110,7 +107,7 @@ function buildCreateCtx({
   infoByAppResponses?: AddOn[]
 }): {
   create: ReturnType<typeof vi.fn>
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'platform'>
   infoByApp: ReturnType<typeof vi.fn>
   withHeaders: ReturnType<typeof vi.fn>
 } {
@@ -136,7 +133,7 @@ function buildCreateCtx({
 
   return {
     create,
-    ctx: {data: {} as never, platform: platform as never},
+    ctx: {platform: platform as never},
     infoByApp,
     withHeaders: platform.withHeaders,
   }
@@ -149,7 +146,7 @@ function buildWaitCtx({
   infoByAppResponses?: AddOn[]
   infoResponses?: AddOn[]
 } = {}): {
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'platform'>
   info: ReturnType<typeof vi.fn>
   infoByApp: ReturnType<typeof vi.fn>
   withHeaders: ReturnType<typeof vi.fn>
@@ -175,7 +172,7 @@ function buildWaitCtx({
   platform.withOptions.mockReturnValue(platform)
 
   return {
-    ctx: {data: {} as never, platform: platform as never},
+    ctx: {platform: platform as never},
     info,
     infoByApp,
     withHeaders: platform.withHeaders,
@@ -187,7 +184,7 @@ function buildDestroyCtx({infoByAppResponses = []}: {
   infoByAppResponses?: Array<AddOn | Error>
 } = {}): {
   addOnDelete: ReturnType<typeof vi.fn>
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'platform'>
   infoByApp: ReturnType<typeof vi.fn>
   withHeaders: ReturnType<typeof vi.fn>
   withOptions: ReturnType<typeof vi.fn>
@@ -214,7 +211,7 @@ function buildDestroyCtx({infoByAppResponses = []}: {
 
   return {
     addOnDelete,
-    ctx: {data: {} as never, platform: platform as never},
+    ctx: {platform: platform as never},
     infoByApp,
     withHeaders: platform.withHeaders,
     withOptions: platform.withOptions,
@@ -1385,7 +1382,7 @@ describe('add-on resource', () => {
 
     it('factory exposes the full add-on surface', () => {
       const {ctx} = buildCtx()
-      const methods = addOnExtensions.factory(ctx)
+      const methods = addOnExtensions.factory(ctx as ResourceCtx)
       expect(typeof methods.createAndWait).toBe('function')
       expect(typeof methods.describe).toBe('function')
       expect(typeof methods.destroyAndWait).toBe('function')
@@ -1404,7 +1401,7 @@ describe('add-on resource', () => {
         resolveResponses: [[resolved]],
         updateResponse: resolved,
       })
-      const methods = addOnExtensions.factory(ctx)
+      const methods = addOnExtensions.factory(ctx as ResourceCtx)
 
       await methods.upgrade('addon-1', 'service:plan-1')
 

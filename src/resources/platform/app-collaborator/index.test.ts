@@ -8,8 +8,8 @@ import {appCollaboratorExtensions} from './index.js'
 
 describe('appCollaboratorExtensions', () => {
   it('declares an extension-only platform namespace', () => {
-    const ctx = {platform: {} as never} as ResourceCtx
-    const methods = appCollaboratorExtensions.factory(ctx)
+    const ctx: Pick<ResourceCtx, 'platform'> = {platform: {} as never}
+    const methods = appCollaboratorExtensions.factory(ctx as ResourceCtx)
 
     expect(appCollaboratorExtensions.service).toBe('platform')
     expect(appCollaboratorExtensions.resource).toBe('appCollaborator')
@@ -20,10 +20,10 @@ describe('appCollaboratorExtensions', () => {
     const deleted = {id: 'collaborator-1'}
     const info = vi.fn().mockResolvedValue({email: 'member@example.com'})
     const deleteCollaborator = vi.fn().mockResolvedValue(deleted)
-    const ctx = {
+    const ctx: Pick<ResourceCtx, 'platform'> = {
       platform: {account: {info}, collaborator: {delete: deleteCollaborator}} as never,
-    } as ResourceCtx
-    const methods = appCollaboratorExtensions.factory(ctx)
+    }
+    const methods = appCollaboratorExtensions.factory(ctx as ResourceCtx)
 
     const result = await methods.removeSelf('team-app')
 

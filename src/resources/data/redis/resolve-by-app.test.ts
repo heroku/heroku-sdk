@@ -10,9 +10,8 @@ import {AddonAmbiguousError, AddonNotFoundError} from '../../platform/add-on/ind
 import {RedisAddonAmbiguousError, RedisAddonNotFoundError} from './errors.js'
 import {resolveRedisByApp} from './resolve-by-app.js'
 
-function buildCtx(listByApp: ReturnType<typeof vi.fn>): ResourceCtx {
+function buildCtx(listByApp: ReturnType<typeof vi.fn>): Pick<ResourceCtx, 'platform'> {
   return {
-    data: {} as never,
     platform: {
       addOn: {listByApp},
     } as never,

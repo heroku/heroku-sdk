@@ -26,7 +26,7 @@ function buildCtx({
     accountInfo,
     basePlatform,
     create,
-    ctx: {platform: (scoped ? basePlatform : scopedPlatform) as never} as ResourceCtx,
+    ctx: {platform: (scoped ? basePlatform : scopedPlatform) as never} as Pick<ResourceCtx, 'platform'>,
     scopedPlatform,
   }
 }

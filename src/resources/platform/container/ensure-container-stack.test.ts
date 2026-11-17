@@ -17,7 +17,7 @@ type FakePlatform = {
 
 function buildCtx(stubs: {
   appInfo?: ReturnType<typeof vi.fn>
-} = {}): ResourceCtx {
+} = {}): Pick<ResourceCtx, 'platform'> {
   const platform: FakePlatform = {
     app: {
       info: stubs.appInfo ?? vi.fn().mockResolvedValue({}),
@@ -29,10 +29,7 @@ function buildCtx(stubs: {
   platform.withOptions.mockReturnValue(platform)
 
   return {
-    data: {} as never,
-    metrics: {} as never,
     platform: platform as never,
-    repositories: {} as never,
   }
 }
 

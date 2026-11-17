@@ -10,15 +10,15 @@ import {
   appExtensions, disableMaintenance, enableMaintenance, getGeneration, getProcessTier, isShielded,
 } from './index.js'
 
-function ctxWithAppUpdate(update: ReturnType<typeof vi.fn>): ResourceCtx {
+function ctxWithAppUpdate(update: ReturnType<typeof vi.fn>): Pick<ResourceCtx, 'platform'> {
   const platform: Record<string, unknown> = {app: {update}}
   // Self-referential so a `.withOptions({signal})` chain resolves back to platform.
   platform.withOptions = vi.fn().mockReturnValue(platform)
-  return {data: {} as never, platform: platform as never}
+  return {platform: platform as never}
 }
 
 function ctxWithAppInfo(info: ReturnType<typeof vi.fn>): {
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'platform'>
   withHeaders: ReturnType<typeof vi.fn>
 } {
   const platform = {
@@ -30,15 +30,15 @@ function ctxWithAppInfo(info: ReturnType<typeof vi.fn>): {
   // Self-referential so a `.withOptions({signal})` chain resolves back to platform.
   platform.withOptions.mockReturnValue(platform)
   return {
-    ctx: {data: {} as never, platform: platform as never},
+    ctx: {platform: platform as never},
     withHeaders: platform.withHeaders,
   }
 }
 
-function ctxWithDirectAppInfo(info: ReturnType<typeof vi.fn>): ResourceCtx {
+function ctxWithDirectAppInfo(info: ReturnType<typeof vi.fn>): Pick<ResourceCtx, 'platform'> {
   const platform: Record<string, unknown> = {app: {info}}
   platform.withOptions = vi.fn().mockReturnValue(platform)
-  return {data: {} as never, platform: platform as never}
+  return {platform: platform as never}
 }
 
 describe('appExtensions and named functions', () => {
@@ -87,14 +87,14 @@ describe('appExtensions and named functions', () => {
 
   it('appExtensions factory returns enableMaintenance and disableMaintenance methods', () => {
     const update = vi.fn()
-    const methods = appExtensions.factory(ctxWithAppUpdate(update))
+    const methods = appExtensions.factory(ctxWithAppUpdate(update) as ResourceCtx)
     expect(typeof methods.enableMaintenance).toBe('function')
     expect(typeof methods.disableMaintenance).toBe('function')
   })
 
   it('appExtensions enableMaintenance delegates to the named function', async () => {
     const update = vi.fn().mockResolvedValue({} as App)
-    const methods = appExtensions.factory(ctxWithAppUpdate(update))
+    const methods = appExtensions.factory(ctxWithAppUpdate(update) as ResourceCtx)
 
     await methods.enableMaintenance('app-1')
 
@@ -158,7 +158,7 @@ describe('appExtensions and named functions', () => {
     it('exposed on appExtensions.factory', () => {
       const info = vi.fn()
       const {ctx} = ctxWithAppInfo(info)
-      const methods = appExtensions.factory(ctx)
+      const methods = appExtensions.factory(ctx as ResourceCtx)
       expect(typeof methods.getGeneration).toBe('function')
     })
   })
@@ -199,7 +199,7 @@ describe('appExtensions and named functions', () => {
     it('exposed on appExtensions.factory', () => {
       const info = vi.fn()
       const ctx = ctxWithDirectAppInfo(info)
-      const methods = appExtensions.factory(ctx)
+      const methods = appExtensions.factory(ctx as ResourceCtx)
       expect(typeof methods.isShielded).toBe('function')
     })
   })
@@ -234,7 +234,7 @@ describe('appExtensions and named functions', () => {
     it('exposed on appExtensions.factory', () => {
       const info = vi.fn()
       const ctx = ctxWithDirectAppInfo(info)
-      const methods = appExtensions.factory(ctx)
+      const methods = appExtensions.factory(ctx as ResourceCtx)
       expect(typeof methods.getProcessTier).toBe('function')
     })
   })
