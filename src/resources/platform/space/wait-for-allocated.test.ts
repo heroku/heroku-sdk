@@ -62,6 +62,7 @@ function buildSpace(overrides: Partial<Space> = {}): Space {
     region: {id: 'region-1', name: 'virginia'},
     shield: false,
     state: 'allocated',
+    supported_architectures: [],
     team: {id: 'team-1', name: 'my-team'},
     updated_at: '2020-01-01T00:00:00Z',
     ...overrides,

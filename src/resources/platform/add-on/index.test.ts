@@ -274,7 +274,7 @@ describe('add-on resource', () => {
     it('qualifies a bare plan name with the resolved addon_service name', async () => {
       const resolved = buildAddon({
         // eslint-disable-next-line camelcase
-        addon_service: {name: 'heroku-redis'},
+        addon_service: {id: 'redis-1', name: 'heroku-redis'},
         app: {id: 'app-1', name: 'my-app'},
         id: 'addon-1',
       })
@@ -291,7 +291,7 @@ describe('add-on resource', () => {
     it('passes an already-qualified plan through unchanged', async () => {
       const resolved = buildAddon({
         // eslint-disable-next-line camelcase
-        addon_service: {name: 'heroku-redis'},
+        addon_service: {id: 'redis-1', name: 'heroku-redis'},
         app: {id: 'app-1', name: 'my-app'},
         id: 'addon-1',
       })
@@ -308,7 +308,7 @@ describe('add-on resource', () => {
     it('calls onResolved with the resolved addon before the update', async () => {
       const resolved = buildAddon({
         // eslint-disable-next-line camelcase
-        addon_service: {name: 'heroku-redis'},
+        addon_service: {id: 'redis-1', name: 'heroku-redis'},
         app: {id: 'app-1', name: 'my-app'},
         id: 'addon-1',
         plan: {name: 'premium-0'},
@@ -353,7 +353,7 @@ describe('add-on resource', () => {
         {id: 'p3', name: 'premium-0', price: {cents: 5000}},
         {id: 'p4', name: 'metered', price: {metered: true}},
         {id: 'p1', name: 'free', price: {cents: 0}},
-      ] as Plan[]
+      ] as unknown as Plan[]
       const {ctx} = buildCtx({plans})
 
       const result = await listPlans(ctx, 'heroku-redis')
@@ -561,7 +561,7 @@ describe('add-on resource', () => {
 
     it('returns undefined when there is no cents and no contract/metered signal', () => {
       // No usable pricing signal at all — nothing to classify from.
-      expect(priceForPlan({price: {unit: 'month'} as never} as Plan)).toBeUndefined()
+      expect(priceForPlan({price: {unit: 'month'}} as unknown as Plan)).toBeUndefined()
     })
 
     it('returns undefined perMonthCents/perHourCents for unknown units', () => {
@@ -627,7 +627,7 @@ describe('add-on resource', () => {
     it('classifies a contract plan with no cents (cents undefined)', () => {
       // Contract pricing is negotiated elsewhere, so the API may omit cents
       // entirely. The contract flag is enough to classify.
-      const plan = {price: {contract: true, unit: 'month'} as never} as Plan
+      const plan = {price: {contract: true, unit: 'month'}} as unknown as Plan
 
       const result = priceForPlan(plan)
 
@@ -761,8 +761,8 @@ describe('add-on resource', () => {
     it('filters resolver matches by addonService when provided', async () => {
       /* eslint-disable camelcase */
       const matches = [
-        buildAddon({addon_service: {name: 'heroku-redis'}, id: 'a1', name: 'redis-app'}),
-        buildAddon({addon_service: {name: 'heroku-postgresql'}, id: 'a2', name: 'pg-app'}),
+        buildAddon({addon_service: {id: 'redis-1', name: 'heroku-redis'}, id: 'a1', name: 'redis-app'}),
+        buildAddon({addon_service: {id: 'postgresql-1', name: 'heroku-postgresql'}, id: 'a2', name: 'pg-app'}),
       ]
       /* eslint-enable camelcase */
       const {ctx, resolution} = buildCtx({resolveResponses: [matches]})
@@ -776,7 +776,7 @@ describe('add-on resource', () => {
 
     it('throws AddonNotFoundError when addonService filter eliminates all matches', async () => {
       // eslint-disable-next-line camelcase
-      const matches = [buildAddon({addon_service: {name: 'heroku-redis'}, id: 'a1'})]
+      const matches = [buildAddon({addon_service: {id: 'redis-1', name: 'heroku-redis'}, id: 'a1'})]
       const {ctx} = buildCtx({resolveResponses: [matches]})
 
       await expect(describeAddon(ctx, 'shared-name', {addonService: 'heroku-postgresql'})).rejects.toBeInstanceOf(AddonNotFoundError)
@@ -785,8 +785,10 @@ describe('add-on resource', () => {
     it('replaces plan.price with grandfathered cents/contract from billed_price', async () => {
       const addon = buildAddon({
         // eslint-disable-next-line camelcase
-        billed_price: {cents: 0, contract: true},
-        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}},
+        billed_price: {
+          cents: 0, contract: true, metered: false, unit: 'month',
+        },
+        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}} as unknown as AddOn['plan'],
       })
       const {ctx} = buildCtx({resolveResponses: [[addon]]})
 
@@ -802,7 +804,7 @@ describe('add-on resource', () => {
       const addon = buildAddon({
         // eslint-disable-next-line camelcase
         billed_price: undefined,
-        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, contract: false, unit: 'month'}},
+        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, contract: false, unit: 'month'}} as unknown as AddOn['plan'],
       })
       const {ctx} = buildCtx({resolveResponses: [[addon]]})
 
@@ -832,8 +834,10 @@ describe('add-on resource', () => {
     it('does not mutate the resolved add-on', async () => {
       const addon = buildAddon({
         // eslint-disable-next-line camelcase
-        billed_price: {cents: 0, contract: true},
-        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}},
+        billed_price: {
+          cents: 0, contract: true, metered: false, unit: 'month',
+        },
+        plan: {id: 'plan-id', name: 'heroku-postgresql:standard-0', price: {cents: 5000, unit: 'month'}} as unknown as AddOn['plan'],
       })
       const originalPriceCents = (addon.plan as {price: {cents: number}}).price.cents
       const {ctx} = buildCtx({resolveResponses: [[addon]]})
@@ -907,7 +911,7 @@ describe('add-on resource', () => {
 
     it('throws AddonNotFoundError when the addonService filter eliminates all matches', async () => {
       // eslint-disable-next-line camelcase
-      const matches = [buildAddon({addon_service: {name: 'heroku-redis'}, id: 'a1'})]
+      const matches = [buildAddon({addon_service: {id: 'redis-1', name: 'heroku-redis'}, id: 'a1'})]
       const {ctx} = buildCtx({resolveResponses: [matches]})
 
       await expect(resolveAddon(ctx, 'shared-name', {addonService: 'heroku-postgresql'})).rejects.toBeInstanceOf(AddonNotFoundError)

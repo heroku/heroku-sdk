@@ -6,7 +6,7 @@ import {
 
 import {ReleaseNotConvergedError, waitForRelease} from './wait-for-release.js'
 
-function dyno(overrides: Partial<Dyno> & {release?: {version: number}}): Dyno {
+function dyno(overrides: Partial<Dyno>): Dyno {
   return {state: 'up', type: 'web', ...overrides} as Dyno
 }
 
@@ -44,7 +44,7 @@ describe('waitForRelease', () => {
 
   it('resolves immediately without firing onPoll when the fleet is already converged', async () => {
     const releaseList = vi.fn().mockResolvedValue([{version: 5}])
-    const dynoList = vi.fn().mockResolvedValue([dyno({release: {version: 5}, state: 'up', type: 'web'})])
+    const dynoList = vi.fn().mockResolvedValue([dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'})])
     const {ctx, platform} = ctxWith(releaseList, dynoList)
     const onPoll = vi.fn()
 
@@ -59,9 +59,9 @@ describe('waitForRelease', () => {
   it('polls until converged, firing onPoll on each non-converged poll', async () => {
     const releaseList = vi.fn().mockResolvedValue([{version: 5}])
     const dynoList = vi.fn()
-      .mockResolvedValueOnce([dyno({release: {version: 4}, state: 'up', type: 'web'})])
-      .mockResolvedValueOnce([dyno({release: {version: 5}, state: 'starting', type: 'web'})])
-      .mockResolvedValueOnce([dyno({release: {version: 5}, state: 'up', type: 'web'})])
+      .mockResolvedValueOnce([dyno({release: {id: 'release-0', version: 4}, state: 'up', type: 'web'})])
+      .mockResolvedValueOnce([dyno({release: {id: 'release-1', version: 5}, state: 'starting', type: 'web'})])
+      .mockResolvedValueOnce([dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'})])
     const {ctx} = ctxWith(releaseList, dynoList)
     const onPoll = vi.fn()
 
@@ -77,9 +77,9 @@ describe('waitForRelease', () => {
   it('excludes release dynos and, by default, one-off run dynos', async () => {
     const releaseList = vi.fn().mockResolvedValue([{version: 5}])
     const dynoList = vi.fn().mockResolvedValue([
-      dyno({release: {version: 5}, state: 'up', type: 'web'}),
-      dyno({release: {version: 5}, state: 'down', type: 'release'}),
-      dyno({release: {version: 5}, state: 'down', type: 'run'}),
+      dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'}),
+      dyno({release: {id: 'release-1', version: 5}, state: 'down', type: 'release'}),
+      dyno({release: {id: 'release-1', version: 5}, state: 'down', type: 'run'}),
     ])
     const {ctx} = ctxWith(releaseList, dynoList)
 
@@ -93,12 +93,12 @@ describe('waitForRelease', () => {
     const releaseList = vi.fn().mockResolvedValue([{version: 5}])
     const dynoList = vi.fn()
       .mockResolvedValueOnce([
-        dyno({release: {version: 5}, state: 'up', type: 'web'}),
-        dyno({release: {version: 5}, state: 'starting', type: 'run'}),
+        dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'}),
+        dyno({release: {id: 'release-1', version: 5}, state: 'starting', type: 'run'}),
       ])
       .mockResolvedValueOnce([
-        dyno({release: {version: 5}, state: 'up', type: 'web'}),
-        dyno({release: {version: 5}, state: 'up', type: 'run'}),
+        dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'}),
+        dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'run'}),
       ])
     const {ctx} = ctxWith(releaseList, dynoList)
     const onPoll = vi.fn()
@@ -112,8 +112,8 @@ describe('waitForRelease', () => {
   it('restricts the wait to a single process type', async () => {
     const releaseList = vi.fn().mockResolvedValue([{version: 5}])
     const dynoList = vi.fn().mockResolvedValue([
-      dyno({release: {version: 5}, state: 'up', type: 'web'}),
-      dyno({release: {version: 4}, state: 'up', type: 'worker'}),
+      dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'}),
+      dyno({release: {id: 'release-0', version: 4}, state: 'up', type: 'worker'}),
     ])
     const {ctx} = ctxWith(releaseList, dynoList)
 
@@ -127,12 +127,12 @@ describe('waitForRelease', () => {
     const releaseList = vi.fn().mockResolvedValue([{version: 5}])
     const dynoList = vi.fn()
       .mockResolvedValueOnce([
-        dyno({release: {version: 4}, state: 'up', type: 'run'}),
-        dyno({release: {version: 5}, state: 'up', type: 'web'}),
+        dyno({release: {id: 'release-0', version: 4}, state: 'up', type: 'run'}),
+        dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'}),
       ])
       .mockResolvedValueOnce([
-        dyno({release: {version: 5}, state: 'up', type: 'run'}),
-        dyno({release: {version: 5}, state: 'up', type: 'web'}),
+        dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'run'}),
+        dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'}),
       ])
     const {ctx} = ctxWith(releaseList, dynoList)
     const onPoll = vi.fn()
@@ -148,7 +148,7 @@ describe('waitForRelease', () => {
 
   it('throws ReleaseNotConvergedError once attempts is exhausted', async () => {
     const releaseList = vi.fn().mockResolvedValue([{version: 5}])
-    const dynoList = vi.fn().mockResolvedValue([dyno({release: {version: 4}, state: 'up', type: 'web'})])
+    const dynoList = vi.fn().mockResolvedValue([dyno({release: {id: 'release-0', version: 4}, state: 'up', type: 'web'})])
     const {ctx} = ctxWith(releaseList, dynoList)
 
     await expect(waitForRelease(ctx, 'app-1', {attempts: 3, delayMs: 1}))
@@ -159,8 +159,8 @@ describe('waitForRelease', () => {
   it('resolves normally within the attempts cap without throwing', async () => {
     const releaseList = vi.fn().mockResolvedValue([{version: 5}])
     const dynoList = vi.fn()
-      .mockResolvedValueOnce([dyno({release: {version: 4}, state: 'up', type: 'web'})])
-      .mockResolvedValueOnce([dyno({release: {version: 5}, state: 'up', type: 'web'})])
+      .mockResolvedValueOnce([dyno({release: {id: 'release-0', version: 4}, state: 'up', type: 'web'})])
+      .mockResolvedValueOnce([dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'})])
     const {ctx} = ctxWith(releaseList, dynoList)
 
     const result = await waitForRelease(ctx, 'app-1', {attempts: 5, delayMs: 1})
@@ -171,7 +171,7 @@ describe('waitForRelease', () => {
 
   it('scopes the platform client to the caller signal', async () => {
     const releaseList = vi.fn().mockResolvedValue([{version: 5}])
-    const dynoList = vi.fn().mockResolvedValue([dyno({release: {version: 5}, state: 'up', type: 'web'})])
+    const dynoList = vi.fn().mockResolvedValue([dyno({release: {id: 'release-1', version: 5}, state: 'up', type: 'web'})])
     const {ctx, platform} = ctxWith(releaseList, dynoList)
     const controller = new AbortController()
 
