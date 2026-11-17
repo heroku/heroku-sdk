@@ -700,7 +700,7 @@ describe('database command extensions', () => {
     expect(platform.platform.withHeaders).toHaveBeenCalledWith({Range: 'version ..; max=5, order=desc'})
     expect(releaseInfo).toHaveBeenNthCalledWith(1, 'test-app', 'attach-release')
     expect(releaseInfo).toHaveBeenNthCalledWith(2, 'test-app', 'detach-release')
-    expect(result.database.following).toBe('postgres://leader/db')
+    expect(result.database?.following).toBe('postgres://leader/db')
     expect(result.releasePhase).toEqual({
       attach: {id: 'attach-release', status: 'succeeded'},
       detach: {id: 'detach-release', status: 'failed'},

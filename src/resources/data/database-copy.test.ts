@@ -590,7 +590,9 @@ describe('database copy resource', () => {
       order.push('create')
       return {uuid: 'transfer-1'}
     })
-    const onCredentialsChecked = vi.fn(() => order.push('credentialsChecked'))
+    const onCredentialsChecked = vi.fn(() => {
+      order.push('credentialsChecked')
+    })
     const copyPoller = {onStart: vi.fn(() => order.push('copyStart'))}
     const infoByApp = vi.fn().mockImplementation(async () => {
       order.push('poll')
@@ -1319,7 +1321,9 @@ describe('database copy resource', () => {
 
     controller.abort(new Error('SDK-scoped cancellation'))
 
-    const {error_} = await pending
+    const settled = await pending
+    if (!('error_' in settled)) throw new Error('expected the copy to reject')
+    const {error_} = settled
     expect(error_).toBeInstanceOf(DatabaseCopyTransferError)
     expect(error_).toMatchObject({name: 'AbortError', transferId: 'transfer-1'})
     expect(error_).not.toHaveProperty('transfer')
@@ -1391,7 +1395,10 @@ describe('database copy resource', () => {
       }).then(value => ({value}), error_ => ({error_}))
 
     await secondPollStarted
-    const {error_} = await pending
+
+    const settled = await pending
+    if (!('error_' in settled)) throw new Error('expected the copy to reject')
+    const {error_} = settled
 
     expect(error_).toBeInstanceOf(TransferTimeoutError)
     expect(error_).toMatchObject({timeoutMs: 50, transferId: 'transfer-1'})
