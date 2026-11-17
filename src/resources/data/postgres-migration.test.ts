@@ -109,7 +109,8 @@ function buildCtx(opts: {
 
 describe('postgresMigrationExtensions factory', () => {
   it('exposes find, prepare, startWhenReady, abortBeforeRun and listMigrationContext', () => {
-    const methods = postgresMigrationExtensions.factory({data: {} as never, platform: {} as never})
+    const ctx = buildCtx({})
+    const methods = postgresMigrationExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.find).toBe('function')
     expect(typeof methods.prepare).toBe('function')
     expect(typeof methods.startWhenReady).toBe('function')

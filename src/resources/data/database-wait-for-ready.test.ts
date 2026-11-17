@@ -64,7 +64,8 @@ describe('legacyDatabaseWaitExtensions', () => {
   it('declares data.database and exposes waitForReadyForApp', () => {
     expect(legacyDatabaseWaitExtensions.service).toBe('data')
     expect(legacyDatabaseWaitExtensions.resource).toBe('database')
-    expect(typeof legacyDatabaseWaitExtensions.factory({data: {} as never, platform: {} as never}).waitForReadyForApp).toBe('function')
+    const ctx = buildCtx({})
+    expect(typeof legacyDatabaseWaitExtensions.factory(ctx as ResourceCtx).waitForReadyForApp).toBe('function')
   })
 })
 

@@ -158,9 +158,8 @@ describe('test-run waitForState', () => {
     expect(testRunExtensions.service).toBe('platform')
     expect(testRunExtensions.resource).toBe('testRun')
 
-    const platform: Record<string, unknown> = {testRun: {}}
-    platform.withOptions = vi.fn().mockReturnValue(platform)
-    const methods = testRunExtensions.factory({data: {} as never, platform: platform as never})
+    const {ctx} = ctxFor([])
+    const methods = testRunExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.waitForState).toBe('function')
   })
 

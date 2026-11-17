@@ -136,7 +136,8 @@ describe('redisExtensions', () => {
   })
 
   it('factory exposes resolveByApp and waitForReady', () => {
-    const methods = redisExtensions.factory({data: {} as never, platform: {} as never})
+    const ctx = buildCtx(vi.fn())
+    const methods = redisExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.resolveByApp).toBe('function')
     expect(typeof methods.waitForReady).toBe('function')
   })
