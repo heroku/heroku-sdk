@@ -131,7 +131,6 @@ describe('waitForACMCertificates', () => {
 
     await waitForACMCertificates(ctx, 'my-app', {intervalMs: 1, signal: controller.signal})
 
-    // @ts-expect-error — withOptions is on the mocked platform but not in the public type.
     expect(ctx.platform.withOptions).toHaveBeenCalledWith({signal: controller.signal})
   })
 
