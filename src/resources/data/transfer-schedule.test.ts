@@ -5,7 +5,6 @@ import {
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import {legacyResourceCtx} from '../../../test-types/heroku-sdk-options.js'
 import {
   create, del, list, transferScheduleExtensions,
 } from './transfer-schedule.js'
@@ -16,7 +15,7 @@ function buildCtx(opts: {
   delete?: ReturnType<typeof vi.fn>
   list?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
-}): ResourceCtx {
+}): Pick<ResourceCtx, 'data' | 'platform'> {
   const data: Record<string, unknown> = {
     transferSchedule: {
       create: opts.create ?? vi.fn(),
@@ -28,7 +27,6 @@ function buildCtx(opts: {
   data.withOptions = vi.fn(() => data)
 
   return {
-    ...legacyResourceCtx,
     data: data as never,
     platform: {
       addOn: {listByApp: opts.addonListByApp ?? vi.fn()},
