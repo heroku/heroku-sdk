@@ -101,7 +101,8 @@ function buildCtx(opts: {
 
 describe('postgresExtensions factory', () => {
   it('exposes runUpgrade, waitForReady, provisionAdvanced and fork', () => {
-    const methods = postgresExtensions.factory({data: {} as never, platform: {} as never})
+    const ctx = buildCtx({})
+    const methods = postgresExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.runUpgrade).toBe('function')
     expect(typeof methods.waitForReady).toBe('function')
     expect(typeof methods.provisionAdvanced).toBe('function')

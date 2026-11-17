@@ -17,7 +17,7 @@ function buildCtx(opts: {
   resolutionByAttachment?: ReturnType<typeof vi.fn>
   runUpgrade?: ReturnType<typeof vi.fn>
   upgradeWaitStatus?: ReturnType<typeof vi.fn>
-}): ResourceCtx {
+}): Pick<ResourceCtx, 'data' | 'platform'> {
   const data: Record<string, unknown> = {
     database: {
       cancelUpgrade: opts.cancelUpgrade ?? vi.fn(),
@@ -195,7 +195,7 @@ describe('database resource', () => {
   })
 
   it('databaseExtensions factory exposes all methods', () => {
-    const methods = databaseExtensions.factory(buildCtx({}))
+    const methods = databaseExtensions.factory(buildCtx({}) as ResourceCtx)
     expect(typeof methods.cancelUpgrade).toBe('function')
     expect(typeof methods.describe).toBe('function')
     expect(typeof methods.dryRunUpgrade).toBe('function')

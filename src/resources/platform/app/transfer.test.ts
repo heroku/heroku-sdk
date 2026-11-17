@@ -6,8 +6,8 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {transferApp} from './transfer.js'
 
-function ctx(platform: unknown): ResourceCtx {
-  return {data: {} as never, metrics: {} as never, platform: platform as never}
+function ctx(platform: unknown): Pick<ResourceCtx, 'platform'> {
+  return {platform: platform as never}
 }
 
 // Full fake platform with spies at both the top level and a scoped level that

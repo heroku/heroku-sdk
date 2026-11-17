@@ -30,7 +30,14 @@ describe('extendResource', () => {
   })
 
   it('factory is invoked with the supplied ctx and returns the methods record', () => {
-    const ctx = {data: {marker: 'd'} as never, platform: {marker: 'p'} as never}
+    const ctx = {
+      dashboardBackend: {} as never,
+      data: {marker: 'd'} as never,
+      metrics: {} as never,
+      notifications: {} as never,
+      platform: {marker: 'p'} as never,
+      repositories: {} as never,
+    }
     const ext = extendResource('data', 'database', received => ({
       identify: () => received,
     }))

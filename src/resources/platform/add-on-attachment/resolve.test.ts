@@ -8,7 +8,6 @@ import {
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 import type {ResolvedAddOnAttachment} from './resolve.js'
 
-import {legacyResourceCtx} from '../../../../test-types/heroku-sdk-options.js'
 import {AddonAttachmentAmbiguousError, AddonAttachmentNotFoundError, resolveAddonAttachment} from './resolve.js'
 
 function buildCtx({
@@ -16,7 +15,7 @@ function buildCtx({
 }: {
   resolveByAttachmentResponses?: AddOnAttachment[]
 } = {}): {
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'platform'>
   resolutionByAttachment: ReturnType<typeof vi.fn>
   withHeaders: ReturnType<typeof vi.fn>
   withOptions: ReturnType<typeof vi.fn>
@@ -34,8 +33,6 @@ function buildCtx({
 
   return {
     ctx: {
-      ...legacyResourceCtx,
-      data: {} as never,
       platform: platform as never,
     },
     resolutionByAttachment,

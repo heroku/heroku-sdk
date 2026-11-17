@@ -9,10 +9,10 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {dynoExtensions, restartDynos, scaleDynos} from './index.js'
 
-function platformCtx(platform: Record<string, unknown>): ResourceCtx {
+function platformCtx(platform: Record<string, unknown>): Pick<ResourceCtx, 'platform'> {
   const p: Record<string, unknown> = {...platform}
   p.withOptions = vi.fn().mockReturnValue(p)
-  return {data: {} as never, platform: p as never}
+  return {platform: p as never}
 }
 
 describe('dyno resource', () => {
@@ -130,8 +130,8 @@ describe('dyno resource', () => {
     const get = vi.fn().mockImplementation(() => Promise.resolve(new Response('[]', {headers})))
     const fakeClient = {get, put} as unknown as HerokuApiClient
     const makeClient = vi.fn(() => fakeClient)
-    const ctx: ResourceCtx = {...platformCtx({dyno: {}, formation: {}}), makeClient}
-    const methods = dynoExtensions.factory(ctx)
+    const ctx: Pick<ResourceCtx, 'makeClient' | 'platform'> = {...platformCtx({dyno: {}, formation: {}}), makeClient}
+    const methods = dynoExtensions.factory(ctx as ResourceCtx)
 
     await methods.exchangeExecCredentials('app-1', {apiKey: 'k', dyno: 'web.1', publicKey: 'ssh-rsa X'})
     await methods.execStatus('app-1', {apiKey: 'k'})
@@ -153,7 +153,7 @@ describe('dyno resource', () => {
 
   it('dynoExtensions factory exposes scale, restart, run, and waitForInfo methods', () => {
     const ctx = platformCtx({dyno: {}, formation: {}})
-    const methods = dynoExtensions.factory(ctx)
+    const methods = dynoExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.scale).toBe('function')
     expect(typeof methods.restart).toBe('function')
     expect(typeof methods.run).toBe('function')

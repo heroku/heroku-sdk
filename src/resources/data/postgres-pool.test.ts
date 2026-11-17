@@ -26,7 +26,14 @@ const LEVELS: PostgresLevelInfoResult = {
 
 describe('postgresPoolExtensions factory', () => {
   it('exposes listAvailableActions and listAvailableLevels', () => {
-    const methods = postgresPoolExtensions.factory({data: {} as never, platform: {} as never})
+    const methods = postgresPoolExtensions.factory({
+      dashboardBackend: {} as never,
+      data: {} as never,
+      metrics: {} as never,
+      notifications: {} as never,
+      platform: {} as never,
+      repositories: {} as never,
+    })
     expect(typeof methods.listAvailableActions).toBe('function')
     expect(typeof methods.listAvailableLevels).toBe('function')
   })

@@ -5,7 +5,6 @@ import {
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {legacyResourceCtx} from '../../../../test-types/heroku-sdk-options.js'
 import {mergeExtensions} from '../../../core/extensions-proxy.js'
 import {
   transferExtensions, TransferFailedError, TransferTimeoutError, waitForTransfer,
@@ -17,7 +16,7 @@ function buildCtx(opts: {
   infoByApp?: ReturnType<typeof vi.fn>
   onSignal?: (signal?: AbortSignal) => void
   operationSignal?: AbortSignal
-}): ResourceCtx {
+}): Pick<ResourceCtx, 'data' | 'operationSignal'> {
   let requestSignal: AbortSignal | undefined = opts.operationSignal
   const callInfoByApp = opts.infoByApp ?? vi.fn()
   const dataClient = {
@@ -35,22 +34,23 @@ function buildCtx(opts: {
     },
   }
   return {
-    ...legacyResourceCtx,
     data: dataClient as never,
     operationSignal: opts.operationSignal,
   }
 }
 
-function buildSdkDataClient(ctx: ResourceCtx) {
+type SdkDataClient = {
+  transfer: ReturnType<typeof transferExtensions.factory>
+  withOptions: (options: {signal?: AbortSignal}) => SdkDataClient
+}
+
+function buildSdkDataClient(ctx: Pick<ResourceCtx, 'data' | 'operationSignal'>): SdkDataClient {
   const makeRoutes = (): Record<string, unknown> => ({
     transfer: {},
     withOptions: vi.fn().mockImplementation(makeRoutes),
   })
 
-  return mergeExtensions(makeRoutes(), [transferExtensions], ctx) as {
-    transfer: {waitForTransfer: typeof waitForTransfer}
-    withOptions: (options: {signal?: AbortSignal}) => ReturnType<typeof buildSdkDataClient>
-  }
+  return mergeExtensions(makeRoutes(), [transferExtensions], ctx as ResourceCtx) as SdkDataClient
 }
 
 describe('waitForTransfer', () => {
@@ -154,6 +154,7 @@ describe('waitForTransfer', () => {
     await vi.advanceTimersByTimeAsync(10 - DEFAULT_INTERVAL_MS)
 
     const settled = await pending
+    if (!('error_' in settled)) throw new Error('expected the poll to reject')
     const {error_} = settled
     const error = error_
     expect(error).toBeInstanceOf(TransferTimeoutError)
@@ -196,6 +197,7 @@ describe('waitForTransfer', () => {
     controller.abort(abortReason)
 
     const settled = await pending
+    if (!('error_' in settled)) throw new Error('expected the poll to reject')
     const {error_} = settled
     expect(error_).toBe(abortReason)
     expect(pollSignal?.aborted).toBe(true)
@@ -235,6 +237,7 @@ describe('waitForTransfer', () => {
     clientController.abort(abortReason)
 
     const settled = await pending
+    if (!('error_' in settled)) throw new Error('expected the poll to reject')
     const {error_} = settled
     expect(error_).toBe(abortReason)
     expect((effectiveSignal as AbortSignal).aborted).toBe(true)
@@ -270,6 +273,7 @@ describe('waitForTransfer', () => {
 
     controller.abort(abortReason)
     const settled = await pending
+    if (!('error_' in settled)) throw new Error('expected the poll to reject')
     const {error_} = settled
     expect(error_).toBe(abortReason)
   })
@@ -291,6 +295,7 @@ describe('waitForTransfer', () => {
 
     controller.abort(abortReason)
     const settled = await pending
+    if (!('error_' in settled)) throw new Error('expected the poll to reject')
     const {error_} = settled
     expect(error_).toBe(abortReason)
   })

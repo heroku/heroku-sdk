@@ -27,7 +27,7 @@ function buildCtx(stubs: {
   appInfo?: ReturnType<typeof vi.fn>
   formationBatchUpdate?: ReturnType<typeof vi.fn>
   releaseList?: ReturnType<typeof vi.fn>
-} = {}): ResourceCtx {
+} = {}): Pick<ResourceCtx, 'platform'> {
   const platform: FakePlatform = {
     app: {
       info: stubs.appInfo ?? vi.fn().mockResolvedValue({}),
@@ -49,7 +49,6 @@ function buildCtx(stubs: {
   platform.withHeaders.mockReturnValue(platform)
 
   return {
-    data: {} as never,
     platform: platform as never,
   }
 }

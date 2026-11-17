@@ -27,7 +27,7 @@ type FakePlatform = {
 function buildCtx(stubs: {
   info?: ReturnType<typeof vi.fn>
   natInfo?: ReturnType<typeof vi.fn>
-} = {}): ResourceCtx {
+} = {}): Pick<ResourceCtx, 'platform'> {
   const platform: FakePlatform = {
     space: {
       info: stubs.info ?? vi.fn().mockResolvedValue({}),
@@ -46,10 +46,7 @@ function buildCtx(stubs: {
   platform.withOptions.mockReturnValue(platform)
 
   return {
-    data: {} as never,
-    metrics: {} as never,
     platform: platform as never,
-    repositories: {} as never,
   }
 }
 
@@ -65,6 +62,7 @@ function buildSpace(overrides: Partial<Space> = {}): Space {
     region: {id: 'region-1', name: 'virginia'},
     shield: false,
     state: 'allocated',
+    supported_architectures: [],
     team: {id: 'team-1', name: 'my-team'},
     updated_at: '2020-01-01T00:00:00Z',
     ...overrides,

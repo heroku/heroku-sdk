@@ -20,7 +20,7 @@ function buildPlatformMock(filterAppsApps: ReturnType<typeof vi.fn>): PlatformMo
 function ctxWith(
   listByPipeline: ReturnType<typeof vi.fn>,
   platform: PlatformMock = buildPlatformMock(vi.fn()),
-): {ctx: ResourceCtx; platform: PlatformMock} {
+): {ctx: Pick<ResourceCtx, 'platform'>; platform: PlatformMock} {
   const platformClient: Record<string, unknown> = {
     pipelineCoupling: {listByPipeline},
     withHeaders: platform.withHeaders,
@@ -29,7 +29,6 @@ function ctxWith(
   platformClient.withOptions = vi.fn(() => platformClient)
   return {
     ctx: {
-      data: {} as never,
       platform: platformClient as never,
     },
     platform,
@@ -163,8 +162,8 @@ describe('pipeline-coupling resource', () => {
   })
 
   it('pipelineCouplingExtensions factory exposes a listApps method', () => {
-    const ctx: ResourceCtx = {data: {} as never, platform: {} as never}
-    const methods = pipelineCouplingExtensions.factory(ctx)
+    const {ctx} = ctxWith(vi.fn())
+    const methods = pipelineCouplingExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.listApps).toBe('function')
   })
 })

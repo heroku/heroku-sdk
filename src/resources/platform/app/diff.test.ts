@@ -7,8 +7,8 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {diffApps} from './diff.js'
 
-function ctx(platform: unknown): ResourceCtx {
-  return {data: {} as never, metrics: {} as never, platform: platform as never}
+function ctx(platform: unknown): Pick<ResourceCtx, 'platform'> {
+  return {platform: platform as never}
 }
 
 // Per-app fixture: each key holds the raw shape the corresponding platform

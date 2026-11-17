@@ -6,7 +6,6 @@ import {
 
 import type {ResourceCtx} from '../../core/extend-resource.js'
 
-import {legacyResourceCtx} from '../../../test-types/heroku-sdk-options.js'
 import {mergeExtensions} from '../../core/extensions-proxy.js'
 import {DatabaseCopyTransferError as PublicDatabaseCopyTransferError} from '../extensions/data.js'
 import {copyDatabase, databaseCopyExtensions, DatabaseCopyTransferError} from './database-copy.js'
@@ -36,7 +35,7 @@ function buildCtx(opts: {
   operationSignal?: AbortSignal
   resolution?: ReturnType<typeof vi.fn>
   transferCreate?: ReturnType<typeof vi.fn>
-} = {}): ResourceCtx {
+} = {}): Pick<ResourceCtx, 'data' | 'makeClient' | 'operationSignal' | 'platform'> {
   let requestSignal = opts.operationSignal
   const credentials = opts.credentials ?? vi.fn().mockResolvedValue([{user: 'default'}, {user: 'extra'}])
   const postgresDatabase = {
@@ -68,7 +67,6 @@ function buildCtx(opts: {
   })
 
   return {
-    ...legacyResourceCtx,
     data: data as never,
     operationSignal: opts.operationSignal,
     ...(opts.makeClient ? {makeClient: opts.makeClient as never} : {}),
@@ -85,17 +83,20 @@ function buildCtx(opts: {
   }
 }
 
-function buildSdkDataClient(ctx: ResourceCtx) {
+type SdkDataClient = {
+  database: ReturnType<typeof databaseCopyExtensions.factory>
+  transfer: ReturnType<typeof transferExtensions.factory>
+  withOptions: (options: {signal?: AbortSignal}) => SdkDataClient
+}
+
+function buildSdkDataClient(ctx: Pick<ResourceCtx, 'data' | 'makeClient' | 'operationSignal' | 'platform'>): SdkDataClient {
   const makeRoutes = (): Record<string, unknown> => ({
     database: {},
     transfer: {},
     withOptions: vi.fn().mockImplementation(makeRoutes),
   })
 
-  return mergeExtensions(makeRoutes(), [databaseCopyExtensions, transferExtensions], ctx) as {
-    database: {copyForApp: typeof copyDatabase}
-    withOptions: (options: {signal?: AbortSignal}) => ReturnType<typeof buildSdkDataClient>
-  }
+  return mergeExtensions(makeRoutes(), [databaseCopyExtensions, transferExtensions], ctx as ResourceCtx) as SdkDataClient
 }
 
 describe('database copy resource', () => {
@@ -589,7 +590,9 @@ describe('database copy resource', () => {
       order.push('create')
       return {uuid: 'transfer-1'}
     })
-    const onCredentialsChecked = vi.fn(() => order.push('credentialsChecked'))
+    const onCredentialsChecked = vi.fn(() => {
+      order.push('credentialsChecked')
+    })
     const copyPoller = {onStart: vi.fn(() => order.push('copyStart'))}
     const infoByApp = vi.fn().mockImplementation(async () => {
       order.push('poll')
@@ -1318,7 +1321,9 @@ describe('database copy resource', () => {
 
     controller.abort(new Error('SDK-scoped cancellation'))
 
-    const {error_} = await pending
+    const settled = await pending
+    if (!('error_' in settled)) throw new Error('expected the copy to reject')
+    const {error_} = settled
     expect(error_).toBeInstanceOf(DatabaseCopyTransferError)
     expect(error_).toMatchObject({name: 'AbortError', transferId: 'transfer-1'})
     expect(error_).not.toHaveProperty('transfer')
@@ -1390,7 +1395,10 @@ describe('database copy resource', () => {
       }).then(value => ({value}), error_ => ({error_}))
 
     await secondPollStarted
-    const {error_} = await pending
+
+    const settled = await pending
+    if (!('error_' in settled)) throw new Error('expected the copy to reject')
+    const {error_} = settled
 
     expect(error_).toBeInstanceOf(TransferTimeoutError)
     expect(error_).toMatchObject({timeoutMs: 50, transferId: 'transfer-1'})

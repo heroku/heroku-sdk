@@ -3,7 +3,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
 import {debug} from './debug.js'
 
-type ResolveRepoNameCtx = Pick<ResourceCtx, 'platform' | 'repositories'> & {
+export type ResolveRepoNameCtx = Pick<ResourceCtx, 'platform' | 'repositories'> & {
   repositoriesApi: NonNullable<ResourceCtx['repositoriesApi']>
 }
 

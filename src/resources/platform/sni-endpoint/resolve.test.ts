@@ -27,7 +27,7 @@ function buildCtx(stubs: Partial<Record<'domainInfo' | 'sniDelete' | 'sniInfo' |
     withOptions: vi.fn(),
   }
   platform.withOptions.mockReturnValue(platform)
-  return {ctx: {data: {} as never, platform: platform as never} as ResourceCtx, platform}
+  return {ctx: {platform: platform as never} as Pick<ResourceCtx, 'platform'>, platform}
 }
 
 describe('infoByApp', () => {

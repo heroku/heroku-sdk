@@ -24,9 +24,23 @@ const createBody: PipelinePromotionCreateOpts = {
   targets: [{app: {id: 'target-1'}}],
 }
 
+function buildTarget(overrides: Partial<PipelinePromotionTarget> = {}): PipelinePromotionTarget {
+  return {
+    app: {id: 'target-app-1'},
+    // eslint-disable-next-line camelcase
+    error_message: null,
+    id: 't1',
+    // eslint-disable-next-line camelcase
+    pipeline_promotion: {id: 'promo-1'},
+    release: null,
+    status: 'pending',
+    ...overrides,
+  }
+}
+
 function ctxFor(promotion: PipelinePromotion, listResults: PipelinePromotionTarget[][]): {
   create: ReturnType<typeof vi.fn>;
-  ctx: ResourceCtx;
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>;
   list: ReturnType<typeof vi.fn>;
   withOptions: ReturnType<typeof vi.fn>;
 } {
@@ -45,7 +59,6 @@ function ctxFor(promotion: PipelinePromotion, listResults: PipelinePromotionTarg
   return {
     create,
     ctx: {
-      data: {} as never,
       platform: platform as never,
     },
     list,
@@ -66,7 +79,7 @@ function ctxWithRelease(
   listResults: PipelinePromotionTarget[][],
   release: {output_stream_url?: null | string},
 ): {
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'makeClient' | 'platform'>
   releaseInfo: ReturnType<typeof vi.fn>
   withOptions: ReturnType<typeof vi.fn>
 } {
@@ -86,7 +99,6 @@ function ctxWithRelease(
 
   return {
     ctx: {
-      data: {} as never,
       platform: platform as never,
     },
     releaseInfo,
@@ -112,7 +124,7 @@ describe('pipeline-promotion resource', () => {
 
   it('promotePipeline returns immediately when all targets are terminal on first poll', async () => {
     const promotion = {id: 'promo-1'} as PipelinePromotion
-    const targets: PipelinePromotionTarget[] = [{id: 't1', status: 'succeeded'}]
+    const targets: PipelinePromotionTarget[] = [buildTarget({status: 'succeeded'})]
     const {create, ctx} = ctxFor(promotion, [targets])
 
     const result = await promotePipeline(ctx, createBody)
@@ -123,8 +135,8 @@ describe('pipeline-promotion resource', () => {
 
   it('promotePipeline polls until every target reaches a terminal status', async () => {
     const promotion = {id: 'promo-2'} as PipelinePromotion
-    const pending: PipelinePromotionTarget[] = [{id: 't1', status: 'pending'}]
-    const done: PipelinePromotionTarget[] = [{id: 't1', status: 'succeeded'}]
+    const pending: PipelinePromotionTarget[] = [buildTarget({status: 'pending'})]
+    const done: PipelinePromotionTarget[] = [buildTarget({status: 'succeeded'})]
     const {ctx, list} = ctxFor(promotion, [pending, done])
 
     const promise = promotePipeline(ctx, createBody, {intervalMs: 500})
@@ -138,8 +150,8 @@ describe('pipeline-promotion resource', () => {
   it('promotePipeline treats failed targets as terminal and returns them in the result', async () => {
     const promotion = {id: 'promo-failed'} as PipelinePromotion
     const targets: PipelinePromotionTarget[] = [
-      {id: 't1', status: 'succeeded'},
-      {id: 't2', status: 'failed'},
+      buildTarget({status: 'succeeded'}),
+      buildTarget({id: 't2', status: 'failed'}),
     ]
     const {ctx} = ctxFor(promotion, [targets])
 
@@ -156,10 +168,9 @@ describe('pipeline-promotion resource', () => {
 
   it('promotePipeline throws when the timeout elapses before targets reach a terminal status', async () => {
     const promotion = {id: 'promo-3'} as PipelinePromotion
-    const pending: PipelinePromotionTarget[] = [{id: 't1', status: 'pending'}]
+    const pending: PipelinePromotionTarget[] = [buildTarget({status: 'pending'})]
     const list = vi.fn().mockResolvedValue(pending)
-    const ctx: ResourceCtx = {
-      data: {} as never,
+    const ctx: Pick<ResourceCtx, 'makeClient' | 'platform'> = {
       platform: {
         pipelinePromotion: {create: vi.fn().mockResolvedValue(promotion)},
         pipelinePromotionTarget: {list},
@@ -174,7 +185,7 @@ describe('pipeline-promotion resource', () => {
 
   it('promotePipeline aborts polling when the abort signal fires', async () => {
     const promotion = {id: 'promo-4'} as PipelinePromotion
-    const pending: PipelinePromotionTarget[] = [{id: 't1', status: 'pending'}]
+    const pending: PipelinePromotionTarget[] = [buildTarget({status: 'pending'})]
     const list = vi.fn().mockResolvedValue(pending)
     const platform = {
       pipelinePromotion: {create: vi.fn().mockResolvedValue(promotion)},
@@ -182,8 +193,7 @@ describe('pipeline-promotion resource', () => {
       withOptions: vi.fn(),
     }
     platform.withOptions.mockReturnValue(platform)
-    const ctx: ResourceCtx = {
-      data: {} as never,
+    const ctx: Pick<ResourceCtx, 'makeClient' | 'platform'> = {
       platform: platform as never,
     }
 
@@ -197,18 +207,12 @@ describe('pipeline-promotion resource', () => {
 
   it('promotePipeline hands the release output stream to onReleaseStream and resumes polling', async () => {
     const promotion = {id: 'promo-stream'} as PipelinePromotion
-    const pendingWithRelease: PipelinePromotionTarget[] = [{
-      app: {id: 'target-app-1'},
-      id: 't1',
-      release: {id: 'release-1'},
-      status: 'pending',
-    }]
-    const done: PipelinePromotionTarget[] = [{
-      app: {id: 'target-app-1'},
-      id: 't1',
-      release: {id: 'release-1'},
-      status: 'succeeded',
-    }]
+    const pendingWithRelease: PipelinePromotionTarget[] = [
+      buildTarget({release: {id: 'release-1'}, status: 'pending'}),
+    ]
+    const done: PipelinePromotionTarget[] = [
+      buildTarget({release: {id: 'release-1'}, status: 'succeeded'}),
+    ]
     const {ctx, releaseInfo} = ctxWithRelease(promotion, [pendingWithRelease, done], {
       // eslint-disable-next-line camelcase
       output_stream_url: 'https://busl.example/release?token=abc',
@@ -247,18 +251,12 @@ describe('pipeline-promotion resource', () => {
 
   it('opens the busl stream through ctx.makeClient when threaded, not a bare HerokuApiClient', async () => {
     const promotion = {id: 'promo-makeclient'} as PipelinePromotion
-    const pendingWithRelease: PipelinePromotionTarget[] = [{
-      app: {id: 'target-app-1'},
-      id: 't1',
-      release: {id: 'release-1'},
-      status: 'pending',
-    }]
-    const done: PipelinePromotionTarget[] = [{
-      app: {id: 'target-app-1'},
-      id: 't1',
-      release: {id: 'release-1'},
-      status: 'succeeded',
-    }]
+    const pendingWithRelease: PipelinePromotionTarget[] = [
+      buildTarget({release: {id: 'release-1'}, status: 'pending'}),
+    ]
+    const done: PipelinePromotionTarget[] = [
+      buildTarget({release: {id: 'release-1'}, status: 'succeeded'}),
+    ]
     const {ctx} = ctxWithRelease(promotion, [pendingWithRelease, done], {
       // eslint-disable-next-line camelcase
       output_stream_url: 'https://busl.example/release?token=abc',
@@ -296,12 +294,9 @@ describe('pipeline-promotion resource', () => {
 
   it('promotePipeline retries the busl fetch up to releaseStreamMaxAttempts before failing', async () => {
     const promotion = {id: 'promo-retry'} as PipelinePromotion
-    const pendingWithRelease: PipelinePromotionTarget[] = [{
-      app: {id: 'target-app-1'},
-      id: 't1',
-      release: {id: 'release-1'},
-      status: 'pending',
-    }]
+    const pendingWithRelease: PipelinePromotionTarget[] = [
+      buildTarget({release: {id: 'release-1'}, status: 'pending'}),
+    ]
     const {ctx} = ctxWithRelease(promotion, [pendingWithRelease], {
       // eslint-disable-next-line camelcase
       output_stream_url: 'https://busl.example/release',
@@ -324,12 +319,9 @@ describe('pipeline-promotion resource', () => {
 
   it('promotePipeline propagates an abort from the busl stream instead of retrying it', async () => {
     const promotion = {id: 'promo-abort'} as PipelinePromotion
-    const pendingWithRelease: PipelinePromotionTarget[] = [{
-      app: {id: 'target-app-1'},
-      id: 't1',
-      release: {id: 'release-1'},
-      status: 'pending',
-    }]
+    const pendingWithRelease: PipelinePromotionTarget[] = [
+      buildTarget({release: {id: 'release-1'}, status: 'pending'}),
+    ]
     const {ctx} = ctxWithRelease(promotion, [pendingWithRelease], {
       // eslint-disable-next-line camelcase
       output_stream_url: 'https://busl.example/release',
@@ -360,7 +352,7 @@ describe('pipeline-promotion resource', () => {
 
   it('promotePipeline threads the caller signal into the create and poll requests', async () => {
     const promotion = {id: 'promo-signal'} as PipelinePromotion
-    const targets: PipelinePromotionTarget[] = [{id: 't1', status: 'succeeded'}]
+    const targets: PipelinePromotionTarget[] = [buildTarget({status: 'succeeded'})]
     const {ctx, withOptions} = ctxFor(promotion, [targets])
     const controller = new AbortController()
 
@@ -372,14 +364,12 @@ describe('pipeline-promotion resource', () => {
   it('promotePipeline skips streaming when there are multiple targets', async () => {
     const promotion = {id: 'promo-multi'} as PipelinePromotion
     const pending: PipelinePromotionTarget[] = [
-      {
-        app: {id: 'target-app-1'}, id: 't1', release: {id: 'release-1'}, status: 'pending',
-      },
-      {app: {id: 'target-app-2'}, id: 't2', status: 'pending'},
+      buildTarget({release: {id: 'release-1'}, status: 'pending'}),
+      buildTarget({app: {id: 'target-app-2'}, id: 't2', status: 'pending'}),
     ]
     const done: PipelinePromotionTarget[] = [
-      {app: {id: 'target-app-1'}, id: 't1', status: 'succeeded'},
-      {app: {id: 'target-app-2'}, id: 't2', status: 'succeeded'},
+      buildTarget({status: 'succeeded'}),
+      buildTarget({app: {id: 'target-app-2'}, id: 't2', status: 'succeeded'}),
     ]
     const {ctx, releaseInfo} = ctxWithRelease(promotion, [pending, done], {
       // eslint-disable-next-line camelcase
@@ -407,18 +397,12 @@ describe('pipeline-promotion resource', () => {
 
   it('promotePipeline skips streaming when the release has no output_stream_url', async () => {
     const promotion = {id: 'promo-no-url'} as PipelinePromotion
-    const pendingWithRelease: PipelinePromotionTarget[] = [{
-      app: {id: 'target-app-1'},
-      id: 't1',
-      release: {id: 'release-1'},
-      status: 'pending',
-    }]
-    const done: PipelinePromotionTarget[] = [{
-      app: {id: 'target-app-1'},
-      id: 't1',
-      release: {id: 'release-1'},
-      status: 'succeeded',
-    }]
+    const pendingWithRelease: PipelinePromotionTarget[] = [
+      buildTarget({release: {id: 'release-1'}, status: 'pending'}),
+    ]
+    const done: PipelinePromotionTarget[] = [
+      buildTarget({release: {id: 'release-1'}, status: 'succeeded'}),
+    ]
     const {ctx} = ctxWithRelease(promotion, [pendingWithRelease, done], {
       // eslint-disable-next-line camelcase
       output_stream_url: null,
@@ -442,8 +426,8 @@ describe('pipeline-promotion resource', () => {
   })
 
   it('pipelinePromotionExtensions factory exposes a promote method', () => {
-    const ctx: ResourceCtx = {data: {} as never, platform: {} as never}
-    const methods = pipelinePromotionExtensions.factory(ctx)
+    const {ctx} = ctxFor({} as PipelinePromotion, [])
+    const methods = pipelinePromotionExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.promote).toBe('function')
   })
 })

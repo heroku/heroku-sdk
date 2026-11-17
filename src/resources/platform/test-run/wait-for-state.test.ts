@@ -22,25 +22,25 @@ function testRun(status: TestRun['status'], overrides: Partial<TestRun> = {}): T
  * signal-scoped call still reaches the same mock.
  */
 function ctxFor(runs: TestRun[]): {
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'platform'>
   infoByPipeline: ReturnType<typeof vi.fn>
 } {
   const infoByPipeline = vi.fn()
   for (const run of runs) infoByPipeline.mockResolvedValueOnce(run)
   const platform: Record<string, unknown> = {testRun: {infoByPipeline}}
   platform.withOptions = vi.fn().mockReturnValue(platform)
-  return {ctx: {data: {} as never, platform: platform as never}, infoByPipeline}
+  return {ctx: {platform: platform as never}, infoByPipeline}
 }
 
 /** Variant whose `infoByPipeline` always resolves the same run. */
 function ctxAlways(run: TestRun): {
-  ctx: ResourceCtx
+  ctx: Pick<ResourceCtx, 'platform'>
   infoByPipeline: ReturnType<typeof vi.fn>
 } {
   const infoByPipeline = vi.fn().mockResolvedValue(run)
   const platform: Record<string, unknown> = {testRun: {infoByPipeline}}
   platform.withOptions = vi.fn().mockReturnValue(platform)
-  return {ctx: {data: {} as never, platform: platform as never}, infoByPipeline}
+  return {ctx: {platform: platform as never}, infoByPipeline}
 }
 
 describe('test-run waitForState', () => {
@@ -158,9 +158,8 @@ describe('test-run waitForState', () => {
     expect(testRunExtensions.service).toBe('platform')
     expect(testRunExtensions.resource).toBe('testRun')
 
-    const platform: Record<string, unknown> = {testRun: {}}
-    platform.withOptions = vi.fn().mockReturnValue(platform)
-    const methods = testRunExtensions.factory({data: {} as never, platform: platform as never})
+    const {ctx} = ctxFor([])
+    const methods = testRunExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.waitForState).toBe('function')
   })
 

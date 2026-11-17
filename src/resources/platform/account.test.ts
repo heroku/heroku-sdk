@@ -18,7 +18,7 @@ type FakePlatform = {
 function buildCtx(stubs: {
   accountInfo?: ReturnType<typeof vi.fn>
   delinquencyInfo?: ReturnType<typeof vi.fn>
-} = {}): {ctx: ResourceCtx; platform: FakePlatform} {
+} = {}): {ctx: Pick<ResourceCtx, 'platform'>; platform: FakePlatform} {
   const platform: FakePlatform = {
     account: {info: stubs.accountInfo ?? vi.fn().mockResolvedValue({})},
     accountDelinquency: {info: stubs.delinquencyInfo ?? vi.fn().mockResolvedValue(null)},
@@ -27,7 +27,7 @@ function buildCtx(stubs: {
   platform.withOptions.mockReturnValue(platform)
 
   return {
-    ctx: {platform: platform as never} as ResourceCtx,
+    ctx: {platform: platform as never},
     platform,
   }
 }
@@ -159,7 +159,7 @@ describe('accountExtensions.getWithDelinquency wiring', () => {
     const {ctx, platform} = buildCtx({
       accountInfo: vi.fn().mockResolvedValue({id: 'acct-1'} as Account),
     })
-    const methods = accountExtensions.factory(ctx)
+    const methods = accountExtensions.factory(ctx as ResourceCtx)
 
     expect(typeof methods.getWithDelinquency).toBe('function')
     const result = await methods.getWithDelinquency()

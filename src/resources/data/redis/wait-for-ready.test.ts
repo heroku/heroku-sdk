@@ -18,7 +18,7 @@ function buildNotFound(): NotFoundError {
   return new NotFoundError(response, {id: 'not_found', resource: 'redis'})
 }
 
-function buildCtx(waitMock: WaitFn): ResourceCtx {
+function buildCtx(waitMock: WaitFn): Pick<ResourceCtx, 'data'> {
   const dataClient = {
     redis: {wait: waitMock},
     withOptions() {
@@ -27,7 +27,6 @@ function buildCtx(waitMock: WaitFn): ResourceCtx {
   }
   return {
     data: dataClient as never,
-    platform: {} as never,
   }
 }
 
@@ -137,7 +136,8 @@ describe('redisExtensions', () => {
   })
 
   it('factory exposes resolveByApp and waitForReady', () => {
-    const methods = redisExtensions.factory({data: {} as never, platform: {} as never})
+    const ctx = buildCtx(vi.fn())
+    const methods = redisExtensions.factory(ctx as ResourceCtx)
     expect(typeof methods.resolveByApp).toBe('function')
     expect(typeof methods.waitForReady).toBe('function')
   })

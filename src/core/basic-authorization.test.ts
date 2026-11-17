@@ -27,7 +27,8 @@ describe('basicAuthorization', () => {
   })
 
   it('works without Buffer, as in a browser', () => {
-    vi.stubGlobal('Buffer')
+    // eslint-disable-next-line unicorn/no-useless-undefined
+    vi.stubGlobal('Buffer', undefined)
     expect(basicAuthorization('user', 'pass')).toBe('Basic dXNlcjpwYXNz')
   })
 })

@@ -8,7 +8,14 @@ import {extendResource} from './extend-resource.js'
 import {mergeExtensions} from './extensions-proxy.js'
 
 function fakeCtx(): ResourceCtx {
-  return {data: {} as never, platform: {} as never}
+  return {
+    dashboardBackend: {} as never,
+    data: {} as never,
+    metrics: {} as never,
+    notifications: {} as never,
+    platform: {} as never,
+    repositories: {} as never,
+  }
 }
 
 describe('mergeExtensions', () => {
@@ -123,7 +130,7 @@ describe('mergeExtensions', () => {
 
     // Extension method that issues its request through ctx.platform (like app.describe).
     const ext = extendResource('platform', 'app', c => ({
-      describe: () => (c.platform as {app: {info: () => void}}).app.info(),
+      describe: () => (c.platform as unknown as {app: {info: () => void}}).app.info(),
     }))
 
     const inner = {app: {}}
@@ -151,7 +158,7 @@ describe('mergeExtensions', () => {
     const ctx = {data: {} as never, platform: makePlatform()} as unknown as ResourceCtx
 
     const ext = extendResource('platform', 'app', c => ({
-      describe: () => (c.platform as {app: {info: () => void}}).app.info(),
+      describe: () => (c.platform as unknown as {app: {info: () => void}}).app.info(),
     }))
     const withOptions = vi.fn().mockImplementation(() => ({app: {}}))
     const routes = {app: {}, withOptions} as Record<string, unknown>
@@ -211,7 +218,7 @@ describe('mergeExtensions', () => {
     const ctx = {data: {} as never, platform: makePlatform()} as unknown as ResourceCtx
 
     const ext = extendResource('platform', 'app', c => ({
-      describe: () => (c.platform as {app: {info: () => void}}).app.info(),
+      describe: () => (c.platform as unknown as {app: {info: () => void}}).app.info(),
     }))
     const withOptions = vi.fn().mockReturnValue({app: {}})
     const routes = {app: {}, withOptions} as Record<string, unknown>
@@ -241,7 +248,7 @@ describe('mergeExtensions', () => {
     const ctx = {data: {} as never, platform: makePlatform()} as unknown as ResourceCtx
 
     const ext = extendResource('platform', 'app', c => ({
-      describe: () => (c.platform as {app: {info: () => void}}).app.info(),
+      describe: () => (c.platform as unknown as {app: {info: () => void}}).app.info(),
     }))
     const withHeaders = vi.fn().mockReturnValue({app: {}})
     const routes = {app: {}, withHeaders} as Record<string, unknown>

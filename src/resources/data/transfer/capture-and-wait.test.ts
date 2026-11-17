@@ -5,14 +5,13 @@ import {
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {legacyResourceCtx} from '../../../../test-types/heroku-sdk-options.js'
 import {captureAndWait} from './capture-and-wait.js'
 
 function buildCtx(opts: {
   backupCreate?: ReturnType<typeof vi.fn>
   infoByApp?: ReturnType<typeof vi.fn>
   resolutionByAttachment?: ReturnType<typeof vi.fn>
-}): ResourceCtx {
+}): Pick<ResourceCtx, 'data' | 'platform'> {
   const dataClient = {
     backup: {
       create: opts.backupCreate ?? vi.fn(),
@@ -24,7 +23,6 @@ function buildCtx(opts: {
     withOptions: vi.fn(() => dataClient),
   }
   return {
-    ...legacyResourceCtx,
     data: dataClient as never,
     platform: {
       addOnAttachment: {resolution: opts.resolutionByAttachment ?? vi.fn()},
@@ -89,8 +87,7 @@ describe('captureAndWait', () => {
     const withOptions = vi.fn((opts: {signal?: AbortSignal}) => (opts.signal ? bound : base))
     base.withOptions = withOptions
 
-    const ctx: ResourceCtx = {
-      ...legacyResourceCtx,
+    const ctx: Pick<ResourceCtx, 'data' | 'platform'> = {
       data: base as never,
       platform: {
         addOnAttachment: {resolution: vi.fn().mockResolvedValue(attachmentMatch)},

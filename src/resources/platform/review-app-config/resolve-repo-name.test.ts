@@ -5,6 +5,7 @@ import {
 } from 'vitest'
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
+import type {ResolveRepoNameCtx} from './resolve-repo-name.js'
 
 import {HerokuSDK} from '../../../core/heroku-sdk.js'
 import {debug} from './debug.js'
@@ -47,10 +48,7 @@ function buildCtx() {
   repositories.withOptions.mockReturnValue(repositories)
 
   return {
-    ctx: {platform, repositories, repositoriesApi} as unknown as Pick<
-      ResourceCtx,
-      'platform' | 'repositories' | 'repositoriesApi'
-    >,
+    ctx: {platform, repositories, repositoriesApi} as unknown as ResolveRepoNameCtx,
     platform,
     repositories: repositories as FakeClient<typeof repositories>,
     repositoriesApi: repositoriesApi as FakeClient<typeof repositoriesApi>,
@@ -239,7 +237,7 @@ describe('reviewAppConfigExtensions', () => {
 
   it('rejects a direct extension context without the repositories API client', () => {
     const {ctx} = buildCtx()
-    const legacyCtx = {...ctx}
+    const legacyCtx: Pick<ResourceCtx, 'platform' | 'repositories' | 'repositoriesApi'> = {...ctx}
     delete legacyCtx.repositoriesApi
 
     expect(() => reviewAppConfigExtensions.factory(legacyCtx as ResourceCtx))

@@ -262,7 +262,6 @@ describe('waitForInfo', () => {
 
     await waitForInfo(ctx, 'app-1', 'web.1', {delayMs: 1, signal: controller.signal})
 
-    // @ts-expect-error — withOptions is on the mocked platform but not in the public type.
     expect(ctx.platform.withOptions).toHaveBeenCalledWith({signal: controller.signal})
   })
 

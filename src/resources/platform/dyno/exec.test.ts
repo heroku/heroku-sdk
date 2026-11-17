@@ -186,7 +186,7 @@ describe('restartForExec', () => {
   })
 
   it('restarts all dynos then resolves once the target dyno is up', async () => {
-    const restartAll = vi.fn().mockResolvedValue()
+    const restartAll = vi.fn().mockResolvedValue({name: 'web.1', state: 'starting'} as Dyno)
     const info = vi.fn()
       .mockResolvedValueOnce({name: 'web.1', state: 'starting'} as Dyno)
       .mockResolvedValueOnce({name: 'web.1', state: 'up'} as Dyno)
@@ -200,7 +200,7 @@ describe('restartForExec', () => {
   })
 
   it('throws DynoCrashedError immediately when the dyno crashes', async () => {
-    const restartAll = vi.fn().mockResolvedValue()
+    const restartAll = vi.fn().mockResolvedValue({name: 'web.1', state: 'starting'} as Dyno)
     const info = vi.fn().mockResolvedValue({name: 'web.1', state: 'crashed'} as Dyno)
     const {ctx} = ctxWith({dyno: {info, restartAll}})
 
@@ -211,7 +211,7 @@ describe('restartForExec', () => {
   })
 
   it('polls only the target dyno, so a sibling crash never aborts the wait', async () => {
-    const restartAll = vi.fn().mockResolvedValue()
+    const restartAll = vi.fn().mockResolvedValue({name: 'web.1', state: 'starting'} as Dyno)
     // Crash detection is intentionally scoped to the target: restartForExec
     // waits via waitForInfo on the named dyno only, so a different dyno
     // crashing during the fleet restart is invisible and does not abort — exec

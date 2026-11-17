@@ -19,10 +19,10 @@ vi.mock('@heroku/heroku-fetch', async () => {
 
 const DYNO: Dyno = {name: 'run.1234', state: 'starting'} as Dyno
 
-function ctxWith(create: ReturnType<typeof vi.fn>): ResourceCtx {
+function ctxWith(create: ReturnType<typeof vi.fn>): Pick<ResourceCtx, 'makeClient' | 'platform'> {
   const platform = {dyno: {create}} as Record<string, unknown>
   platform.withOptions = vi.fn().mockReturnValue(platform)
-  return {data: {} as never, platform: platform as never}
+  return {platform: platform as never}
 }
 
 function mockPost(post: ReturnType<typeof vi.fn>) {
@@ -171,7 +171,7 @@ describe('runDyno', () => {
     const post = vi.fn().mockResolvedValue(jsonResponse(DYNO))
     const fakeClient = {post} as unknown as HerokuApiClient
     const makeClient = vi.fn(() => fakeClient)
-    const ctx: ResourceCtx = {...ctxWith(vi.fn()), makeClient}
+    const ctx: Pick<ResourceCtx, 'makeClient' | 'platform'> = {...ctxWith(vi.fn()), makeClient}
 
     const result = await runDyno(ctx, 'app-1', 'bash', {dyno: 'web.1'})
 
