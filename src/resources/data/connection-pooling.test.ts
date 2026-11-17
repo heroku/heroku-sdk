@@ -10,7 +10,7 @@ import {attach, connectionPoolingExtensions} from './connection-pooling.js'
 import {EssentialDatabaseNotSupportedError} from './internal/postgres-utils.js'
 import {PgDatabaseNotFoundError} from './internal/resolve-pg-database.js'
 
-type Mock = ReturnType<typeof vi.fn>
+type Mock = ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>
 
 function pgAttachment(plan = 'heroku-postgresql:standard-0') {
   return {

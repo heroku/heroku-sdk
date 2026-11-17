@@ -38,7 +38,7 @@ const fakeRoutes = {
     info: {method: 'GET', path: '/apps/{appIdentity}'},
     list: {method: 'GET', path: '/apps'},
   },
-}
+} as const
 
 describe('createClient', () => {
   it('returns an object with resource namespaces matching the supplied routes', () => {
