@@ -1,5 +1,5 @@
 /* eslint-disable camelcase -- Dashboard Backend favorite wire format */
-import type {FavoriteListResult} from '@heroku/types/dashboard-backend'
+import type {FavoriteCreateResult, FavoriteListResult} from '@heroku/types/dashboard-backend'
 
 import {
   describe, expect, it, vi,
@@ -17,19 +17,20 @@ import {
   removeByAppName,
 } from './index.js'
 
+type CreateFn = () => Promise<FavoriteCreateResult | void>
+type VoidFn = () => Promise<void>
+
 function buildCtx({favorites = []}: {favorites?: FavoriteListResult} = {}) {
   const list = vi.fn().mockResolvedValue(favorites)
-  const create = vi.fn()
-  // eslint-disable-next-line unicorn/no-useless-undefined
-  const remove = vi.fn().mockResolvedValue(undefined)
+  const create = vi.fn<CreateFn>()
+  const remove = vi.fn<VoidFn>().mockResolvedValue()
   const dashboardBackend = {
     favorite: {create, delete: remove, list},
     withOptions: vi.fn(),
   }
   const scopedList = vi.fn().mockResolvedValue(favorites)
   const scopedCreate = vi.fn()
-  // eslint-disable-next-line unicorn/no-useless-undefined
-  const scopedRemove = vi.fn().mockResolvedValue(undefined)
+  const scopedRemove = vi.fn<VoidFn>().mockResolvedValue()
   const scopedDashboardBackend = {
     favorite: {create: scopedCreate, delete: scopedRemove, list: scopedList},
     withOptions: vi.fn(),
@@ -71,8 +72,7 @@ describe('dashboard-backend favorite extensions', () => {
 
     it('accepts a no-content create response', async () => {
       const {create, ctx} = buildCtx()
-      // eslint-disable-next-line unicorn/no-useless-undefined
-      create.mockResolvedValue(undefined)
+      create.mockResolvedValue()
 
       await expect(addByAppName(ctx, 'example-app')).resolves.toBeUndefined()
     })
@@ -290,8 +290,7 @@ describe('dashboard-backend favorite extensions', () => {
   it('exposes both methods through the favorite resource extension', async () => {
     const {create, ctx, delete: deleteFavorite, list} = buildCtx()
     const methods = favoriteExtensions.factory(ctx)
-    // eslint-disable-next-line unicorn/no-useless-undefined
-    create.mockResolvedValue(undefined)
+    create.mockResolvedValue()
     list.mockResolvedValueOnce([]).mockResolvedValue([favorite('favorite-1', 'example-app')])
 
     await methods.addByAppName('example-app')
