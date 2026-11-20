@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.15.0...sdk-v0.15.1) (2026-11-20)
+
+
+### Dependencies
+
+* bump @heroku/types to v6.0.0 ([#207](https://github.com/heroku/heroku-sdk/issues/207)) ([3a8e093](https://github.com/heroku/heroku-sdk/commit/3a8e093bacc121f55acb66aa739c2ea8fa72c249))
+
 ## [0.15.0](https://github.com/heroku/heroku-sdk/compare/sdk-v0.14.1...sdk-v0.15.0) (2026-11-14)
 
 
