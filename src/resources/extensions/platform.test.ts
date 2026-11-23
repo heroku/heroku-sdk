@@ -53,7 +53,7 @@ async function findExtensionExports(): Promise<Map<string, ResourceExtension>> {
     // eslint-disable-next-line no-await-in-loop
     const mod = await import(join(PLATFORM_DIR, file))
     for (const [exportName, value] of Object.entries(mod)) {
-      if (exportName !== 'addOrInviteExtensions' && exportName.endsWith('Extensions') && isResourceExtension(value)) {
+      if (exportName.endsWith('Extensions') && isResourceExtension(value)) {
         exports.set(exportName, value)
       }
     }
