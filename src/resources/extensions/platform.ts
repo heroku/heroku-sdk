@@ -100,6 +100,14 @@ export {
   type WaitForAllocatedOptions,
 } from '../platform/space/index.js'
 export {type JoinSelfOptions, teamAppExtensions} from '../platform/team-app/index.js'
+export {
+  type AddOrInviteOptions,
+  type AddOrInviteResult,
+  type BeforeMutation,
+  type ListWithInvitationsOptions,
+  teamMemberExtensions,
+  type TeamMemberWithStatus,
+} from '../platform/team-member/index.js'
 export {type GetTeamWithDelinquencyOptions, teamExtensions, type TeamWithDelinquency} from '../platform/team.js'
 export {telemetryDrainExtensions, type TelemetryDrainOptions, type TelemetryDrainTarget} from '../platform/telemetry-drain/index.js'
 export {

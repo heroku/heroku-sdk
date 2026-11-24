@@ -10,12 +10,19 @@ import {
 
 import type {ResourceExtension} from '../../core/extend-resource.js'
 import type {
+  AddOrInviteOptions,
+  AddOrInviteResult,
+  BeforeMutation,
   BeforeRemove,
   JoinSelfOptions,
+  ListWithInvitationsOptions,
   RemoveSelfOptions,
+  TeamMemberWithStatus,
 } from './platform.js'
 
 import * as barrel from './platform.js'
+
+const teamMemberExtension = barrel.teamMemberExtensions
 
 const currentFile = fileURLToPath(import.meta.url)
 const currentDir = dirname(currentFile)
@@ -88,5 +95,29 @@ describe('platform extensions barrel', () => {
       beforeRemove?: BeforeRemove
       signal?: AbortSignal
     }>()
+  })
+
+  it('exports team-member extension option and result types', () => {
+    expectTypeOf<BeforeMutation>().toBeFunction()
+    expectTypeOf<AddOrInviteOptions>().toEqualTypeOf<{
+      beforeMutation?: BeforeMutation
+      signal?: AbortSignal
+    }>()
+    expectTypeOf<AddOrInviteResult['kind']>().toEqualTypeOf<'invitation' | 'member'>()
+    expectTypeOf<ListWithInvitationsOptions>().toEqualTypeOf<{signal?: AbortSignal}>()
+    expectTypeOf<TeamMemberWithStatus['status']>().toEqualTypeOf<'' | 'pending'>()
+    expectTypeOf(teamMemberExtension.factory({} as Parameters<typeof teamMemberExtension.factory>[0]).addOrInvite)
+      .parameters.toEqualTypeOf<[
+        teamIdentity: string,
+        email: string,
+        role: string,
+        options?: AddOrInviteOptions,
+    ]>()
+    expectTypeOf(teamMemberExtension.factory({} as Parameters<typeof teamMemberExtension.factory>[0]).addOrInvite)
+      .returns.toEqualTypeOf<Promise<AddOrInviteResult>>()
+    expectTypeOf(teamMemberExtension.factory({} as Parameters<typeof teamMemberExtension.factory>[0]).listWithInvitations)
+      .parameters.toEqualTypeOf<[teamIdentity: string, options?: ListWithInvitationsOptions]>()
+    expectTypeOf(teamMemberExtension.factory({} as Parameters<typeof teamMemberExtension.factory>[0]).listWithInvitations)
+      .returns.toEqualTypeOf<Promise<TeamMemberWithStatus[]>>()
   })
 })
