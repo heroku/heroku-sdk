@@ -12,10 +12,6 @@ export type AddCollaboratorOptions = AppCollaboratorOptions & {
 
 /**
  * Add a collaborator to an app.
- *
- * If the app is team-owned and `options.permissions` is provided,
- * the collaborator is added with the specified permissions.
- * Otherwise, the collaborator is added without permissions.
  */
 export async function add(
   ctx: Pick<ResourceCtx, 'platform'>,
@@ -29,11 +25,15 @@ export async function add(
   const platform = withSignal(ctx.platform, signal)
   const app = await platform.app.info(appIdentity)
 
-  if (isTeamOwned(app) && permissions) {
-    return platform.teamAppCollaborator.create(appIdentity, {
-      permissions: normalizePermissions(permissions),
-      user: email,
-    })
+  if (isTeamOwned(app)) {
+    if (permissions) {
+      return platform.teamAppCollaborator.create(appIdentity, {
+        permissions: normalizePermissions(permissions),
+        user: email,
+      })
+    }
+
+    return platform.teamAppCollaborator.create(appIdentity, {user: email})
   }
 
   return platform.collaborator.create(appIdentity, {user: email})

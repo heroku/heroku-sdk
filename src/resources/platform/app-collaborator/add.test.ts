@@ -83,10 +83,10 @@ describe('add', () => {
     expect(result).toBe(created)
   })
 
-  it('adds a team-app collaborator via collaborator.create when no permissions are supplied', async () => {
+  it('adds a team-app collaborator via teamAppCollaborator.create without permissions when none are supplied', async () => {
     const created = {id: 'collaborator-1'}
-    const createCollaborator = vi.fn().mockResolvedValue(created)
-    const createTeamAppCollaborator = vi.fn()
+    const createTeamAppCollaborator = vi.fn().mockResolvedValue(created)
+    const createCollaborator = vi.fn()
     const ctx = buildCtx({
       appInfo: vi.fn().mockResolvedValue(teamApp()),
       createCollaborator,
@@ -95,8 +95,8 @@ describe('add', () => {
 
     const result = await add(ctx, 'team-app', 'member@example.com')
 
-    expect(createCollaborator).toHaveBeenCalledExactlyOnceWith('team-app', {user: 'member@example.com'})
-    expect(createTeamAppCollaborator).not.toHaveBeenCalled()
+    expect(createTeamAppCollaborator).toHaveBeenCalledExactlyOnceWith('team-app', {user: 'member@example.com'})
+    expect(createCollaborator).not.toHaveBeenCalled()
     expect(result).toBe(created)
   })
 
