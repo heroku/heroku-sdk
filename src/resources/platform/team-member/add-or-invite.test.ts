@@ -270,7 +270,7 @@ describe('addOrInvite', () => {
     expect(createInvitation).not.toHaveBeenCalled()
   })
 
-  it('combines operation and per-call cancellation and binds it to all requests', async () => {
+  it.each(['operation', 'per-call'] as const)('combines %s cancellation and binds it to all requests', async source => {
     const operationController = new AbortController()
     const callController = new AbortController()
     const {calls, ctx, optionCalls} = buildCtx({operationSignal: operationController.signal})
@@ -281,6 +281,10 @@ describe('addOrInvite', () => {
     expect(optionCalls[0].signal).not.toBe(operationController.signal)
     expect(optionCalls[0].signal).not.toBe(callController.signal)
     expect(calls.map(({signal}) => signal)).toEqual([optionCalls[0].signal, optionCalls[0].signal, optionCalls[0].signal])
+
+    const controller = source === 'operation' ? operationController : callController
+    controller.abort()
+    expect(optionCalls[0].signal.aborted).toBe(true)
   })
 
   it('does not write if cancellation occurs during the awaited callback', async () => {
