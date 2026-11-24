@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.15.1...sdk-v0.15.2) (2026-11-24)
+
+
+### Features
+
+* add team member invitation helpers ([#212](https://github.com/heroku/heroku-sdk/issues/212)) ([fdba218](https://github.com/heroku/heroku-sdk/commit/fdba21867b0399dd8f37df1cbc48ca5ded0d5311))
+
 ## [0.15.1](https://github.com/heroku/heroku-sdk/compare/sdk-v0.15.0...sdk-v0.15.1) (2026-11-20)
 
 
