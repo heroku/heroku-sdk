@@ -14,6 +14,29 @@ function hasCallerRangeHeader(requestOptions?: RequestOptions): boolean {
   return Object.keys(requestOptions.headers).some(k => k.toLowerCase() === 'range')
 }
 
+async function hasEmptyResponseBody(response: Response, contentLength: null | string): Promise<boolean> {
+  if (response.status === 204 || contentLength === '0' || response.body === null) return true
+  if (typeof response.clone !== 'function') return false
+
+  // Probe a clone so the original stream remains available to response.json().
+  const reader = response.clone().body?.getReader()
+  if (!reader) return false
+
+  try {
+    while (true) {
+      // eslint-disable-next-line no-await-in-loop -- Read until the clone closes or yields bytes.
+      const {done, value} = await reader.read()
+      if (done) return true
+      if (value.byteLength > 0) {
+        reader.cancel().catch(() => {})
+        return false
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 function redactEmailPathSegments(path: string): string {
   return path.split('/').map(segment => {
     try {
@@ -64,7 +87,7 @@ export async function dispatch(
   const response = await callMethod(client, route.method, path, body, effectiveOptions)
 
   const contentLength = response.headers.get('content-length')
-  if (response.status === 204 || contentLength === '0') {
+  if (await hasEmptyResponseBody(response, contentLength)) {
     debug('%s empty response status=%d content-length=%s', invocation ?? 'dispatch', response.status, contentLength ?? '')
     return undefined
   }
@@ -101,7 +124,9 @@ async function followPages(
 
     debug('%s paginate page=%d range=%s', invocation ?? 'dispatch', pages + 1, nextRange)
     const pageResponse = await callMethod(client, 'GET', path, undefined, pageOptions)
-    const pageBody = await pageResponse.json()
+    const pageBody = await hasEmptyResponseBody(pageResponse, pageResponse.headers.get('content-length'))
+      ? []
+      : await pageResponse.json()
 
     if (Array.isArray(pageBody)) {
       accumulated.push(...pageBody)

@@ -135,6 +135,39 @@ describe('dispatch', () => {
     expect(result).toBeUndefined()
   })
 
+  it('returns undefined for empty responses without a content-length header', async () => {
+    const client = {
+      ...mockClient(),
+      delete: vi.fn().mockResolvedValue(new Response(null, {status: 200})),
+    }
+    const route: RouteDefinition = {method: 'DELETE', path: '/apps/{appIdentity}'}
+
+    const result = await dispatch(client as any, route, ['my-app'])
+    expect(result).toBeUndefined()
+  })
+
+  it('returns undefined for a zero-byte stream without a content-length header', async () => {
+    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- This stream shape is the regression under test.
+    const response = new Response(new ReadableStream({start: controller => controller.close()}), {status: 200})
+    expect(response.body).not.toBeNull()
+    expect(response.headers.has('content-length')).toBe(false)
+    const client = {...mockClient(), delete: vi.fn().mockResolvedValue(response)}
+    const route: RouteDefinition = {method: 'DELETE', path: '/apps/{appIdentity}'}
+
+    const result = await dispatch(client as any, route, ['my-app'])
+    expect(result).toBeUndefined()
+  })
+
+  it('preserves JSON parsing for a non-empty stream without a content-length header', async () => {
+    const response = new Response(JSON.stringify({id: '5'}), {status: 200})
+    expect(response.headers.has('content-length')).toBe(false)
+    const client = {...mockClient(), delete: vi.fn().mockResolvedValue(response)}
+    const route: RouteDefinition = {method: 'DELETE', path: '/apps/{appIdentity}'}
+
+    const result = await dispatch(client as any, route, ['my-app'])
+    expect(result).toEqual({id: '5'})
+  })
+
   it('throws for unsupported HTTP method', async () => {
     const client = mockClient()
     const route = {method: 'OPTIONS', path: '/apps'} as unknown as RouteDefinition
@@ -170,6 +203,28 @@ describe('dispatch', () => {
 
       expect(result).toEqual([{id: '1'}, {id: '2'}, {id: '3'}])
       expect(client.get).toHaveBeenCalledTimes(3)
+    })
+
+    it('continues pagination after an empty page without a content-length header', async () => {
+      const page1 = mockResponse([{id: '1'}], 200, {'next-range': 'id 2..'})
+      // eslint-disable-next-line n/no-unsupported-features/node-builtins -- This stream shape is the regression under test.
+      const emptyPage = new Response(new ReadableStream({start: controller => controller.close()}), {
+        headers: {'next-range': 'id 3..'},
+        status: 200,
+      })
+      expect(emptyPage.headers.has('content-length')).toBe(false)
+      const page3 = mockResponse([{id: '3'}], 200)
+      const client = {
+        ...mockClient(),
+        get: vi.fn().mockResolvedValueOnce(page1).mockResolvedValueOnce(emptyPage).mockResolvedValueOnce(page3),
+      }
+      const route: RouteDefinition = {method: 'GET', path: '/apps'}
+
+      const result = await dispatch(client as any, route, [])
+
+      expect(result).toEqual([{id: '1'}, {id: '3'}])
+      expect(client.get).toHaveBeenCalledTimes(3)
+      expect(client.get).toHaveBeenNthCalledWith(3, '/apps', {headers: {Range: 'id 3..'}})
     })
 
     it('does not paginate when caller supplies a Range header', async () => {

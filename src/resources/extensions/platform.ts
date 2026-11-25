@@ -71,6 +71,7 @@ export {
   type StartingProcessEvent,
   type StateChangedEvent,
 } from '../platform/log-session/index.js'
+export {CouplingNotFoundError, removeByApp, type RemoveByAppOptions} from '../platform/pipeline-coupling/remove-by-app.js'
 export {pipelineCouplingExtensions} from '../platform/pipeline/coupling.js'
 export {pipelineExtensions} from '../platform/pipeline/index.js'
 export {pipelinePromotionExtensions} from '../platform/pipeline/promotion.js'

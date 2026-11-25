@@ -6,6 +6,7 @@ import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {extendResource} from '../../../core/extend-resource.js'
 import {withSignal} from '../../../core/with-signal.js'
+import {removeByApp, type RemoveByAppOptions} from '../pipeline-coupling/remove-by-app.js'
 
 const debug = createDebug('heroku:sdk:resources:pipeline-coupling')
 
@@ -90,4 +91,5 @@ export async function listPipelineApps(
 export const pipelineCouplingExtensions = extendResource('platform', 'pipelineCoupling', ctx => ({
   listApps: (pipelineId: string, options?: ListPipelineAppsOptions) =>
     listPipelineApps(ctx, pipelineId, options),
+  removeByApp: (appIdentity: string, options?: RemoveByAppOptions) => removeByApp(ctx, appIdentity, options),
 }))
