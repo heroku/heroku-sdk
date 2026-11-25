@@ -7,7 +7,7 @@ import {
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
 import {
-  appExtensions, disableMaintenance, enableMaintenance, getGeneration, getProcessTier, isShielded,
+  appExtensions, disableMaintenance, enableMaintenance, getGeneration, getOwner, getProcessTier, isShielded, isTeamOwned,
 } from './index.js'
 
 function ctxWithAppUpdate(update: ReturnType<typeof vi.fn>): Pick<ResourceCtx, 'platform'> {
@@ -237,5 +237,55 @@ describe('appExtensions and named functions', () => {
       const methods = appExtensions.factory(ctx as ResourceCtx)
       expect(typeof methods.getProcessTier).toBe('function')
     })
+  })
+})
+
+describe('isTeamOwned', () => {
+  it('returns true when app.team is present', () => {
+    const app = {
+      owner: {email: 'my-team@example.com', id: 'owner-id'},
+      team: {id: 'team-id', name: 'my-team'},
+    } as App
+    expect(isTeamOwned(app)).toBe(true)
+  })
+
+  it('returns false when app.team is null', () => {
+    const app = {
+      owner: {email: 'someone@example.com', id: 'owner-id'},
+      team: null,
+    } as App
+    expect(isTeamOwned(app)).toBe(false)
+  })
+
+  it('exposed on appExtensions.factory', () => {
+    const update = vi.fn()
+    const ctx = ctxWithAppUpdate(update)
+    const methods = appExtensions.factory(ctx as ResourceCtx)
+    expect(typeof methods.isTeamOwned).toBe('function')
+  })
+})
+
+describe('getOwner', () => {
+  it('returns app.team.name for a team-owned app', () => {
+    const app = {
+      owner: {email: 'my-team@example.com', id: 'owner-id'},
+      team: {id: 'team-id', name: 'my-team'},
+    } as App
+    expect(getOwner(app)).toBe('my-team')
+  })
+
+  it('returns app.owner.email for a personal app', () => {
+    const app = {
+      owner: {email: 'someone@example.com', id: 'owner-id'},
+      team: null,
+    } as App
+    expect(getOwner(app)).toBe('someone@example.com')
+  })
+
+  it('exposed on appExtensions.factory', () => {
+    const update = vi.fn()
+    const ctx = ctxWithAppUpdate(update)
+    const methods = appExtensions.factory(ctx as ResourceCtx)
+    expect(typeof methods.getOwner).toBe('function')
   })
 })

@@ -2,12 +2,15 @@ export {accountExtensions, type AccountWithDelinquency, type GetAccountWithDelin
 export {addOnAttachmentExtensions} from '../platform/add-on-attachment/index.js'
 export {addOnExtensions} from '../platform/add-on/index.js'
 export {
+  type AddCollaboratorOptions,
+  type AdminCollaborator,
   appCollaboratorExtensions,
   type BeforeRemove,
+  NotATeamAppError,
   type RemoveSelfOptions,
 } from '../platform/app-collaborator/index.js'
 export {
-  appExtensions, type AppInfo, type DiffAppsOptions, type DiffRow, type PipelineCouplingDetail,
+  appExtensions, type AppInfo, type DiffAppsOptions, type DiffRow, getOwner, isTeamOwned, type PipelineCouplingDetail,
 } from '../platform/app/index.js'
 export {
   containerExtensions,
