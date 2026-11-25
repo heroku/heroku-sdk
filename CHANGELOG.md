@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.3](https://github.com/heroku/heroku-sdk/compare/sdk-v0.15.2...sdk-v0.15.3) (2026-11-25)
+
+
+### Features
+
+* add app collaborator extensions ([#214](https://github.com/heroku/heroku-sdk/issues/214)) ([57d160c](https://github.com/heroku/heroku-sdk/commit/57d160ceddd1ea4fe33d30d8a171e97b4c7a3938))
+
 ## [0.15.2](https://github.com/heroku/heroku-sdk/compare/sdk-v0.15.1...sdk-v0.15.2) (2026-11-24)
 
 
