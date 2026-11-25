@@ -4,7 +4,7 @@ import {
 
 import type {ResourceCtx} from '../../../core/extend-resource.js'
 
-import {appCollaboratorExtensions} from './index.js'
+import {appCollaboratorExtensions, normalizePermissions} from './index.js'
 
 describe('appCollaboratorExtensions', () => {
   it('declares an extension-only platform namespace', () => {
@@ -13,7 +13,11 @@ describe('appCollaboratorExtensions', () => {
 
     expect(appCollaboratorExtensions.service).toBe('platform')
     expect(appCollaboratorExtensions.resource).toBe('appCollaborator')
+    expect(typeof methods.add).toBe('function')
+    expect(typeof methods.list).toBe('function')
+    expect(typeof methods.remove).toBe('function')
     expect(typeof methods.removeSelf).toBe('function')
+    expect(typeof methods.update).toBe('function')
   })
 
   it('delegates removeSelf with the extension context', async () => {
@@ -30,5 +34,19 @@ describe('appCollaboratorExtensions', () => {
     expect(info).toHaveBeenCalledExactlyOnceWith()
     expect(deleteCollaborator).toHaveBeenCalledExactlyOnceWith('team-app', 'member@example.com')
     expect(result).toBe(deleted)
+  })
+})
+
+describe('normalizePermissions', () => {
+  it('adds view to the list, sorts, and de-duplicates', () => {
+    expect(normalizePermissions(['deploy', 'manage', 'deploy'])).toEqual(['deploy', 'manage', 'view'])
+  })
+
+  it('is a no-op when view is already present and sorted', () => {
+    expect(normalizePermissions(['deploy', 'view'])).toEqual(['deploy', 'view'])
+  })
+
+  it('handles an empty list', () => {
+    expect(normalizePermissions([])).toEqual(['view'])
   })
 })

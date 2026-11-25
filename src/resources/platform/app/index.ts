@@ -136,6 +136,14 @@ export async function getProcessTier(
   return app.process_tier as ProcessTier | undefined
 }
 
+export function isTeamOwned(app: App): boolean {
+  return app.team !== null
+}
+
+export function getOwner(app: App): string {
+  return app.team?.name ?? app.owner.email
+}
+
 export const appExtensions = extendResource('platform', 'app', ctx => ({
   createAndSetup: (input: CreateAndSetupInput, options?: CreateAndSetupOptions) =>
     createAndSetup(ctx, input, options),
@@ -149,10 +157,12 @@ export const appExtensions = extendResource('platform', 'app', ctx => ({
     enableMaintenance(ctx, appIdentity, options),
   getGeneration: (appIdentity: string, options?: GetGenerationOptions) =>
     getGeneration(ctx, appIdentity, options),
+  getOwner,
   getProcessTier: (appIdentity: string, options?: GetProcessTierOptions) =>
     getProcessTier(ctx, appIdentity, options),
   isShielded: (appIdentity: string, options?: IsShieldedOptions) =>
     isShielded(ctx, appIdentity, options),
+  isTeamOwned,
   transfer: (appIdentity: string, recipient: string, options?: TransferOptions) =>
     transferApp(ctx, appIdentity, recipient, options),
   waitForACMCertificates: (appIdentity: string, options?: WaitForACMCertificatesOptions) =>
